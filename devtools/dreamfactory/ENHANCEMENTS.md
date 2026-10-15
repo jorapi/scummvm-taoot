@@ -317,10 +317,15 @@ journal** in ScummVM's game options. Open the journal with **J** or controller
 **Back/Select**; the binding is configurable in ScummVM's keymapper.
 
 The Journal view contains conversation lines that started playing and replies
-you selected. Search matches character names and text. Use Read for the complete
-text, Replay (or double-click a line) for its original voice recording, and Star
-to bookmark an entry. The Decisions view shows encountered reply sets and the
-choice you made, without revealing later branches. Some replies have no voice
+you selected. A reading pane on larger overlays shows the complete selected
+entry, speaker, room and elapsed game time. Smaller overlays use the full-page
+Read view. Search matches character names, locations, text and offered replies,
+with all search words required. The active view is marked by a disabled tab;
+entries are shown newest first. Use Read for the full-page reader,
+Replay (or double-click a line) for its original voice recording, and Star
+to bookmark an entry. Replay changes to Stop while that entry is playing;
+Star changes to Unstar for bookmarked entries. The Decisions view shows
+encountered reply sets and emphasizes the choice you made, without revealing later branches. Some replies have no voice
 recording. Movie/radio audio without conversation text is not transcribed.
 
 Browsing pauses gameplay and existing audio. Replays use a separate speech
@@ -335,3 +340,8 @@ format v10 and require a journal-capable build of this fork. The most recent
 The Decisions view is a record of choices, not a complete branching flowchart.
 Cross-route discovery tracking and checkpoint-based branch replay are follow-up
 work; this version does not jump into suspended conversation scripts.
+
+Journal presentation references: [Ace Attorney: Dual Destinies' conversation
+backlog](https://news.capcomusa.com/lets/browse/phoenix-wright-ace-attorney-dual-destinies-localization-the-trials-and-tribulations-of-the-gameplay-mechanics-team)
+and [Ren'Py's speaker/text/voice history model](https://www.renpy.org/doc/html/history.html).
+The interface uses ScummVM theme widgets and fonts, without borrowing game art.

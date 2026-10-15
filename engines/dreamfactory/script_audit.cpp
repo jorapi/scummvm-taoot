@@ -23,6 +23,8 @@
 #include "common/tokenizer.h"
 #include "common/system.h"
 #include "graphics/surface.h"
+#include "graphics/font.h"
+#include "gui/gui-manager.h"
 #include "graphics/paletteman.h"
 #include "graphics/cursorman.h"
 #include "graphics/fonts/ttf.h"
@@ -544,6 +546,56 @@ bool auditPuppetSession(const Common::FSNode &root, OSystem *backend) {
 	if (journalSession.runtime.run(test, "speak").value.number() != 42 || journalSession.journal.entries.size() != 2) return false;
 	if (hadJournal) ConfMan.set("dreamfactory_journal", oldJournal, Common::ConfigManager::kTransientDomain);
 	else ConfMan.removeKey("dreamfactory_journal", Common::ConfigManager::kTransientDomain);
+	// Exercise the reader with wrapped text, a decision, bookmarks and an empty search.
+	Session journalLayout(backend);
+	for (uint32 i = 0; i < 6; ++i) {
+		JournalEntry entry;
+		entry.speaker = i % 2 ? "Passenger" : "Officer";
+		entry.room = "Journal layout fixture"; entry.time = 123000 + i * 60000;
+		entry.text = "This is a long journal entry used to check line wrapping and reading space. The complete conversation should remain easy to read without truncation.";
+		journalLayout.journal.add(entry);
+	}
+	JournalEntry fork; fork.speaker = "Passenger"; fork.room = "Journal layout fixture"; fork.time = 510000;
+	fork.choices.push_back("Ask about the ship and the people aboard.");
+	fork.choices.push_back("Ask for directions to the grand staircase.");
+	fork.selected = 1; fork.text = fork.choices[1]; journalLayout.journal.add(fork);
+	class LayoutSource : public Common::EventSource {
+		OSystem *_backend; Common::FSNode _root; uint32 _start; bool _timedOut = false;
+	public:
+		uint32 phase = 0;
+		LayoutSource(OSystem *backend, const Common::FSNode &root) : _backend(backend), _root(root), _start(backend->getMillis()) { backend->getEventManager()->getEventDispatcher()->registerSource(this, false); }
+		~LayoutSource() { _backend->getEventManager()->getEventDispatcher()->unregisterSource(this); }
+		bool allowMapping() const override { return false; }
+		bool pollEvent(Common::Event &event) override {
+			const uint32 elapsed = _backend->getMillis() - _start;
+			if (elapsed > 5000 && !_timedOut) { _timedOut = true; event.type = Common::EVENT_QUIT; return true; }
+			if (phase > 12 || elapsed < (phase + 1) * 120) return false;
+			const int w = MIN<int>(760, _backend->getOverlayWidth() - 12), h = MIN<int>(560, _backend->getOverlayHeight() - 12);
+			const int x = (_backend->getOverlayWidth() - w) / 2, y = (_backend->getOverlayHeight() - h) / 2;
+			const int row = MAX(24, g_gui.getFont().getFontHeight() + 12);
+			if (phase == 0 || phase == 5 || phase == 6 || phase == 10) {
+				Graphics::Surface overlay; overlay.create(_backend->getOverlayWidth(), _backend->getOverlayHeight(), _backend->getOverlayFormat()); _backend->grabOverlay(overlay);
+				Common::DumpFile image;
+				if (image.open(_root.getChild(phase == 0 ? "journal-layout.bmp" : phase == 5 ? "journal-starred.bmp" : phase == 6 ? "journal-decisions.bmp" : "journal-search-empty.bmp"))) Image::writeBMP(image, overlay);
+				overlay.free();
+			}
+			if (phase >= 11) { event.type = phase == 11 ? Common::EVENT_LBUTTONDOWN : Common::EVENT_LBUTTONUP; event.mouse = Common::Point(x + w - 40, y + h - row / 2 - 8); }
+			else if (phase == 8 || phase == 9) { event.type = phase == 8 ? Common::EVENT_KEYDOWN : Common::EVENT_KEYUP; event.kbd.keycode = Common::KEYCODE_z; event.kbd.ascii = 'z'; }
+			else {
+				event.type = phase == 10 ? Common::EVENT_MOUSEMOVE : phase % 2 ? Common::EVENT_LBUTTONUP : Common::EVENT_LBUTTONDOWN;
+				if (phase <= 1) event.mouse = Common::Point(x + 12 + 2 * (w - 20) / 4 + 20, y + h - 20);
+				else if (phase <= 3) event.mouse = Common::Point(x + 12 + 2 * (w - 20) / 3 + 20, y + row + 12 + row / 2);
+				else if (phase <= 5) event.mouse = Common::Point(x + 12 + (w - 20) / 3 + 20, y + row + 12 + row / 2);
+				else event.mouse = Common::Point(x + 100, y + row * 2 + 16 + row / 2);
+			}
+			++phase; return true;
+		}
+	};
+	{
+		LayoutSource source(backend, root);
+		openJournal(journalLayout);
+		if (source.phase != 13 || !journalLayout.journal.entries.back().bookmarked || journalLayout.journal.entries.size() != 7) return false;
+	}
 	warning("JOURNAL PASS heard lines independent replay pause modal reading recording toggle");
 	return true;
 }
