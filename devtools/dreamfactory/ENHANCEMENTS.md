@@ -104,9 +104,10 @@ are customizable through ScummVM's per-game Keymaps settings.
 * D-pad: original walking/turning in world views; select targets on flat menus;
   Up/Down selects dialogue replies. Navigation advances once per press.
 * Left/right shoulder: previous/next visible hotspot, including original interface
-  buttons and authored interactive movie regions. A yellow outline marks selection.
-  In interactive close-ups the cursor moves to that region; moving the pointer
-  takes over from the previous selection.
+  buttons and authored interactive movie regions. The cursor moves to the selected
+  hotspot, without adding a selection box to the artwork. During dialogue, the
+  shoulders move the cursor to the selected reply. Moving the pointer takes over
+  from the previous hotspot selection.
 * A: interact with the selected hotspot (or current pointer), confirm dialogue,
   or skip the current speech. B: Escape/full skip to the next reply decision. Y: repeat dialogue.
 * Left stick: ScummVM's existing virtual pointer. X: skip the current speech line, or the original left mouse button outside speech;

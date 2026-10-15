@@ -108,17 +108,12 @@ void MovieSystem::movieFrame(uint32 frame) {
 			_canvas[y * width + x] = image.pixels[(y - seg.y) * image.width + x - seg.x];
 	for (uint32 y = 0; y < 480; ++y) for (uint32 x = 0; x < 640; ++x) _scaled[y * 640 + x] = _canvas[(y * height / 480) * width + x * width / 640];
 	++displayedFrames;
-	if ((_showHints || _controlRegion >= 0) && !seg.frames[frame].regions.empty()) {
+	if (_showHints && !seg.frames[frame].regions.empty()) {
 		Bytes rgba; rgba.resize(640 * 480 * 4);
 		for (uint32 i = 0; i < _scaled.size(); ++i) {
 			memcpy(rgba.data() + i * 4, seg.palette + _scaled[i] * 3, 3); rgba[i * 4 + 3] = 255;
 		}
-		bool marked = _showHints && compositeHotspotHints(rgba, seg, frame, width, height);
-		if (_controlRegion >= 0 && uint32(_controlRegion) < seg.frames[frame].regions.size()) {
-			const MovieRegion &r = seg.frames[frame].regions[_controlRegion];
-			const Common::Point point = movieRegionPoint(seg, r, width, height);
-			controlMarker(rgba, 640, 480, point.x, point.y); marked = true;
-		}
+		const bool marked = compositeHotspotHints(rgba, seg, frame, width, height);
 		if (marked && _display.rgba(rgba, 640, 480, false, false)) return;
 	}
 	_display.indexed(_scaled, 640, 480, 0, 0, seg.palette);
@@ -173,7 +168,6 @@ bool MovieSystem::play(const Common::String &name, Runtime &runtime, ScriptFrame
 					const int width = canvasWidth(), height = width == 640 ? 480 : 384;
 					const Common::Point point = movieRegionPoint(seg, regions[_controlRegion], width, height);
 					_system->warpMouse(point.x, point.y);
-					movieFrame(_player.frame());
 				}
 				continue;
 			}
@@ -182,7 +176,7 @@ bool MovieSystem::play(const Common::String &name, Runtime &runtime, ScriptFrame
 				const auto &regions = seg.frames[_player.frame()].regions;
 				const int width = canvasWidth(), height = width == 640 ? 480 : 384;
 				if (uint32(_controlRegion) >= regions.size() || event.mouse != movieRegionPoint(seg, regions[_controlRegion], width, height)) {
-					_controlRegion = -1; movieFrame(_player.frame());
+					_controlRegion = -1;
 				}
 			}
 			if (event.type == Common::EVENT_CUSTOM_ENGINE_ACTION_START && event.customType == 1) {

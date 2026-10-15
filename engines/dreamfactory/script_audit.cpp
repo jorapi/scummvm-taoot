@@ -286,6 +286,11 @@ bool auditPuppetSession(const Common::FSNode &root, OSystem *backend) {
 	backend->getEventManager()->pushEvent(skipLine);
 	if (choices.runtime.run(test, "speak").value.number() != 42 || selectedPuppet->interrupted) return false;
 	warning("GAMEPAD CURSOR REPLY PASS unfocused confirm selects cursor row standard skip-line supported");
+	pad.customType = kPadPrevious; backend->getEventManager()->pushEvent(pad);
+	pad.customType = kPadInteract; backend->getEventManager()->pushEvent(pad);
+	if (choices.runtime.run(test, "choices").value.number() != 902 || PuppetView::choiceAt(choices.pointer.x, choices.pointer.y, 2) != 1) {
+		warning("GAMEPAD DIALOGUE FAIL shoulder selection did not move cursor to reply"); return false;
+	}
 	pad.customType = kPadClick; backend->getEventManager()->pushEvent(pad);
 	if (choices.runtime.run(test, "skiprun").value.number() != 43 || selectedPuppet->interrupted) return false;
 	warning("GAMEPAD X LINE SKIP PASS next authored line plays");
@@ -1183,11 +1188,12 @@ bool auditMoviePlayback(const Common::FSNode &fixtures, OSystem *system, bool re
 		bool started = false, watchdog = false, sawInherited = false, sawVoiceHold = false, sawDetached = false;
 		bool checkEffects = false, lostEffects = false, sawCueVoice = false, sawLoopedCue = false, sawPriorVoice = false, sawOrderedBed = false;
 		bool checkTheme = false, changedThemeHandle = false, sawQueuedBed = false, sawFullThemeGain = false;
-		bool hintsShown = false, hintsHidden = false, hintsRestored = false;
+		bool hintsShown = false, hintsHidden = false, hintsRestored = false, cursorOnly = false;
+		Bytes beforeFocus;
 		Audio::SoundHandle themeHandle;
 		Source(OSystem *s, Session &owner) : backend(s), session(owner) { backend->getEventManager()->getEventDispatcher()->registerSource(this, false); }
 		~Source() { backend->getEventManager()->getEventDispatcher()->unregisterSource(this); }
-		void arm(int32 kind) { mode = kind; stage = 0; started = watchdog = sawInherited = sawVoiceHold = sawDetached = false; checkEffects = lostEffects = sawCueVoice = sawLoopedCue = sawPriorVoice = sawOrderedBed = false; checkTheme = changedThemeHandle = sawQueuedBed = sawFullThemeGain = false; }
+		void arm(int32 kind) { mode = kind; stage = 0; cursorOnly = false; beforeFocus.clear(); started = watchdog = sawInherited = sawVoiceHold = sawDetached = false; checkEffects = lostEffects = sawCueVoice = sawLoopedCue = sawPriorVoice = sawOrderedBed = false; checkTheme = changedThemeHandle = sawQueuedBed = sawFullThemeGain = false; }
 		bool allowMapping() const override { return false; }
 		bool pollEvent(Common::Event &event) override {
 			if (!session.movies.displayedFrames) return false;
@@ -1235,6 +1241,8 @@ bool auditMoviePlayback(const Common::FSNode &fixtures, OSystem *system, bool re
 				++stage; return true;
 			}
 			if (mode == 6 && elapsed >= 50 + stage * 50 && stage < 2) {
+                if (!stage) beforeFocus = session.display.picture();
+				else cursorOnly = !beforeFocus.empty() && beforeFocus == session.display.picture();
                 event.type=Common::EVENT_CUSTOM_ENGINE_ACTION_START; event.customType=stage++?kPadInteract:kPadNext; return true;
             }
             if (mode == 1 && stage == 0 && elapsed >= 50) { ++stage; event.type = Common::EVENT_LBUTTONDOWN; event.mouse = Common::Point(0, 0); return true; }
@@ -1306,7 +1314,7 @@ bool auditMoviePlayback(const Common::FSNode &fixtures, OSystem *system, bool re
 	if (!hintsPass || !worldToggle) { warning("MOVIE HINTS FAIL modal annotation/toggle/cleanup stage=%u shown=%u hidden=%u restored=%u world=%u", source.stage, source.hintsShown, source.hintsHidden, source.hintsRestored, worldToggle); return false; }
 	debug("MOVIE HINT HOST PASS held frame marker toggle redraw original restoration click geometry shared world toggle");
     source.arm(6);
-    if(!run("click") || source.stage!=2 || session.movies.active()) { warning("GAMEPAD MOVIE FAIL hotspot selection/confirm"); return false; }
+    if(!run("click") || source.stage!=2 || !source.cursorOnly || session.movies.active()) { warning("GAMEPAD MOVIE FAIL hotspot selection/confirm"); return false; }
     debug("GAMEPAD MOVIE PASS authored region focus confirm modal close");
 	for (const char *handler : {"control", "control1"}) for (int mode = 7; mode <= 10; ++mode) {
 		source.arm(mode);
@@ -2900,6 +2908,14 @@ bool auditStageSession(const Common::FSNode &root, OSystem *system) {
 	if (hadHints) ConfMan.set("dreamfactory_hotspot_hints", oldHints, Common::ConfigManager::kTransientDomain);
 	else ConfMan.removeKey("dreamfactory_hotspot_hints", Common::ConfigManager::kTransientDomain);
 	warning("HOTSPOT HINTS PASS enabled startup touch-only availability sampled actual targets toggle original pixels hit geometry preserved");
+	Bytes beforeFocus, afterFocus;
+	hints.movies.setHotspotHints(false);
+	if (!hints.display.capture(beforeFocus)) return false;
+	Common::Event focus; focus.type = Common::EVENT_CUSTOM_ENGINE_ACTION_START; focus.customType = kPadNext;
+	hints.postEvent(focus);
+	if (hints.hitTest(hints.pointer.x, hints.pointer.y).name != "hint-test" || !hints.display.capture(afterFocus) || beforeFocus != afterFocus) {
+		warning("INPUT CONTROLS FAIL shoulder focus changed artwork instead of only moving cursor"); return false;
+	}
     if(touchDirection(48,140)!=kPadUp || touchDirection(83,175)!=kPadUp || touchDirection(84,175)!=-1 || touchDirection(66,238)!=kPadDown || touchDirection(26,198)!=kPadLeft || touchDirection(106,198)!=kPadRight) return false;
     Bytes padPixels; padPixels.resize(512*384*4); memset(padPixels.data(),77,padPixels.size()); drawTouchPad(padPixels);
     if(padPixels[0]!=77 || padPixels[(140*512+48)*4]!=235 || padPixels[(140*512+84)*4]!=77) return false;

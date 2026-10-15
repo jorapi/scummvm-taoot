@@ -1217,6 +1217,10 @@ int32 Session::waitPuppet(ScriptFrame &frame) {
 						} else puppetChoices.confirm(Scheduler::ticks(_time));
 					} else if (event.kbd.keycode >= Common::KEYCODE_1 && event.kbd.keycode <= Common::KEYCODE_5 && !event.kbdRepeat) puppetChoices.confirm(Scheduler::ticks(_time), event.kbd.keycode - Common::KEYCODE_1);
 					else if (event.kbd.keycode == Common::KEYCODE_F7 && !event.kbdRepeat) repeatPuppet(frame);
+					if ((event.customType == kPadPrevious || event.customType == kPadNext) && puppetChoices.hasFocus()) {
+						pointer = Common::Point(16, 276 + puppet->chosen * 24);
+						_system->warpMouse(20, 345 + puppet->chosen * 30);
+					}
 				}
 			} else {
 				const bool inside = event.mouse.x >= 0 && event.mouse.x < 640 && event.mouse.y >= 0 && event.mouse.y < 480;
@@ -1310,9 +1314,7 @@ void Session::compositeControls(Bytes &rgba) {
 		drawTouchPad(rgba);
 	if (_controlFocused && !roomSystem.moving) {
 		const Hit hit = hitTest(_controlPoint.x, _controlPoint.y);
-		if (hit.type == _controlHit.type && hit.name == _controlHit.name)
-			controlMarker(rgba, 512, 384, _controlPoint.x, _controlPoint.y);
-		else
+		if (hit.type != _controlHit.type || hit.name != _controlHit.name)
 			_controlFocused = false;
 	}
 }

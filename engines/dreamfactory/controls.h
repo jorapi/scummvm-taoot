@@ -27,21 +27,6 @@ inline int32 touchDirection(int32 x, int32 y) {
 			return kPadUp + i;
 	return -1;
 }
-inline void controlMarker(Bytes &rgba, uint32 width, uint32 height, int32 cx, int32 cy) {
-	if (rgba.size() != width * height * 4)
-		return;
-	for (int32 dy = -6; dy <= 6; ++dy)
-		for (int32 dx = -6; dx <= 6; ++dx) {
-			const int32 edge = MAX(ABS(dx), ABS(dy)), x = cx + dx, y = cy + dy;
-			if (edge < 4 || x < 0 || y < 0 || x >= int32(width) || y >= int32(height))
-				continue;
-			byte *p = rgba.data() + (y * width + x) * 4;
-			p[0] = edge == 5 ? 255 : 0;
-			p[1] = edge == 5 ? 230 : 0;
-			p[2] = 0;
-			p[3] = 255;
-		}
-}
 inline void drawTouchPad(Bytes &rgba) {
 	if (rgba.size() != 512 * 384 * 4)
 		return;
