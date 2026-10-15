@@ -531,7 +531,7 @@ rules, and remain usable with a controller at 480x272.
 
 1. **Implemented:** checkpoint previews with saved thumbnail, location, clock and inventory before restoring.
 2. **Implemented:** optional controller inventory: larger original item previews, readable descriptions and authentic examine/use/give actions, including conversation inventory.
-3. Recovery: rotating recovery saves separate from route/manual saves and a Continue view.
+3. **Implemented:** rotating recovery saves separate from route/manual saves and a Continue view.
 4. Replay: distinct line/full skips and fast-forward of previously heard dialogue only.
 5. Accessibility: subtitle size, background opacity, speaker labels and shared audio controls.
 6. Journal: discovered clues, promises and unresolved leads with optional progressive hints.
@@ -581,3 +581,36 @@ handler; the interface never assigns ownership or quest variables itself.
 gamepad actions, scrolling and earned object/NPC/conversation exchanges. Native
 save formats are unchanged. Physical Android/controller and PSP testing remains
 outstanding; compiling an APK does not establish device behavior.
+
+### Continue and recovery
+
+ScummVM's global autosave interval also records a separate three-entry recovery
+history. Setting that interval to Off disables automatic recovery recording.
+Manual save slots and branching-route checkpoints are not rotated or replaced.
+Open **Continue / recovery saves** with F9 or the left controller trigger. An
+optional **Offer Continue when starting** engine setting presents this view before
+the original opening when recovery points exist; it is disabled by default.
+The usual ScummVM Load dialog remains available.
+
+Each recovery card shows its original thumbnail, location and story clock. Use
+Up/Down or LB/RB to choose a point, then A to open confirmation. Confirmation
+starts on Back; Left/Up selects Resume, then A restores. B cancels. Pointer/touch
+selection and the Resume/Back buttons are supported. Recovery restores the
+complete native snapshot, including inventory, object states, quest variables
+and authored time, rather than reconstructing a dialogue choice.
+
+Three finalized generations are retained with a fourth spare used during writes.
+The new file is finalized and checked before deleting the oldest generation.
+Checksums and game-data identity validation reject damaged or foreign entries;
+the browser checks snapshots as streams without allocating a second game session.
+Files and preview metadata have explicit size limits. A recovery-storage failure
+does not turn a successful standard autosave into a failed save. Autosave work
+is excluded from the authored game clock. Requests first encountered inside busy
+scripts are retried at the next safe world view using ScummVM's autosave API.
+
+`tools/verify-recovery.ps1` tests desktop and 480x272 selection, default-cancel
+confirmation, pointer use, older-point restores in all three editions, a real
+Dust item/quest/cash/clock rewind, the shared autosave timer and pre-boot Continue.
+Storage tests include torn writes, corruption, restart, stale selections and
+preservation of manual/route files. Native save formats remain unchanged.
+Physical Android/controller and PSP runtime testing remains outstanding.

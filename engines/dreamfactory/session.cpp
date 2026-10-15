@@ -54,9 +54,10 @@ bool Session::init(const Common::FSNode &root) {
 	runtime.abandon(); runtime.globals.clear(); runtime.fallbacks.clear(); runtime.error.clear(); bootScripts.clear();
 	puppetParams.clear(); playerHitbox = Common::Point(); cameraHi = 0; memset(displayPalette, 0, sizeof(displayPalette)); lastResult = Value();
 	journal.entries.clear(); _journalRequested = false;
+	_recoveryRequested = false;
 	_inventoryRequested = _inventoryShown = false; _inventoryOfferItem.clear();
 	_inventoryClicks.clear(); _inventoryClickDown = _inventoryReopen = false; _inventoryClickDue = 0;
-	routes = RouteStore(); _routePending.clear(); _routeOwner.reset(); _savedRouteCursor = 0; _savedRouteChoice = -1; _savedRouteToken.clear(); _routeResumeScene = 0;
+	routes = RouteStore(); recovery = RecoveryStore(); _routePending.clear(); _routeOwner.reset(); _savedRouteCursor = 0; _savedRouteChoice = -1; _savedRouteToken.clear(); _routeResumeScene = 0;
 	_routeRevisiting = false;
 	pointer = Common::Point(); _pointerButtons = 0; pointerDown = _stopped = _scriptQuit = _dialogActive = false;
 	frameRate = 3; menuVisible = keyAborts = puppetGrab = screenBlack = false;
@@ -91,6 +92,7 @@ bool Session::init(const Common::FSNode &root) {
 	if (bootScripts.empty()) { runtime.fail("BOOTFILE has no script containers"); return false; }
 	if (_system && _saveHost) {
 		Common::String error;
+		if (!recovery.open(_system->getSavefileManager(), ConfMan.getActiveDomainName(), _bootSignature)) warning("Recovery profile unavailable");
 		if (!routes.open(_system->getSavefileManager(), ConfMan.getActiveDomainName(), _bootSignature, error)) warning("Route profile: %s", error.c_str());
 		routes.graph.restoreCursor(0, -1);
 		const int32 budget = ConfMan.hasKey("dreamfactory_route_storage_mib") ? ConfMan.getInt("dreamfactory_route_storage_mib") : 1024;
@@ -130,6 +132,27 @@ RoutePreview Session::captureRoutePreview() const {
 		}
 	}
 	return preview;
+}
+bool Session::recordRecovery(const Bytes &snapshot, Common::String &error) {
+	if (!canAutosave()) { error = "Recovery requires a safe world view"; return false; }
+	return recovery.write(snapshot, captureRoutePreview(), error);
+}
+bool Session::continueRecovery() {
+	if (!_system || _dialogActive) return false;
+	_recoveryRequested = false; pendingEvents.clear();
+	const uint32 started = _system->getMillis();
+	PauseToken pause = g_engine ? g_engine->pauseEngine() : PauseToken(); _dialogActive = true;
+	const RecoveryEntry selected = openRecovery(*this);
+	_dialogActive = false; pointerDown = false; _pointerButtons = 0; _controlHeld = _touchHeld = false;
+	bool restored = false;
+	if (selected.sequence && !_system->getEventManager()->shouldQuit() && !_system->getEventManager()->shouldReturnToLauncher()) {
+		Bytes snapshot; Common::String error;
+		restored = recovery.read(selected, snapshot, error) && loadState(snapshot, error);
+		if (!restored) { _dialogActive = true; journalNotice(error); _dialogActive = false; }
+	}
+	excludeWallTime(started);
+	if (_system->getEventManager()->shouldQuit() || _system->getEventManager()->shouldReturnToLauncher()) { _stopped = true; runtime.abandon(); }
+	return restored;
 }
 void Session::prepareRouteCheckpoint() {
 	_routePending.clear(); _routeOwner.reset();
@@ -1624,6 +1647,10 @@ bool Session::controlEvent(const Common::Event &event) {
 }
 void Session::postEvent(const Common::Event &event) {
     if (controlEvent(event)) return;
+	if (event.type == Common::EVENT_CUSTOM_ENGINE_ACTION_START && event.customType == kOpenRecovery) {
+		if (!movies.active() && !puppetSystem.current && !runtime.busy()) _recoveryRequested = true;
+		return;
+	}
 	if (event.type == Common::EVENT_CUSTOM_ENGINE_ACTION_START && event.customType == kOpenInventory) {
 		if (!movies.active() && (!puppetSystem.current || inventoryActive(*this))) _inventoryRequested = true;
 		return;
@@ -1864,6 +1891,7 @@ void Session::serviceInventory() {
 bool Session::step() {
 	if (_stopped || !runtime.error.empty()) return false;
 	pollInput(); if (_stopped) return false;
+	if (_recoveryRequested && !_dialogActive && !runtime.busy() && !movies.active() && !puppetSystem.current && !pointerDown && !roomSystem.moving && !roomSystem.turning) { continueRecovery(); return !_stopped && runtime.error.empty(); }
 	if (!_inventoryOfferItem.empty()) {
 		const auto held = runtime.globals.find("handitem"); const auto prop = propSystem.get(_inventoryOfferItem);
 		if (!prop || prop->view != "large" || held == runtime.globals.end() || held->_value.text() != _inventoryOfferItem || puppetSystem.current || movies.active()) _inventoryOfferItem.clear();

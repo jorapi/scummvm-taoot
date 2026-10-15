@@ -421,6 +421,7 @@ void SaveState::commit(Session &g, Session &p, const StateIO &state) {
 	g._paletteKind = p._paletteKind; g._roomPalette = p._roomPalette; g._stagePalette = p._stagePalette; g._puppetPalette = p._puppetPalette; g._puppetArtPalette = p._puppetArtPalette; memcpy(g.displayPalette, p.displayPalette, 768); g.textOverlay = p.textOverlay;
 	g._paletteBlack = g.screenBlack = g.pointerDown = g._stopped = g._scriptQuit = false; g._pointerButtons = 0; g._controlFocused = g._controlHeld = g._touchHeld = false;
 	g._inventoryRequested = g._inventoryShown = false; g._inventoryOfferItem.clear();
+	g._recoveryRequested = false;
 	g._inventoryClicks.clear(); g._inventoryClickDown = g._inventoryReopen = false; g._inventoryClickDue = 0;
 	g._stageView.reset(); g._puppetView.reset(); g.cursors.depth = p.cursors.depth; g.cursors.set(p.cursors.name);
 	g.sound._banks = p.sound._banks; g.sound._loops = p.sound._loops; g.sound._volumes = p.sound._volumes; g.sound._pans = p.sound._pans; g.sound._themeVolumes = p.sound._themeVolumes;

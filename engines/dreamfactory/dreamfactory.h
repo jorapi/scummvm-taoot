@@ -22,6 +22,8 @@ public:
 private:
 	Session *_session = nullptr;
 	bool _scriptSave = false;
+	bool _retryAutosave = false;
+	void serviceAutosave();
 	bool saveGame() override;
 	bool loadGame() override;
 	Room _room;

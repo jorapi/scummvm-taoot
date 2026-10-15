@@ -4,6 +4,7 @@
 #include "dreamfactory/resources.h"
 #include "dreamfactory/journal.h"
 #include "dreamfactory/routes.h"
+#include "dreamfactory/recovery.h"
 #include "dreamfactory/runtime.h"
 #include "dreamfactory/sound.h"
 #include "dreamfactory/crickets.h"
@@ -43,6 +44,10 @@ public:
 	bool subtitlesEnabled() const;
 	Journal journal;
 	RouteStore routes;
+	RecoveryStore recovery;
+	bool recordRecovery(const Bytes &snapshot, Common::String &error);
+	bool continueRecovery();
+	bool recoveryPending() const { return _recoveryRequested; }
 	bool restoreRouteScene(uint32 node, Common::String &error);
 	bool journalAudio(const JournalEntry &entry, Common::SharedPtr<AudioClip> &clip);
 	// One main-loop pass: deliver one queued gesture, otherwise run boot idle.
@@ -111,6 +116,7 @@ private:
 	bool _scriptQuit = false;
 	bool _dialogActive = false;
 	bool _journalRequested = false;
+	bool _recoveryRequested = false;
 	bool _inventoryRequested = false, _inventoryShown = false;
 	Common::String _inventoryOfferItem, _inventoryOfferLabel;
 	void serviceInventory();

@@ -2864,6 +2864,39 @@ bool auditRooms(const Common::FSNode &root) {
 	}
 	warning("ROOM %s files=%u failures=%u", failures ? "FAIL" : "PASS", count, failures); return !failures;
 }
+static bool auditRecoveryStore() {
+	RouteTestFiles files; RecoveryStore store; Common::String error;
+	if (!store.open(&files, "test", "fixture")) return false;
+	Bytes snapshot; snapshot.resize(32); memset(snapshot.data(), 0, snapshot.size());
+	WRITE_BE_UINT32(snapshot.data(), MKTAG('D','F','S','V')); WRITE_LE_UINT32(snapshot.data() + 4, 11); WRITE_LE_UINT32(snapshot.data() + 8, 4);
+	Common::MemoryReadStream payload(snapshot.data() + 28, 4); Common::computeStreamMD5(payload, snapshot.data() + 12);
+	files.files["test.999"] = snapshot; files.files["test.dfroute.keep"] = snapshot;
+	RoutePreview preview; preview.location = "Known room"; preview.clock = "01:20";
+	for (uint32 i = 0; i < 3; ++i) if (!store.write(snapshot, preview, error)) return false;
+	auto entries = store.list();
+	if (entries.size() != 3 || entries[0].sequence != 3 || entries[2].sequence != 1) return false;
+	const RecoveryEntry oldest = entries[2];
+	files.failSuffix = ".3";
+	if (store.write(snapshot, preview, error) || store.list().size() != 3 || store.list()[2].sequence != 1) return false;
+	files.failSuffix.clear();
+	if (!store.write(snapshot, preview, error) || !store.write(snapshot, preview, error)) return false;
+	RecoveryStore restarted, foreign;
+	if (!restarted.open(&files, "test", "fixture") || !foreign.open(&files, "test", "another-game") || !foreign.list().empty()) return false;
+	entries = restarted.list(); Bytes loaded;
+	if (entries.size() != 3 || entries[0].sequence != 5 || entries[2].sequence != 3 || !restarted.read(entries[0], loaded, error) || loaded != snapshot || restarted.read(oldest, loaded, error)) return false;
+	const auto names = files.listSavefiles("*.dfrecovery-*.*");
+	Common::String newest;
+	for (const auto &filename : names) if (filename.hasSuffix(Common::String::format(".%u", entries[0].slot))) newest = filename;
+	if (newest.empty()) return false;
+	files.files[newest].back() ^= 1;
+	if (restarted.read(entries[0], loaded, error) || !loaded.empty() || restarted.list().size() != 2 || restarted.list()[0].sequence != 4) return false;
+	if (!restarted.write(snapshot, preview, error) || restarted.list().size() != 3 || restarted.list()[0].sequence != 6) return false;
+	if (files.files["test.999"] != snapshot || files.files["test.dfroute.keep"] != snapshot) return false;
+	Bytes damaged = snapshot; damaged.back() ^= 1;
+	if (restarted.write(damaged, preview, error) || restarted.list()[0].sequence != 6 || foreign.open(&files, "../test", "fixture")) return false;
+	warning("RECOVERY STORE PASS three-save rotation spare write failure restart foreign identity stale selection payload corruption bounded native validation original manual and route files preserved");
+	return true;
+}
 static bool auditRouteStore() {
 	RouteTestFiles files; RouteStore store; Common::String error;
 	if (store.open(&files, "../unsafe", "fixture", error) || store.active() || !store.open(&files, "test", "fixture", error)) return false;
@@ -3038,7 +3071,7 @@ static bool auditRouteGraph() {
 	return true;
 }
 bool auditStageSession(const Common::FSNode &root, OSystem *system) {
-	if (!auditRouteGraph() || !auditRouteStore()) return false;
+	if (!auditRouteGraph() || !auditRouteStore() || !auditRecoveryStore()) return false;
 	Session session; Bytes bytes; ScriptInstance test; test.name = "stage-test"; Common::String error;
 	if (!session.init(root) || !read(root.getChild("test.dfscript"), bytes) || !loadScript(bytes, test.script, error)) { warning("STAGE SESSION FAIL fixture init %s", error.c_str()); return false; }
 	const ScriptResult result = session.runtime.run(test, "test");

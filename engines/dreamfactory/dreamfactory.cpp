@@ -26,7 +26,19 @@
 namespace DreamFactory {
 void DreamFactoryEngine::pauseEngineIntern(bool pause) { Engine::pauseEngineIntern(pause); if (!pause && _session) _session->resetClock(); }
 bool DreamFactoryEngine::canSaveGameStateCurrently(Common::U32String *) { return _session && (_scriptSave || _session->canSave()); }
-bool DreamFactoryEngine::canSaveAutosaveCurrently() { return _session && _session->canAutosave(); }
+bool DreamFactoryEngine::canSaveAutosaveCurrently() {
+	const bool safe = _session && _session->canAutosave();
+	_retryAutosave = _session && !safe; return safe;
+}
+void DreamFactoryEngine::serviceAutosave() {
+	if (!_session || !_session->canAutosave() || !ConfMan.getInt("autosave_period")) return;
+	// The shared event loop may first reach the deadline inside a script.
+	// Retry that deferred request at the next safe world view.
+	const uint32 started = _system->getMillis();
+	if (_retryAutosave) { _retryAutosave = false; saveAutosaveIfEnabled(); }
+	else handleAutoSave();
+	_session->excludeWallTime(started);
+}
 bool DreamFactoryEngine::canLoadGameStateCurrently(Common::U32String *) { return _session && !_session->dialogActive() && !_session->movies.active() && !_session->puppetSpeech.active() && !_session->puppetChoices.active(); }
 bool DreamFactoryEngine::saveGame() {
 	_scriptSave = true;
@@ -38,10 +50,15 @@ bool DreamFactoryEngine::loadGame() {
 	const bool diagnostic = ConfMan.hasKey("dreamfactory_boot_trace") && ConfMan.getBool("dreamfactory_boot_trace") && ConfMan.hasKey("dreamfactory_boot_dialog_slot");
 	return diagnostic ? loadGameState(ConfMan.getInt("dreamfactory_boot_dialog_slot")).getCode() == Common::kNoError : loadGameDialog();
 }
-Common::Error DreamFactoryEngine::saveGameStream(Common::WriteStream *stream, bool) {
+Common::Error DreamFactoryEngine::saveGameStream(Common::WriteStream *stream, bool isAutosave) {
+	const uint32 started = _system->getMillis();
 	Bytes bytes; Common::String message;
-	if (!_session || !_session->saveState(bytes, message)) return Common::Error(Common::kWritingFailed, message);
-	return stream->write(bytes.data(), bytes.size()) == bytes.size() && !stream->err() ? Common::kNoError : Common::kWritingFailed;
+	if (!_session) return Common::kWritingFailed;
+	if (!_session->saveState(bytes, message)) { if (isAutosave) _session->excludeWallTime(started); return Common::Error(Common::kWritingFailed, message); }
+	if (stream->write(bytes.data(), bytes.size()) != bytes.size() || stream->err()) { if (isAutosave) _session->excludeWallTime(started); return Common::kWritingFailed; }
+	if (isAutosave && _session->canAutosave() && !_session->recordRecovery(bytes, message)) warning("Recovery save: %s", message.c_str());
+	if (isAutosave) _session->excludeWallTime(started);
+	return Common::kNoError;
 }
 Common::Error DreamFactoryEngine::loadGameStream(Common::SeekableReadStream *stream) {
 	if (!_session || stream->size() - stream->pos() < 28) return Common::kReadingFailed;
@@ -563,10 +580,15 @@ Common::Error DreamFactoryEngine::run() {
 			warning("BOOT STEPS %s done=%u requested=%u error=%s", done == count ? "PASS" : "FAIL", done, count, session.runtime.error.c_str());
 		}
 		if (booted && session.runtime.error.empty() && ConfMan.hasKey("dreamfactory_boot_actions")) {
+			Variables rememberedGlobals;
 			Common::StringTokenizer actions(ConfMan.get("dreamfactory_boot_actions"), ";"); uint32 index = 0;
 			while (!actions.empty() && session.runtime.error.empty()) {
 				Common::String action = actions.nextToken(); action.trim(); Common::StringTokenizer words(action); const Common::String command = words.nextToken(); bool ok = true;
-				if (command == "expectsetting") {
+				if (command == "rememberglobal" || command == "expectremembered") {
+					const Common::String name = words.nextToken();
+					if (command == "rememberglobal") { ok = session.runtime.globals.contains(name); if (ok) rememberedGlobals[name] = session.runtime.globals[name]; }
+					else ok = rememberedGlobals.contains(name) && session.runtime.globals.contains(name) && rememberedGlobals[name].equals(session.runtime.globals[name]);
+				} else if (command == "expectsetting") {
 					const Common::String setting = words.nextToken(); const int32 expected = atoi(words.nextToken().c_str()); int32 actual = 0;
 					if (setting == "wavevolume") actual = session.sound.waveVolume();
 					else if (setting == "subtitles") actual = session.puppetParams.contains(7) ? session.puppetParams[7] : 1;
@@ -599,6 +621,21 @@ Common::Error DreamFactoryEngine::run() {
 						const RouteNode &node = session.routes.graph.nodes()[n];
 						warning("BOOT ROUTE node=%u kind=%u parent=%u choice=%d seen=%u checkpoint=%u file=%s speaker=%s", n + 1, uint32(node.kind), node.parent, node.parentChoice, node.seenChoices, node.checkpoint, node.entry.file.c_str(), node.entry.speaker.c_str());
 					}
+				} else if (command == "freshcontinue") {
+					ok = session.init(root) && !session.stageSystem.current && session.continueRecovery();
+				} else if (command == "recoverysave") {
+					ok = session.canAutosave() && saveGameState(getAutosaveSlot(), "Autosave", true).getCode() == Common::kNoError;
+				} else if (command == "expectrecoveries") {
+					const auto entries = session.recovery.list(); ok = int32(entries.size()) == atoi(words.nextToken().c_str());
+					for (const auto &entry : entries) warning("BOOT RECOVERY sequence=%u location=%s clock=%s", entry.sequence, entry.preview.location.c_str(), entry.preview.clock.c_str());
+				} else if (command == "waitrecoveries") {
+					const uint32 count = CLIP<int32>(atoi(words.nextToken().c_str()), 1, 3), started = _system->getMillis();
+					while (session.recovery.list().size() < count && ok && _system->getMillis() - started < 10000) { ok = session.step(); if (ok) serviceAutosave(); }
+					ok = ok && session.recovery.list().size() >= count;
+				} else if (command == "openrecovery") {
+					Common::Event event; event.type = Common::EVENT_CUSTOM_ENGINE_ACTION_START; event.customType = kOpenRecovery; session.postEvent(event);
+					for (uint32 tries = 0; tries < 120; ++tries) { if (!session.step()) { ok = false; break; } if (!session.recoveryPending()) break; }
+					ok = ok && !session.recoveryPending();
 				} else if (command == "openinventory") {
 					Common::Event event; event.type = Common::EVENT_CUSTOM_ENGINE_ACTION_START; event.customType = kOpenInventory; session.postEvent(event);
 					for (uint32 tries = 0; tries < 120; ++tries) { if (!session.step()) { ok = false; break; } if (!session.inventoryPending()) break; }
@@ -689,7 +726,7 @@ Common::Error DreamFactoryEngine::run() {
 					}
 				} else if (command == "autosave") {
 					ok = session.canAutosave();
-					if (ok) { const uint32 started = _system->getMillis(); handleAutoSave(); session.excludeWallTime(started); }
+					if (ok) serviceAutosave();
                 } else if (command == "pad" || command == "padup") {
                     const Common::String name = words.nextToken();
                     const char *names[] = {"up", "down", "left", "right", "previous", "next", "interact", "repeat"};
@@ -937,16 +974,16 @@ Common::Error DreamFactoryEngine::run() {
 		Session session(_system, this); _session = &session;
 		bool started = session.init(root);
 		if (started && ConfMan.hasKey("save_slot") && ConfMan.getInt("save_slot") >= 0) started = loadGameState(ConfMan.getInt("save_slot")).getCode() == Common::kNoError;
-		else if (started) started = session.boot();
+		else if (started) {
+			const bool offer = ConfMan.hasKey("dreamfactory_continue_on_start") && ConfMan.getBool("dreamfactory_continue_on_start") && !session.recovery.list().empty();
+			if (!offer || !session.continueRecovery()) started = !shouldQuit() && session.boot();
+		}
 		if (!started) { _session = nullptr; return session.scriptQuitRequested() || shouldQuit() ? Common::kNoError : Common::Error(Common::kUnknownError, session.runtime.error); }
 		debug(1, "GAMEPLAY READY room=%s scene=%s view=%s stage=%s flat=%s", session.roomSystem.name().c_str(), session.roomSystem.sceneName().c_str(), session.roomSystem.viewName().c_str(), session.stageSystem.current ? session.stageSystem.current->name.c_str() : "none", session.stageSystem.currentFlat().c_str());
 		while (!shouldQuit() && session.step()) {
 			// Use ScummVM's configured autosave interval and reserved slot.
 			// Never enter a save from inside a modal script or held gesture.
-			if (session.canAutosave()) {
-				const uint32 autosaveStarted = _system->getMillis();
-				handleAutoSave(); session.excludeWallTime(autosaveStarted);
-			}
+			serviceAutosave();
 		}
 		_session = nullptr;
 		if (!session.runtime.error.empty()) return Common::Error(Common::kUnknownError, session.runtime.error);
