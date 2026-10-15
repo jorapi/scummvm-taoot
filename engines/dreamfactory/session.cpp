@@ -43,7 +43,15 @@ bool Session::subtitlesEnabled() const {
 	return !puppetParams.contains(7) || puppetParams[7];
 }
 Session::Session(OSystem *system, SaveHost *saveHost) : display(system), runtime(this), sound(resources, system ? system->getMixer() : nullptr), crickets(sound), cursors(resources, system != nullptr), castSystem(resources, runtime), propSystem(resources, runtime), puppetSystem(resources, runtime), puppetSpeech(*this), stageSystem(resources, runtime, this), roomSystem(resources, runtime, stageSystem, *this), motion(castSystem, runtime), balls(propSystem, castSystem, roomSystem, runtime, playerHitbox), movies(resources, sound, display, pendingEvents, system), _system(system), _saveHost(saveHost), _random("dreamfactory") {}
+Session::~Session() { flushHeard(); }
+void Session::flushHeard() {
+	if (!_system || !heard.active() || !heard.dirty()) return;
+	const uint32 started = _system->getMillis(); Common::String error;
+	if (!heard.save(error)) warning("Heard history: %s", error.c_str());
+	_heardFlushAt = _system->getMillis(); excludeWallTime(started);
+}
 bool Session::init(const Common::FSNode &root) {
+	flushHeard(); heard = HeardStore(); _heardFlushAt = 0;
 	_root = root;
 	movies.setCursors(&cursors);
     _controlFocused = _controlHeld = _touchHeld = false;
@@ -92,6 +100,7 @@ bool Session::init(const Common::FSNode &root) {
 	if (bootScripts.empty()) { runtime.fail("BOOTFILE has no script containers"); return false; }
 	if (_system && _saveHost) {
 		Common::String error;
+		if (!heard.open(_system->getSavefileManager(), ConfMan.getActiveDomainName(), _bootSignature, error)) warning("Heard history: %s", error.c_str());
 		if (!recovery.open(_system->getSavefileManager(), ConfMan.getActiveDomainName(), _bootSignature)) warning("Recovery profile unavailable");
 		if (!routes.open(_system->getSavefileManager(), ConfMan.getActiveDomainName(), _bootSignature, error)) warning("Route profile: %s", error.c_str());
 		routes.graph.restoreCursor(0, -1);
@@ -1293,9 +1302,9 @@ void Session::presentPuppet() {
 void Session::speakPuppet(const Common::String &ident, ScriptFrame &frame, bool queue) {
 	if (!puppetSpeech.start(puppetSystem.current, ident, 0, queue)) { runtime.fail(puppetSpeech.error); return; }
 	if (!puppetSpeech.active()) return;
+	JournalEntry entry;
 	if (queue && puppetSystem.current && !puppetSystem.current->subtitle.empty()) {
 		const auto puppet = puppetSystem.current;
-		JournalEntry entry;
 		entry.speaker = puppetSystem.name(); entry.file = resources.sourceName(puppet->file);
 		const int32 line = puppet->data.line(ident, true);
 		if (line >= 0) entry.ident = puppet->data.lines[line].ident;
@@ -1325,7 +1334,7 @@ void Session::speakPuppet(const Common::String &ident, ScriptFrame &frame, bool 
 		if (runtime.current(frame)) presentPuppet();
 	}
 	if (!runtime.current(frame)) puppetSpeech.abandon();
-	else presentPuppet();
+	else { if (!entry.text.empty()) heard.mark(entry.file, entry.ident, entry.text); presentPuppet(); }
 }
 void Session::repeatPuppet(ScriptFrame &frame) {
 	const auto puppet = puppetSystem.current; if (!puppet) return;
@@ -1344,6 +1353,7 @@ void Session::repeatPuppet(ScriptFrame &frame) {
 	if (puppetSystem.current == puppet) { puppet->interrupted = false; puppet->choices = shown; puppet->chosen = chosen; }
 }
 int32 Session::waitPuppet(ScriptFrame &frame) {
+	flushHeard();
 	const auto puppet = puppetSystem.current; puppetChoices.start(puppet);
 	if (!puppetChoices.active()) return -1;
 	if (!_system) { puppetChoices.escape(); runtime.fail("Puppet choices require a display/input host"); return -1; }
@@ -1891,6 +1901,7 @@ void Session::serviceInventory() {
 bool Session::step() {
 	if (_stopped || !runtime.error.empty()) return false;
 	pollInput(); if (_stopped) return false;
+	if (_system && !runtime.busy() && uint32(_system->getMillis() - _heardFlushAt) >= 10000) flushHeard();
 	if (_recoveryRequested && !_dialogActive && !runtime.busy() && !movies.active() && !puppetSystem.current && !pointerDown && !roomSystem.moving && !roomSystem.turning) { continueRecovery(); return !_stopped && runtime.error.empty(); }
 	if (!_inventoryOfferItem.empty()) {
 		const auto held = runtime.globals.find("handitem"); const auto prop = propSystem.get(_inventoryOfferItem);

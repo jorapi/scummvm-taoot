@@ -5,6 +5,7 @@
 #include "dreamfactory/journal.h"
 #include "dreamfactory/routes.h"
 #include "dreamfactory/recovery.h"
+#include "dreamfactory/heard.h"
 #include "dreamfactory/runtime.h"
 #include "dreamfactory/sound.h"
 #include "dreamfactory/crickets.h"
@@ -33,6 +34,7 @@ namespace DreamFactory {
 class Session : public ScriptHost, public LoopHost, public RoomHost, private PuppetSpeechHost, private StageHost {
 public:
 	explicit Session(OSystem *system = nullptr, SaveHost *saveHost = nullptr);
+	~Session();
 	bool init(const Common::FSNode &root);
 	bool boot();
 	bool canSave() const;
@@ -45,6 +47,7 @@ public:
 	Journal journal;
 	RouteStore routes;
 	RecoveryStore recovery;
+	HeardStore heard;
 	bool recordRecovery(const Bytes &snapshot, Common::String &error);
 	bool continueRecovery();
 	bool recoveryPending() const { return _recoveryRequested; }
@@ -117,6 +120,8 @@ private:
 	bool _dialogActive = false;
 	bool _journalRequested = false;
 	bool _recoveryRequested = false;
+	uint32 _heardFlushAt = 0;
+	void flushHeard();
 	bool _inventoryRequested = false, _inventoryShown = false;
 	Common::String _inventoryOfferItem, _inventoryOfferLabel;
 	void serviceInventory();

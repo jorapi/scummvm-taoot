@@ -532,7 +532,7 @@ rules, and remain usable with a controller at 480x272.
 1. **Implemented:** checkpoint previews with saved thumbnail, location, clock and inventory before restoring.
 2. **Implemented:** optional controller inventory: larger original item previews, readable descriptions and authentic examine/use/give actions, including conversation inventory.
 3. **Implemented:** rotating recovery saves separate from route/manual saves and a Continue view.
-4. Replay: distinct line/full skips and fast-forward of previously heard dialogue only.
+4. **In progress:** distinct line/full skips and fast-forward of previously heard dialogue only. Durable heard-line tracking is implemented; runtime fast-forward controls remain pending.
 5. Accessibility: subtitle size, background opacity, speaker labels and shared audio controls.
 6. Journal: discovered clues, promises and unresolved leads with optional progressive hints.
 7. Map: visited rooms, current location, encountered characters and optional next-direction guidance.
@@ -614,3 +614,26 @@ Dust item/quest/cash/clock rewind, the shared autosave timer and pre-boot Contin
 Storage tests include torn writes, corruption, restart, stale selections and
 preservation of manual/route files. Native save formats remain unchanged.
 Physical Android/controller and PSP runtime testing remains outstanding.
+
+### Dialogue replay work in progress
+
+Line skip and full-sequence skip are already separate. A bounded heard-line
+profile now records fingerprints of completed or manually skipped displayed
+lines, keyed by source file, authored line identifier and exact text. Full skip
+does not record later lines that never played. Idle speech, repeat playback and
+unselected replies are not learned as new dialogue. No transcript or audio is
+stored in the fingerprint profile.
+
+Heard history is independent of a playthrough's native save. Older saves with a
+dialogue journal can seed this profile; restoring an earlier save retains later
+heard history. Alternating checksummed files preserve the previous finalized
+generation if a write is interrupted. Corrupt or foreign profiles cannot make
+unheard lines appear known. Storage is capped at 32,768 fingerprints per game-data
+profile. Writes are coalesced at decisions, safe world updates and session exit;
+their wall time is excluded from the authored game clock.
+
+Native storage/save/speech tests cover all three editions.
+`tools/verify-heard-history.ps1` additionally checks real Dust speech followed by
+a fresh process loading a pre-trade save: ownership rewinds while heard history
+persists. This validates the tracking foundation; fast-forward controls and
+their handheld interaction tests are still to be implemented.

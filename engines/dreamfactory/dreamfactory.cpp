@@ -625,6 +625,8 @@ Common::Error DreamFactoryEngine::run() {
 					ok = session.init(root) && !session.stageSystem.current && session.continueRecovery();
 				} else if (command == "recoverysave") {
 					ok = session.canAutosave() && saveGameState(getAutosaveSlot(), "Autosave", true).getCode() == Common::kNoError;
+				} else if (command == "dumpheard") {
+					warning("BOOT HEARD lines=%u active=%u dirty=%u", session.heard.index().size(), session.heard.active(), session.heard.dirty());
 				} else if (command == "expectrecoveries") {
 					const auto entries = session.recovery.list(); ok = int32(entries.size()) == atoi(words.nextToken().c_str());
 					for (const auto &entry : entries) warning("BOOT RECOVERY sequence=%u location=%s clock=%s", entry.sequence, entry.preview.location.c_str(), entry.preview.clock.c_str());

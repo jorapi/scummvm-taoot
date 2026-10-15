@@ -517,6 +517,8 @@ bool Session::loadState(const Bytes &bytes, Common::String &error) {
 	if (frame) memcpy(palette, roomPalette, 128 * 3);
 	prepared.compositeSprites(picture, palette, room, frame);
 	if (!prepared.runtime.error.empty()) { error = prepared.runtime.error; return false; }
-	SaveState::commit(*this, prepared, io); return runtime.error.empty();
+	SaveState::commit(*this, prepared, io);
+	if (runtime.error.empty()) for (const auto &entry : journal.entries) if (entry.choices.empty()) heard.mark(entry.file, entry.ident, entry.text);
+	return runtime.error.empty();
 }
 }

@@ -6,6 +6,7 @@
 #include "dreamfactory/resources.h"
 #include "dreamfactory/session.h"
 #include "dreamfactory/routes.h"
+#include "dreamfactory/heard.h"
 #include "dreamfactory/controls.h"
 #include "dreamfactory/checkers.h"
 #include "dreamfactory/audio.h"
@@ -582,6 +583,8 @@ bool auditPuppetSession(const Common::FSNode &root, OSystem *backend) {
 		if (journalSession.runtime.run(test, "speak").value.number() != 42 || source.phase != 4 || backend->getMillis() - journalStarted < 750 || journalSession.elapsedMillis() - source.logicalStart > 600) return false;
 	}
 	if (journalSession.journal.entries.size() != 1 || journalSession.journal.entries[0].text != "Hello there" || !journalSession.journal.entries[0].file.equalsIgnoreCase("flat/speech.pup")) return false;
+	const JournalEntry &heardEntry = journalSession.journal.entries[0];
+	if (!journalSession.heard.index().contains(heardEntry.file, heardEntry.ident, heardEntry.text) || journalSession.heard.index().contains(heardEntry.file, heardEntry.ident, "Unheard alternative")) return false;
 	Common::SharedPtr<AudioClip> replay;
 	const auto owner = journalSession.puppetSystem.current;
 	const uint32 queueSize = owner->voiceQueue.size();
@@ -2864,6 +2867,33 @@ bool auditRooms(const Common::FSNode &root) {
 	}
 	warning("ROOM %s files=%u failures=%u", failures ? "FAIL" : "PASS", count, failures); return !failures;
 }
+static bool auditHeardStore() {
+	RouteTestFiles files; HeardStore store; Common::String error;
+	if (!store.open(&files, "test", "fixture", error) || store.index().contains("speaker.pup", "greeting", "Hello")) return false;
+	if (!store.mark("speaker.pup", "Greeting", "Hello") || !store.dirty() || !store.save(error) || store.dirty()) return false;
+	if (!store.index().contains("SPEAKER.PUP", "greeting", "Hello") || store.index().contains("speaker.pup", "greeting", "Different line") || store.index().contains("another.pup", "greeting", "Hello") || store.mark("speaker.pup", "greeting", "Hello") || store.dirty()) return false;
+	if (!store.mark("speaker.pup", "next", "New text") || !store.save(error)) return false;
+	HeardStore restarted, foreign;
+	if (!restarted.open(&files, "test", "fixture", error) || restarted.index().size() != 2 || !foreign.open(&files, "test", "another-game", error) || foreign.index().size()) return false;
+	// A failed new generation retains the finalized older history.
+	files.failSuffix = ".a";
+	if (!store.mark("speaker.pup", "third", "Third line") || store.save(error) || !store.dirty()) return false;
+	if (!restarted.open(&files, "test", "fixture", error) || restarted.index().size() != 2) return false;
+	files.failSuffix.clear();
+	if (!store.save(error) || !restarted.open(&files, "test", "fixture", error) || restarted.index().size() != 3) return false;
+	const Common::String latest = files.listSavefiles("*.dfheard-*.a")[0];
+	files.files[latest].back() ^= 1;
+	if (!restarted.open(&files, "test", "fixture", error) || restarted.index().size() != 2) return false;
+	files.files[files.listSavefiles("*.dfheard-*.b")[0]].resize(1);
+	if (restarted.open(&files, "test", "fixture", error) || restarted.active() || restarted.index().size()) return false;
+	if (store.mark("speaker.pup", "", "Idle") || store.mark("speaker.pup", "idle", "") || foreign.open(&files, "../test", "fixture", error)) return false;
+	// The index has a fixed ceiling and stores no transcript or audio payload.
+	HeardIndex bounded;
+	for (uint32 i = 0; i < HeardIndex::kMaxLines; ++i) if (!bounded.add("test.pup", Common::String::format("%u", i), "Known line")) return false;
+	if (bounded.add("test.pup", "overflow", "Known line") || bounded.size() != HeardIndex::kMaxLines || bounded.contains("test.pup", "overflow", "Known line")) return false;
+	warning("HEARD STORE PASS exact authored text identity case-normalized file and line no duplicate history durable restart foreign edition isolation torn write fallback corruption rejection bounded fingerprints");
+	return true;
+}
 static bool auditRecoveryStore() {
 	RouteTestFiles files; RecoveryStore store; Common::String error;
 	if (!store.open(&files, "test", "fixture")) return false;
@@ -3071,7 +3101,7 @@ static bool auditRouteGraph() {
 	return true;
 }
 bool auditStageSession(const Common::FSNode &root, OSystem *system) {
-	if (!auditRouteGraph() || !auditRouteStore() || !auditRecoveryStore()) return false;
+	if (!auditRouteGraph() || !auditRouteStore() || !auditRecoveryStore() || !auditHeardStore()) return false;
 	Session session; Bytes bytes; ScriptInstance test; test.name = "stage-test"; Common::String error;
 	if (!session.init(root) || !read(root.getChild("test.dfscript"), bytes) || !loadScript(bytes, test.script, error)) { warning("STAGE SESSION FAIL fixture init %s", error.c_str()); return false; }
 	const ScriptResult result = session.runtime.run(test, "test");
@@ -3350,6 +3380,13 @@ bool auditStageSession(const Common::FSNode &root, OSystem *system) {
 	if (journalSave.saveState(invalidJournal, journalError)) return false;
 	if (!journalSave.loadState(withoutJournal, journalError) || !journalSave.journal.entries.empty()) { warning("JOURNAL SAVE FAIL legacy %s", journalError.c_str()); return false; }
 	warning("JOURNAL SAVE PASS bounded v10 history choices bookmarks timestamps invalid row rejection old-save compatibility");
+	JournalEntry heardEntry; heardEntry.file = "speech.pup"; heardEntry.ident = "line.0"; heardEntry.text = "Hello there";
+	journalSave.journal.add(heardEntry); Bytes heardSave;
+	if (!journalSave.saveState(heardSave, journalError)) return false;
+	journalSave.heard = HeardStore();
+	if (!journalSave.loadState(heardSave, journalError) || !journalSave.heard.index().contains(heardEntry.file, heardEntry.ident, heardEntry.text)) return false;
+	if (!journalSave.loadState(withoutJournal, journalError) || !journalSave.journal.entries.empty() || !journalSave.heard.index().contains(heardEntry.file, heardEntry.ident, heardEntry.text)) return false;
+	warning("HEARD SAVE PASS old journal migration heard history retained across older native save rewind native format unchanged");
 	RouteTestFiles routeFiles;
 	if (!journalSave.routes.open(&routeFiles, "save-test", "fixture", journalError)) return false;
 	JournalEntry sceneEntry; sceneEntry.speaker = "Speaker"; sceneEntry.file = "speech.pup";
