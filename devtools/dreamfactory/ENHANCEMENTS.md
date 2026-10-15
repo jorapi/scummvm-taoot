@@ -70,7 +70,7 @@ The per-game Engine tab exposes separate switches, all initially off:
 * Enhanced dialogue controls: Up/Down cycles replies, Enter confirms, 1-5 selects
   a reply directly, and F7 repeats the last dialogue during reply selection.
   Controller reply actions work independently of this keyboard option; see the
-  touch and gamepad bindings below. Confirm also skips speech. A fresh paired tap during speech skips the current
+  touch and gamepad bindings below. Confirm skips only the current speech line. A fresh paired tap during speech skips the current
   run like Escape; the first 200 ms and orphan releases are ignored to avoid
   carrying the click that opened a conversation into an accidental skip.
 * Show hotspot hints: enabling the option displays sampled yellow target markers
@@ -106,8 +106,8 @@ are customizable through ScummVM's per-game Keymaps settings.
 * Left/right shoulder: previous/next visible hotspot, including original interface
   buttons and authored interactive movie regions. A yellow outline marks selection.
 * A: interact with the selected hotspot (or current pointer), confirm dialogue,
-  or skip the current speech. B: original Escape/skip. Y: repeat dialogue.
-* Left stick: ScummVM's existing virtual pointer. X: original left mouse button;
+  or skip the current speech. B: Escape/full skip to the next reply decision. Y: repeat dialogue.
+* Left stick: ScummVM's existing virtual pointer. X: skip the current speech line, or the original left mouse button outside speech;
   hold X while pointing to perform drags and other precise gestures.
 * Start: ScummVM's shared game menu. Its GUI handles its own controller input.
 

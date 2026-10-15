@@ -11,7 +11,8 @@ enum ControlAction { kPadUp = 100,
 					 kPadPrevious,
 					 kPadNext,
 					 kPadInteract,
-					 kPadRepeat };
+					 kPadRepeat,
+					 kPadClick };
 inline Common::KeyCode controlKey(uint32 action) {
 	const Common::KeyCode keys[] = {Common::KEYCODE_UP, Common::KEYCODE_DOWN, Common::KEYCODE_LEFT, Common::KEYCODE_RIGHT};
 	return action >= kPadUp && action <= kPadRight ? keys[action - kPadUp] : Common::KEYCODE_RETURN;

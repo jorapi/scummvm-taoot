@@ -51,8 +51,6 @@ public:
 		for (uint32 m = 0; m < maps.size(); ++m) {
 			const Common::Keymap::ActionArray &actions = maps[m]->getActions();
 			for (uint32 a = 0; a < actions.size(); ++a) {
-				if (!strcmp(actions[a]->id, Common::kStandardActionLeftClick))
-					actions[a]->addDefaultInputMapping("JOY_X");
 				if (!strcmp(actions[a]->id, Common::kStandardActionSkip))
 					actions[a]->addDefaultInputMapping("JOY_B");
 				if (!strcmp(actions[a]->id, Common::kStandardActionOpenMainMenu))
@@ -76,10 +74,10 @@ public:
 		hints->setCustomEngineActionEvent(1);
 		hints->addDefaultInputMapping("F6");
 		extras->addAction(hints);
-		const char *ids[] = {"DFUP", "DFDOWN", "DFLEFT", "DFRIGHT", "DFPREV", "DFNEXT", "DFACT", "DFPADREPEAT"};
-		const char *labels[] = {_s("Walk forward / previous reply"), _s("Down / next reply"), _s("Turn left"), _s("Turn right"), _s("Previous hotspot"), _s("Next hotspot"), _s("Interact / confirm dialogue"), _s("Repeat last dialogue")};
-		const char *bindings[] = {"JOY_UP", "JOY_DOWN", "JOY_LEFT", "JOY_RIGHT", "JOY_LEFT_SHOULDER", "JOY_RIGHT_SHOULDER", "JOY_A", "JOY_Y"};
-		for (uint32 i = 0; i < 8; ++i) {
+		const char *ids[] = {"DFUP", "DFDOWN", "DFLEFT", "DFRIGHT", "DFPREV", "DFNEXT", "DFACT", "DFPADREPEAT", "DFPADCLICK"};
+		const char *labels[] = {_s("Walk forward / previous reply"), _s("Down / next reply"), _s("Turn left"), _s("Turn right"), _s("Previous hotspot"), _s("Next hotspot"), _s("Interact / confirm dialogue"), _s("Repeat last dialogue"), _s("Pointer click / skip line")};
+		const char *bindings[] = {"JOY_UP", "JOY_DOWN", "JOY_LEFT", "JOY_RIGHT", "JOY_LEFT_SHOULDER", "JOY_RIGHT_SHOULDER", "JOY_A", "JOY_Y", "JOY_X"};
+		for (uint32 i = 0; i < ARRAYSIZE(ids); ++i) {
 			Common::Action *action = new Common::Action(ids[i], _(labels[i]));
 			action->setCustomEngineActionEvent(DreamFactory::kPadUp + i);
 			action->addDefaultInputMapping(bindings[i]);

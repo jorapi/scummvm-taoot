@@ -65,7 +65,7 @@ bool PuppetView::overlay(const LoadedPuppet &puppet, Bytes &rgba, const Graphics
 	auto param = [&](int32 slot, int32 fallback) { return params.contains(slot) ? params[slot] : fallback; };
 	auto ink = [&](int32 index) { return index < 0 || index > 255 ? surface.format.RGBToColor(0, 0, 0) : surface.format.RGBToColor(palette[index * 3], palette[index * 3 + 1], palette[index * 3 + 2]); };
 	const int32 ascent = drawFont.getFontAscent() >= 0 ? drawFont.getFontAscent() : drawFont.getFontHeight();
-	if (subtitles && !puppet.subtitle.empty()) {
+	if (subtitles && (puppet.subtitleBand || !puppet.subtitle.empty())) {
 		surface.fillRect(Common::Rect(0, scale(224), width, scale(264)), surface.format.RGBToColor(0, 0, 0));
 		const Common::Array<Common::String> lines = subtitleLines(puppet.subtitle, font);
 		for (uint32 i = 0; i < lines.size(); ++i) drawFont.drawString(&surface, text(lines[i]), scale(8), scale(240 + i * 16) - ascent, scale(504), contrast ? surface.format.RGBToColor(255, 255, 255) : ink(0), Graphics::kTextAlignLeft, 0, false, true);
@@ -131,7 +131,7 @@ bool PuppetView::composite(const Common::SharedPtr<LoadedPuppet> &puppet, Bytes 
 				memcpy(rgba.data() + d, palette + color * 3, 3); rgba[d + 3] = 255;
 			}
 	}
-	const int32 clip = subtitles && !puppet->subtitle.empty() ? 224 : 264;
+	const int32 clip = subtitles && (puppet->subtitleBand || !puppet->subtitle.empty()) ? 224 : 264;
 	if (clip == 224) for (uint32 d = 224 * 512 * 4; d < 264 * 512 * 4; d += 4) { memset(rgba.data() + d, 0, 3); rgba[d + 3] = 255; }
 	if (puppet->hasPose && !puppet->data.stances.empty()) {
 		const uint32 stance = puppet->stance >= 0 && uint32(puppet->stance) < puppet->data.stances.size() ? puppet->stance : 0;

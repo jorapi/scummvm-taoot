@@ -103,7 +103,7 @@ bool auditPuppetSession(const Common::FSNode &root, OSystem *backend) {
 	speech.tick(449); if (!speech.active()) return false;
 	speech.tick(450); if (speech.active() || !talker->subtitle.empty() || talker->pose.layers[0].x != 30 || talker->interrupted || talker->voiceQueue.size() != 1) return false;
 	if (!speech.start(talker, " hello THERE ", 500)) return false;
-	speech.skip();
+	speech.skip(true);
 	if (speech.active() || !talker->interrupted || talker->pose.layers[0].x != 30 || host.played != 2) return false;
 	if (!speech.start(talker, "line.1", 600) || speech.active() || talker->voiceQueue.size() != 3 || host.played != 2) return false;
 	if (!speech.start(talker, "line.0", 600) || talker->voiceQueue.size() != 3) return false;
@@ -112,6 +112,14 @@ bool auditPuppetSession(const Common::FSNode &root, OSystem *backend) {
 	if (!speech.start(talker, "line.1", 1000, false) || talker->stance != (session.version == 1 ? 0 : 1)) return false;
 	speech.tick(2149); if (!speech.active()) return false; // Missing audio: minimum 1 s + tail.
 	speech.tick(2150); if (speech.active() || talker->voiceQueue.size() != 3) return false;
+	if (!speech.start(talker, "line.0", 2200) || !talker->subtitleBand) return false;
+	speech.skip();
+	if (speech.active() || talker->interrupted || !talker->subtitle.empty() || !talker->subtitleBand) return false;
+	const uint32 playedAfterLineSkip = host.played;
+	if (!speech.start(talker, "line.1", 2300) || !speech.active() || host.played != playedAfterLineSkip) return false;
+	speech.abandon();
+	if (talker->subtitleBand) return false;
+	warning("DIALOGUE LINE SKIP PASS next line remains playable subtitle band retained full skip separate");
 	// Caption gate is a property of each record, separate from subtitle preferences.
 	talker->data.lines[1].text = "*studio note";
 	if (!speech.start(talker, "line.1", 3000) || !talker->subtitle.empty()) return false;
@@ -155,6 +163,11 @@ bool auditPuppetSession(const Common::FSNode &root, OSystem *backend) {
 	const ScriptResult skipped = modal.runtime.run(test, "skiprun");
 	if (skipped.value.number() != 43 || !modal.puppetSystem.current->interrupted || modal.puppetSystem.current->voiceQueue.size() != 3 || !modal.sound.done(true)) return false;
 	modal.puppetSystem.current->interrupted = false;
+	Common::Event lineSkip; lineSkip.type = Common::EVENT_KEYDOWN; lineSkip.kbd.keycode = Common::KEYCODE_PERIOD;
+	backend->getEventManager()->pushEvent(lineSkip);
+	const uint32 lineSkipStarted = backend->getMillis();
+	if (modal.runtime.run(test, "skiprun").value.number() != 43 || modal.puppetSystem.current->interrupted || backend->getMillis() - lineSkipStarted < 1150) return false;
+	warning("DIALOGUE LINE SKIP HOST PASS period skips first line next line plays full skip retained");
 	Common::Event quit; quit.type = Common::EVENT_QUIT; backend->getEventManager()->pushEvent(quit);
 	const ScriptResult abandoned = modal.runtime.run(test, "quitspeech");
 	if (abandoned.signal != ScriptResult::kAbandoned || modal.runtime.globals["afterspeech"].truth() || !modal.sound.done(true) || modal.puppetSpeech.active()) return false;
@@ -173,6 +186,10 @@ bool auditPuppetSession(const Common::FSNode &root, OSystem *backend) {
 	art->pose.layers[1].frame = 99; art->pose.layers[1].x = -1; art->pose.layers[1].y = 223; art->subtitle = "caption";
 	clear(); if (!view.composite(art, rgba, &backdrop, palette) || !pixel(0, 224, 0, 0, 0)) return false;
 	clear(); if (!view.composite(art, rgba, &backdrop, palette, false) || !pixel(0, 224, 5, 6, 7)) return false;
+	art->subtitle.clear(); art->subtitleBand = true;
+	clear(); if (!view.composite(art, rgba, &backdrop, palette) || !pixel(0, 224, 0, 0, 0)) return false;
+	clear(); if (!view.composite(art, rgba, &backdrop, palette, false) || !pixel(0, 224, 5, 6, 7)) return false;
+	art->subtitleBand = false;
 	art->visible = false; clear(); if (!view.composite(art, rgba, &backdrop, palette) || !pixel(0, 0, 17, 31, 47)) return false;
 	if (!artwork.puppetSystem.open("renderother")) return false;
 	clear(); if (!view.composite(artwork.puppetSystem.current, rgba, &backdrop, palette) || !pixel(1, 1, 6, 7, 8)) return false;
@@ -232,12 +249,12 @@ bool auditPuppetSession(const Common::FSNode &root, OSystem *backend) {
 	{
 		DialogueTapSource source(backend);
 		Common::Event orphan; orphan.type = Common::EVENT_LBUTTONUP; orphan.mouse = Common::Point(20, 20); backend->getEventManager()->pushEvent(orphan);
-		if (choices.runtime.run(test, "speak").value.number() != 42 || source.phase != 2 || !selectedPuppet->interrupted) return false;
+		if (choices.runtime.run(test, "speak").value.number() != 42 || source.phase != 2 || selectedPuppet->interrupted) return false;
 	}
 	selectedPuppet->interrupted = false;
 	Common::Event confirmSpeech; confirmSpeech.type = Common::EVENT_KEYDOWN; confirmSpeech.kbd.keycode = Common::KEYCODE_RETURN; backend->getEventManager()->pushEvent(confirmSpeech);
 	confirmSpeech.type = Common::EVENT_KEYUP; backend->getEventManager()->pushEvent(confirmSpeech);
-	if (choices.runtime.run(test, "speak").value.number() != 42 || !selectedPuppet->interrupted) return false;
+	if (choices.runtime.run(test, "speak").value.number() != 42 || selectedPuppet->interrupted) return false;
 	warning("DIALOGUE TOUCH PASS paired tap skips speech orphan release ignored controller confirm skips");
 	Common::Event navigation; navigation.type = Common::EVENT_KEYDOWN; navigation.kbd.keycode = Common::KEYCODE_UP;
 	backend->getEventManager()->pushEvent(navigation);
@@ -249,11 +266,23 @@ bool auditPuppetSession(const Common::FSNode &root, OSystem *backend) {
 	backend->getEventManager()->pushEvent(navigation); backend->getEventManager()->pushEvent(escape);
 	if (choices.runtime.run(test, "choices").value.number() != -1) return false;
     Common::Event pad; pad.type=Common::EVENT_CUSTOM_ENGINE_ACTION_START; pad.customType=kPadUp;
+    choices.pointer = Common::Point(20, 270);
     backend->getEventManager()->pushEvent(pad); pad.customType=kPadInteract; backend->getEventManager()->pushEvent(pad);
     if(choices.runtime.run(test,"choices").value.number()!=902 || choices.puppetChoices.active()) { warning("GAMEPAD DIALOGUE FAIL original keyboard mode"); return false; }
     selectedPuppet->interrupted=false; backend->getEventManager()->pushEvent(pad);
-    if(choices.runtime.run(test,"speak").value.number()!=42 || !selectedPuppet->interrupted) return false;
+    if(choices.runtime.run(test,"speak").value.number()!=42 || selectedPuppet->interrupted) return false;
     warning("GAMEPAD DIALOGUE PASS reply navigation confirm speech skip independent of enhanced keyboard option");
+	selectedPuppet->chosen = -1;
+	choices.pointer = Common::Point(20, 300);
+	backend->getEventManager()->pushEvent(pad);
+	if (choices.runtime.run(test, "choices").value.number() != 902 || choices.puppetChoices.active()) return false;
+	Common::Event skipLine; skipLine.type = Common::EVENT_KEYDOWN; skipLine.kbd.keycode = Common::KEYCODE_PERIOD;
+	backend->getEventManager()->pushEvent(skipLine);
+	if (choices.runtime.run(test, "speak").value.number() != 42 || selectedPuppet->interrupted) return false;
+	warning("GAMEPAD CURSOR REPLY PASS unfocused confirm selects cursor row standard skip-line supported");
+	pad.customType = kPadClick; backend->getEventManager()->pushEvent(pad);
+	if (choices.runtime.run(test, "skiprun").value.number() != 43 || selectedPuppet->interrupted) return false;
+	warning("GAMEPAD X LINE SKIP PASS next authored line plays");
 	if (hadControls) ConfMan.set("dreamfactory_dialogue_controls", oldControls, Common::ConfigManager::kTransientDomain);
 	else ConfMan.removeKey("dreamfactory_dialogue_controls", Common::ConfigManager::kTransientDomain);
 	warning("DIALOGUE CONTROLS HOST PASS enabled navigation confirm digits disabled original behavior");
@@ -2630,6 +2659,10 @@ bool auditStageSession(const Common::FSNode &root, OSystem *system) {
     pad.customType=kPadInteract; controls.postEvent(pad); if(!controls.pointerDown) return false;
     pad.type=Common::EVENT_CUSTOM_ENGINE_ACTION_END; controls.postEvent(pad);
     if(controls.pointerDown || !controls.step() || controls.runtime.globals["clickname"].text()!="upper") return false;
+	pad.type = Common::EVENT_CUSTOM_ENGINE_ACTION_START; pad.customType = kPadClick; controls.postEvent(pad);
+	if (!controls.pointerDown || controls.pendingEvents.empty() || controls.pendingEvents.back().type != Common::EVENT_LBUTTONDOWN) return false;
+	pad.type = Common::EVENT_CUSTOM_ENGINE_ACTION_END; controls.postEvent(pad);
+	if (controls.pointerDown || !controls.step() || controls.runtime.globals["clickname"].text() != "upper") return false;
     controls.pendingEvents.clear(); controls.roomSystem.current=room; controls.roomSystem.visible=true;
     controls.runtime.globals["seen"]=Value(0); pad.type=Common::EVENT_CUSTOM_ENGINE_ACTION_START; pad.customType=kPadDown; controls.postEvent(pad);
     if(!controls.step() || controls.runtime.globals["seen"].text()!="0downarrow") return false;

@@ -8,6 +8,7 @@ void PuppetChoices::start(const Common::SharedPtr<LoadedPuppet> &puppet) {
 	++_generation;
 	escape(); _answer = -1; _released = -1; _focus = -1;
 	if (!puppet) return;
+	puppet->subtitleBand = false;
 	puppet->interrupted = false; puppet->pressed = -1; puppet->pressInside = false;
 	if (!puppet->choices.empty()) _puppet = puppet;
 }
@@ -32,7 +33,7 @@ void PuppetChoices::focus(int32 direction) {
 }
 void PuppetChoices::confirm(uint64 tick, int32 row) {
 	if (!_puppet || _puppet->pressed >= 0) return;
-	if (row < 0) row = _focus < 0 ? 0 : _focus;
+	if (row < 0) row = hasFocus() ? _puppet->chosen : 0;
 	if (row < 0 || row >= 5 || uint32(row) >= _puppet->choices.size()) return;
 	down(row, tick); up(row);
 }
@@ -58,7 +59,7 @@ static bool subtitled(const PuppetLine &line) {
 	return false;
 }
 bool PuppetSpeech::start(const Common::SharedPtr<LoadedPuppet> &puppet, const Common::String &ident, uint64 now, bool queue) {
-	abandon(); error.clear(); if (!puppet) return true;
+	finish(); error.clear(); if (!puppet) return true;
 	const int32 index = puppet->data.line(ident, true); if (index < 0) return true;
 	if (queue && puppet->voiceQueue.size() < 3) puppet->voiceQueue.push_back(uint32(index));
 	if (queue && puppet->interrupted) return true;
@@ -72,6 +73,7 @@ bool PuppetSpeech::start(const Common::SharedPtr<LoadedPuppet> &puppet, const Co
 	} else _host.puppetSilence();
 	_puppet = puppet; _start = now; _deadline = now + duration + 150;
 	puppet->stance = line.stance; puppet->subtitle = subtitled(line) ? line.text : Common::String();
+	if (!puppet->subtitle.empty()) puppet->subtitleBand = true;
 	tick(now); return true;
 }
 void PuppetSpeech::tick(uint64 now) {
@@ -85,12 +87,17 @@ void PuppetSpeech::tick(uint64 now) {
 }
 void PuppetSpeech::finish() {
 	if (!_puppet) return;
+	// Keep the caption matte between lines, until the next choice prompt.
 	_host.puppetSilence(); _puppet->subtitle.clear();
 	if (!_poses.empty()) { _puppet->pose = _poses.back(); _puppet->hasPose = true; }
 	_poses.clear(); _puppet.reset();
 }
-void PuppetSpeech::skip() { if (_puppet) { _puppet->interrupted = true; finish(); } }
-void PuppetSpeech::abandon() { finish(); }
+void PuppetSpeech::skip(bool sequence) {
+	if (!_puppet) return;
+	if (sequence) _puppet->interrupted = true;
+	finish();
+}
+void PuppetSpeech::abandon() { if (_puppet) _puppet->subtitleBand = false; finish(); }
 bool PuppetSystem::open(Common::String file) {
 	file.toLowercase(); if (!file.hasSuffix(".pup")) file += ".pup";
 	Bytes bytes; if (!_resources.read(file, bytes)) return false;

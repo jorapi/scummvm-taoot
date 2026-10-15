@@ -1141,7 +1141,8 @@ void Session::speakPuppet(const Common::String &ident, ScriptFrame &frame, bool 
 			if (enhancedControls && event.type == Common::EVENT_LBUTTONDOWN) tapStarted = _time - started >= 200;
 			if (enhancedControls && event.type == Common::EVENT_LBUTTONUP && tapStarted) { puppetSpeech.skip(); tapStarted = false; }
 			if (event.type != Common::EVENT_KEYDOWN) continue;
-			if (event.kbd.keycode == Common::KEYCODE_ESCAPE) puppetSpeech.skip();
+			if (event.kbd.keycode == Common::KEYCODE_ESCAPE && !event.kbdRepeat) puppetSpeech.skip(true);
+			else if (event.kbd.keycode == Common::KEYCODE_PERIOD && !event.kbdRepeat) puppetSpeech.skip();
 			else if (enhancedControls && event.kbd.keycode == Common::KEYCODE_RETURN && !event.kbdRepeat && !(event.kbd.flags & (Common::KBD_CTRL | Common::KBD_ALT | Common::KBD_META))) puppetSpeech.skip();
 			else if ((event.kbd.flags & Common::KBD_CTRL) && event.kbd.keycode >= Common::KEYCODE_0 && event.kbd.keycode <= Common::KEYCODE_9)
 				sound.setWaveVolume(event.kbd.keycode - Common::KEYCODE_0);
@@ -1193,13 +1194,17 @@ int32 Session::waitPuppet(ScriptFrame &frame) {
 		for (uint32 i = 0; i < events.size() && puppetChoices.active() && runtime.current(frame); ++i) {
 			const Common::Event &event = events[i];
 			if (event.type == Common::EVENT_KEYDOWN) {
-				if (event.kbd.keycode == Common::KEYCODE_ESCAPE) puppetChoices.escape();
+				if (event.kbd.keycode == Common::KEYCODE_ESCAPE && !event.kbdRepeat) puppetChoices.escape();
 				else if ((event.kbd.flags & Common::KBD_CTRL) && event.kbd.keycode >= Common::KEYCODE_0 && event.kbd.keycode <= Common::KEYCODE_9) sound.setWaveVolume(event.kbd.keycode - Common::KEYCODE_0);
 				else if (((event.customType >= kPadUp && event.customType <= kPadRepeat) || (ConfMan.hasKey("dreamfactory_dialogue_controls") && ConfMan.getBool("dreamfactory_dialogue_controls"))) && !(event.kbd.flags & (Common::KBD_CTRL | Common::KBD_ALT | Common::KBD_META))) {
 					if (event.kbd.keycode == Common::KEYCODE_UP) puppetChoices.focus(-1);
 					else if (event.kbd.keycode == Common::KEYCODE_DOWN) puppetChoices.focus(1);
-					else if (event.kbd.keycode == Common::KEYCODE_RETURN && !event.kbdRepeat) puppetChoices.confirm(Scheduler::ticks(_time));
-					else if (event.kbd.keycode >= Common::KEYCODE_1 && event.kbd.keycode <= Common::KEYCODE_5 && !event.kbdRepeat) puppetChoices.confirm(Scheduler::ticks(_time), event.kbd.keycode - Common::KEYCODE_1);
+					else if (event.kbd.keycode == Common::KEYCODE_RETURN && !event.kbdRepeat) {
+						if (event.customType == kPadInteract && !puppetChoices.hasFocus()) {
+							const int32 row = PuppetView::choiceAt(pointer.x, pointer.y, puppet->choices.size());
+							if (row >= 0) puppetChoices.confirm(Scheduler::ticks(_time), row);
+						} else puppetChoices.confirm(Scheduler::ticks(_time));
+					} else if (event.kbd.keycode >= Common::KEYCODE_1 && event.kbd.keycode <= Common::KEYCODE_5 && !event.kbdRepeat) puppetChoices.confirm(Scheduler::ticks(_time), event.kbd.keycode - Common::KEYCODE_1);
 					else if (event.kbd.keycode == Common::KEYCODE_F7 && !event.kbdRepeat) repeatPuppet(frame);
 				}
 			} else {
@@ -1359,10 +1364,10 @@ bool Session::controlEvent(const Common::Event &event) {
 	if (event.type != Common::EVENT_CUSTOM_ENGINE_ACTION_START && event.type != Common::EVENT_CUSTOM_ENGINE_ACTION_END)
 		return false;
 	const uint32 action = event.customType;
-	if (action < kPadUp || action > kPadRepeat)
+	if (action < kPadUp || action > kPadClick)
 		return false;
 	const bool down = event.type == Common::EVENT_CUSTOM_ENGINE_ACTION_START;
-	if (action == kPadInteract && !down && _controlHeld) {
+	if ((action == kPadInteract || action == kPadClick) && !down && _controlHeld) {
 		_controlHeld = false;
 		Common::Event mouse;
 		mouse.type = Common::EVENT_LBUTTONUP;
@@ -1370,9 +1375,18 @@ bool Session::controlEvent(const Common::Event &event) {
 		postEvent(mouse);
 		return true;
 	}
+	if (action == kPadClick && puppetSpeech.active()) {
+		if (down) {
+			Common::Event key;
+			key.type = Common::EVENT_KEYDOWN;
+			key.kbd.keycode = Common::KEYCODE_PERIOD;
+			postEvent(key);
+		}
+		return true;
+	}
 	if (!down)
 		return true;
-	if (puppetChoices.active() || puppetSpeech.active() || action == kPadRepeat) {
+	if (action != kPadClick && (puppetChoices.active() || puppetSpeech.active() || action == kPadRepeat)) {
 		Common::Event key;
 		key.type = Common::EVENT_KEYDOWN;
 		key.customType = action;
@@ -1399,7 +1413,7 @@ bool Session::controlEvent(const Common::Event &event) {
 		postEvent(key);
 		return true;
 	}
-	if (_controlFocused) {
+	if (_controlFocused && action != kPadClick) {
 		const Hit hit = hitTest(_controlPoint.x, _controlPoint.y);
 		if (hit.type != _controlHit.type || hit.name != _controlHit.name) {
 			_controlFocused = false;

@@ -21,6 +21,7 @@ struct LoadedPuppet {
 	int32 stance = 0, defaultStance = 0;
 	bool visible = true, hasPose = false, hasDefaultPose = false;
 	bool interrupted = false;
+	bool subtitleBand = false;
 	Common::Array<uint32> voiceQueue;
 };
 // Original row tracker: release in the pressed row, with a ten-tick floor.
@@ -33,6 +34,7 @@ public:
 	void tick(uint64 tick);
 	void focus(int32 direction);
 	void confirm(uint64 tick, int32 row = -1);
+	bool hasFocus() const { return _puppet && _puppet->chosen >= 0; }
 	void escape() { finish(-1); }
 	bool active() const { return bool(_puppet); }
 	uint64 generation() const { return _generation; }
@@ -59,7 +61,7 @@ public:
 	explicit PuppetSpeech(PuppetSpeechHost &host) : _host(host) {}
 	bool start(const Common::SharedPtr<LoadedPuppet> &puppet, const Common::String &ident, uint64 now, bool queue = true);
 	void tick(uint64 now);
-	void skip();
+	void skip(bool sequence = false);
 	void abandon();
 	bool active() const { return bool(_puppet); }
 	Common::String error;
