@@ -353,9 +353,29 @@ journal; earlier dialogue cannot be reconstructed. Saves containing history use
 format v10 (v11 when a route position is recorded) and require a compatible build of this fork. The most recent
 16,384 entries are retained. Disabling recording keeps existing entries.
 
-The Decisions view is a record of choices, not a complete branching flowchart.
-Cross-route discovery tracking and checkpoint-based branch replay are follow-up
-work; this version does not jump into suspended conversation scripts.
+The Decisions view is a record of choices in the loaded save. **Routes** shows
+the connected discovery graph across playthroughs. Its navy, ivory and brass
+cards distinguish scenes, decisions, the current position and unexplored replies.
+Only encountered dialogue and offered choices are shown; undiscovered outcomes
+remain anonymous. A visited reply with no subsequent discovery is labelled
+"To be continued", rather than being presented as an ending.
+
+In Routes, D-pad/left stick or arrow keys follow the parent/child path with
+Up/Down and move between sibling branches with Left/Right. Drag the map to pan;
+the mouse wheel and Page Up/Down scroll vertically. Home returns to the current
+route position. A or Y opens details, X requests a scene revisit, B/Back closes,
+and LB/RB switches views. Keyboard Enter opens details, Space replays an available
+voice line and R requests a revisit. The footer buttons provide the same actions
+for mouse and touch. Handheld overlays give the map more room and open details
+on a separate page.
+
+**Revisit** restores the checkpoint before the selected conversation began,
+after a confirmation. Start that conversation again to choose a different reply.
+It replaces unsaved progress, while preserving manual saves and discoveries.
+Unknown nodes and scenes without a safe checkpoint cannot be revisited. Missing
+or damaged checkpoints leave the game intact and show a controller-dismissable
+notice. Restoration happens after the journal and its voice player have closed;
+it does not jump into a suspended conversation script.
 
 Journal presentation references: [Ace Attorney: Dual Destinies' conversation
 backlog](https://news.capcomusa.com/lets/browse/phoenix-wright-ace-attorney-dual-destinies-localization-the-trials-and-tribulations-of-the-gameplay-mechanics-team)
@@ -391,13 +411,11 @@ transactionally, then reuses the discovered scene when its conversation starts
 again. Tests cover input-triggered capture, authored state restoration, replay
 without duplicate scenes, cumulative discoveries, failed writes, recovery,
 storage limits, and missing/corrupt checkpoints for all three supported games.
-The route map and its player-facing revisit action are still under construction;
-the current Decisions list does not yet expose these checkpoints.
-
-The planned route map will expose
-connected scenes and encountered decisions, conceal undiscovered outcomes, and
-support controller traversal. Its scene-revisit action must restore a validated
-complete checkpoint, including story variables, inventory, RNG and game clock.
+The Routes view exposes these checkpoints with a confirmation before restoring
+the complete scene, including story variables, inventory, RNG and game clock.
+Native UI fixtures cover controller traversal, locked-node details, desktop and
+handheld layouts, drag panning, confirmation cancellation, successful restoration,
+and a damaged checkpoint dismissed with the controller.
 
 Current native saves intentionally exclude active conversations and running
 script frames. A journal entry is not a resumable script checkpoint. Scene
@@ -407,7 +425,8 @@ Keep route discovery separate from the loaded playthrough, preserve manual save
 slots, bound checkpoint storage, and validate a checkpoint before replacing the
 live session. Tests must cover alternate paths, corrupt/missing checkpoints,
 loading old saves, controller input, and all three supported games. The branch
-map, ending identification, and period styling remain work in progress.
+map still needs authored ending identification, real-play branch coverage and
+the final comparison against VLR's presentation.
 
 After route functionality is complete, compare the interface against actual
 Virtue's Last Reward screenshots and match its log/flowchart interaction as

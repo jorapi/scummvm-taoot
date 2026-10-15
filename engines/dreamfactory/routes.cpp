@@ -3,6 +3,7 @@
 #include "common/md5.h"
 #include "common/memstream.h"
 #include "common/serializer.h"
+#include "common/algorithm.h"
 namespace DreamFactory {
 uint32 RouteGraph::append(RouteNode node) {
 	if (_nodes.size() >= kMaxNodes) return 0;
@@ -164,6 +165,67 @@ bool RouteCodec::decode(const Bytes &bytes, const Common::String &signature, Rou
 	for (auto &node : prepared._nodes) { io.node(node); if (!io.good) break; }
 	if (!io.good || input.pos() != input.size() || !prepared.valid()) { error = "Invalid route profile data"; return false; }
 	graph = prepared; return true;
+}
+void RouteMap::build(const RouteGraph &graph) {
+	_items.clear();
+	if (!graph.valid()) return;
+	Common::Array<uint32> branches; branches.resize(graph.nodes().size());
+	for (uint32 i = 0; i < graph.nodes().size(); ++i) {
+		const RouteNode &node = graph.nodes()[i]; RouteMapItem item;
+		item.node = i + 1; item.parent = int32(node.parent) - 1; item.choice = node.parentChoice;
+		_items.push_back(item);
+		if (node.parent && node.parentChoice >= 0) branches[node.parent - 1] |= 1u << node.parentChoice;
+	}
+	for (uint32 i = 0; i < graph.nodes().size(); ++i) {
+		const RouteNode &node = graph.nodes()[i];
+		if (node.kind != RouteNode::kDecision) continue;
+		for (uint32 choice = 0; choice < node.entry.choices.size(); ++choice) if (!(branches[i] & (1u << choice))) {
+			RouteMapItem item; item.parent = i; item.choice = choice; item.locked = !(node.seenChoices & (1u << choice));
+			_items.push_back(item);
+		}
+	}
+	Common::Array<int32> spans, starts;
+	Common::Array<Common::Array<uint32>> children; children.resize(_items.size() + 1);
+	spans.resize(_items.size()); starts.resize(_items.size());
+	for (uint32 i = 0; i < _items.size(); ++i) children[_items[i].parent + 1].push_back(i);
+	for (auto &siblings : children) Common::sort(siblings.begin(), siblings.end(), [&](uint32 a, uint32 b) {
+		return _items[a].choice != _items[b].choice ? _items[a].choice < _items[b].choice : a < b;
+	});
+	for (int32 i = int32(_items.size()) - 1; i >= 0; --i) {
+		spans[i] = MAX(1, spans[i]);
+		if (_items[i].parent >= 0) spans[_items[i].parent] += spans[i];
+	}
+	int32 root = 0;
+	for (uint32 i : children[0]) { starts[i] = root; root += spans[i]; }
+	for (uint32 i = 0; i < _items.size(); ++i) {
+		RouteMapItem &item = _items[i];
+		if (item.parent >= 0) item.row = _items[item.parent].row + 1;
+		item.column = starts[i] * 2 + spans[i] - 1;
+		int32 next = starts[i];
+		for (uint32 child : children[i + 1]) { starts[child] = next; next += spans[child]; }
+	}
+}
+int32 RouteMap::itemFor(uint32 node) const {
+	if (!node) return -1;
+	for (uint32 i = 0; i < _items.size(); ++i) if (_items[i].node == node) return i;
+	return -1;
+}
+int32 RouteMap::navigate(int32 selected, int32 dx, int32 dy) const {
+	if (_items.empty()) return -1;
+	if (selected < 0 || uint32(selected) >= _items.size()) return 0;
+	if (dy < 0) return _items[selected].parent >= 0 ? _items[selected].parent : selected;
+	if (dy > 0) {
+		int32 child = selected, column = 0x7fffffff;
+		for (uint32 i = 0; i < _items.size(); ++i) if (_items[i].parent == selected && _items[i].column < column) { child = i; column = _items[i].column; }
+		return child;
+	}
+	int32 closest = selected, distance = 0x7fffffff;
+	for (uint32 i = 0; i < _items.size(); ++i) {
+		if (_items[i].parent != _items[selected].parent) continue;
+		const int32 delta = _items[i].column - _items[selected].column;
+		if (((dx < 0 && delta < 0) || (dx > 0 && delta > 0)) && ABS(delta) < distance) { closest = i; distance = ABS(delta); }
+	}
+	return closest;
 }
 bool RouteStore::read(const Common::String &name, uint32 limit, Bytes &bytes) const {
 	bytes.clear();

@@ -17,6 +17,7 @@
 #include "common/ustr.h"
 #include "common/translation.h"
 #include "gui/message.h"
+#include "engines/engine.h"
 #include "graphics/surface.h"
 #include "graphics/paletteman.h"
 #include <math.h>
@@ -115,6 +116,7 @@ void Session::recordRoute(const JournalEntry &entry, bool decision) {
 		const bool sameScene = resume && resume->kind == RouteNode::kScene && resume->entry.file.equalsIgnoreCase(entry.file) && resume->entry.room == entry.room && resume->entry.speaker == entry.speaker;
 		const uint32 id = sameScene ? _routeResumeScene : routes.graph.recordScene(scene);
 		_routeResumeScene = 0;
+		if (!id) { _routePending.clear(); _routeOwner.reset(); routes.graph.restoreCursor(0, -1); excludeWallTime(started); return; }
 		_routeOwner = puppetSystem.current;
 		if (id && !sameScene && !_routePending.empty() && !routes.writeCheckpoint(id, _routePending, error)) warning("Route checkpoint: %s", error.c_str());
 		_routePending.clear();
@@ -1549,10 +1551,20 @@ void Session::pollInput() {
 		_journalRequested = false;
 		pendingEvents.clear();
 		const uint32 started = _system->getMillis();
+		PauseToken journalPause = g_engine ? g_engine->pauseEngine() : PauseToken();
 		_dialogActive = true;
-		openJournal(*this);
+		const uint32 revisit = openJournal(*this);
 		_dialogActive = false;
 		pointerDown = false; _pointerButtons = 0; _controlHeld = _touchHeld = false;
+		if (revisit && !_system->getEventManager()->shouldQuit() && !_system->getEventManager()->shouldReturnToLauncher()) {
+			Common::String error;
+			if (!restoreRouteScene(revisit, error)) {
+				PauseToken pause = g_engine ? g_engine->pauseEngine() : PauseToken();
+				_dialogActive = true;
+				journalNotice(error);
+				_dialogActive = false;
+			}
+		}
 		excludeWallTime(started);
 		if (_system->getEventManager()->shouldQuit() || _system->getEventManager()->shouldReturnToLauncher()) {
 			_stopped = true; runtime.abandon();

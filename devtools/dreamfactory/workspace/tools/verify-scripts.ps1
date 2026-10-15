@@ -68,6 +68,8 @@ dreamfactory_stage_fixtures=$root/build/stage-session-$edition
         if ($Stars -and $text -notmatch 'STAR READER PASS') { throw "$edition star reader checks failed; inspect $log" }
         if ($Puppets -and $text -notmatch 'JOURNAL PASS') { throw "$edition journal capture/replay/modal UI checks failed; inspect $log" }
         if ($Stages -and $text -notmatch 'ROUTE GRAPH PASS') { throw "$edition route graph/codec checks failed; inspect $log" }
+        if ($Stages -and $text -notmatch 'ROUTE MAP PASS') { throw "$edition route map layout checks failed; inspect $log" }
+        if ($Puppets -and $text -notmatch 'ROUTE UI PASS') { throw "$edition route map/controller/restore UI checks failed; inspect $log" }
         if ($Stages -and $text -notmatch 'ROUTE STORE PASS') { throw "$edition route persistence checks failed; inspect $log" }
         if ($Stages -and $text -notmatch 'ROUTE SAVE PASS') { throw "$edition route save checks failed; inspect $log" }
         if ($Puppets -and ($text -notmatch 'ROUTE CAPTURE PASS' -or $text -notmatch 'ROUTE CHECKPOINT PASS')) { throw "$edition route capture checks failed; inspect $log" }

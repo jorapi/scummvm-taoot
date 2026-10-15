@@ -20,6 +20,7 @@ public:
 		entries.push_back(entry);
 	}
 };
-void openJournal(Session &session);
+uint32 openJournal(Session &session);
+void journalNotice(const Common::String &message);
 }
 #endif
