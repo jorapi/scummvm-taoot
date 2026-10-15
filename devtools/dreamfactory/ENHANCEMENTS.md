@@ -532,7 +532,7 @@ rules, and remain usable with a controller at 480x272.
 1. **Implemented:** checkpoint previews with saved thumbnail, location, clock and inventory before restoring.
 2. **Implemented:** optional controller inventory: larger original item previews, readable descriptions and authentic examine/use/give actions, including conversation inventory.
 3. **Implemented:** rotating recovery saves separate from route/manual saves and a Continue view.
-4. **In progress:** distinct line/full skips and fast-forward of previously heard dialogue only. Durable heard-line tracking is implemented; runtime fast-forward controls remain pending.
+4. **Implemented:** distinct line/full skips and optional fast-forward of previously heard dialogue, stopping at new lines and decisions.
 5. Accessibility: subtitle size, background opacity, speaker labels and shared audio controls.
 6. Journal: discovered clues, promises and unresolved leads with optional progressive hints.
 7. Map: visited rooms, current location, encountered characters and optional next-direction guidance.
@@ -615,7 +615,7 @@ Storage tests include torn writes, corruption, restart, stale selections and
 preservation of manual/route files. Native save formats remain unchanged.
 Physical Android/controller and PSP runtime testing remains outstanding.
 
-### Dialogue replay work in progress
+### Dialogue replay
 
 Line skip and full-sequence skip are already separate. A bounded heard-line
 profile now records fingerprints of completed or manually skipped displayed
@@ -632,8 +632,29 @@ unheard lines appear known. Storage is capped at 32,768 fingerprints per game-da
 profile. Writes are coalesced at decisions, safe world updates and session exit;
 their wall time is excluded from the authored game clock.
 
+Press F10 or click the controller's right stick during a previously heard line
+to toggle fast-forward. Known lines are paced at 150 ms without starting their
+audio; native scripts, voice queues and final animation poses remain intact.
+A new line immediately stops the mode and plays normally. Every choice prompt,
+repeat playback, movie, save restore or closed conversation also stops it. The
+mode cannot be armed on an unheard line or while choosing a reply.
+
+**Show dialogue replay button** in the shared engine settings adds a touch
+button above the caption band: **Skip heard**, **Stop**, or **New line**. It does
+not cover subtitles or choices. A controller's cursor and A can operate it too,
+including on single-stick devices without a right-stick button; the action can
+also be remapped through ScummVM. The button setting is off by default, and
+fast-forward itself always starts off. Ordinary line skip (period/controller X)
+and full skip (Escape/controller B) remain separate. Manually skipping one line
+also leaves fast-forward mode, so it does not skip subsequent lines automatically.
+
 Native storage/save/speech tests cover all three editions.
 `tools/verify-heard-history.ps1` additionally checks real Dust speech followed by
 a fresh process loading a pre-trade save: ownership rewinds while heard history
-persists. This validates the tracking foundation; fast-forward controls and
-their handheld interaction tests are still to be implemented.
+persists. `tools/verify-dialogue-replay.ps1` additionally verifies mapped F10 and
+right-stick activation, touch/cursor-A controls, mixed known/new sequences,
+refused unheard activation, choice stops, silent fast playback, original
+queue/pose state and separate skip actions. Original authored portrait/voice
+lines are tested and captured for all three editions. Windows and Android ARM64
+build checks are separate from physical Android/controller and PSP runtime
+testing, which remains outstanding.

@@ -58,7 +58,7 @@ static bool subtitled(const PuppetLine &line) {
 	for (uint32 i = 0; i < line.text.size(); ++i) if (line.text[i] != ' ') return true;
 	return false;
 }
-bool PuppetSpeech::start(const Common::SharedPtr<LoadedPuppet> &puppet, const Common::String &ident, uint64 now, bool queue) {
+bool PuppetSpeech::start(const Common::SharedPtr<LoadedPuppet> &puppet, const Common::String &ident, uint64 now, bool queue, bool fast) {
 	finish(); error.clear(); if (!puppet) return true;
 	const int32 index = puppet->data.line(ident, true); if (index < 0) return true;
 	if (queue && puppet->voiceQueue.size() < 3) puppet->voiceQueue.push_back(uint32(index));
@@ -67,11 +67,11 @@ bool PuppetSpeech::start(const Common::SharedPtr<LoadedPuppet> &puppet, const Co
 	if (!puppet->data.animation(line.animation, _poses)) { error = "Invalid puppet speech animation: " + ident; return false; }
 	Common::SharedPtr<AudioClip> clip(new AudioClip());
 	uint64 duration = MAX<uint64>(1000, (uint64(line.text.size()) * 1000 + 14) / 15);
-	if (decodeAudio(puppet->data.archive.get(line.audio), *clip) && clip->rate && !clip->samples.empty()) {
+	if (!fast && decodeAudio(puppet->data.archive.get(line.audio), *clip) && clip->rate && !clip->samples.empty()) {
 		duration = (uint64(clip->samples.size()) * 1000 + clip->rate - 1) / clip->rate;
 		_host.puppetVoice(line.ident, clip);
 	} else _host.puppetSilence();
-	_puppet = puppet; _start = now; _deadline = now + duration + 150;
+	_puppet = puppet; _start = now; _deadline = now + (fast ? 150 : duration + 150);
 	puppet->stance = line.stance; puppet->subtitle = subtitled(line) ? line.text : Common::String();
 	if (!puppet->subtitle.empty()) puppet->subtitleBand = true;
 	tick(now); return true;

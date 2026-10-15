@@ -59,7 +59,7 @@ public:
 class PuppetSpeech {
 public:
 	explicit PuppetSpeech(PuppetSpeechHost &host) : _host(host) {}
-	bool start(const Common::SharedPtr<LoadedPuppet> &puppet, const Common::String &ident, uint64 now, bool queue = true);
+	bool start(const Common::SharedPtr<LoadedPuppet> &puppet, const Common::String &ident, uint64 now, bool queue = true, bool fast = false);
 	void tick(uint64 now);
 	void skip(bool sequence = false);
 	void abandon();

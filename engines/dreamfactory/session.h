@@ -48,6 +48,7 @@ public:
 	RouteStore routes;
 	RecoveryStore recovery;
 	HeardStore heard;
+	bool fastForwarding() const { return _fastForward; }
 	bool recordRecovery(const Bytes &snapshot, Common::String &error);
 	bool continueRecovery();
 	bool recoveryPending() const { return _recoveryRequested; }
@@ -121,6 +122,8 @@ private:
 	bool _journalRequested = false;
 	bool _recoveryRequested = false;
 	uint32 _heardFlushAt = 0;
+	bool _fastForward = false, _speechKnown = false, _speechReplay = false;
+	void toggleHeardSkip();
 	void flushHeard();
 	bool _inventoryRequested = false, _inventoryShown = false;
 	Common::String _inventoryOfferItem, _inventoryOfferLabel;

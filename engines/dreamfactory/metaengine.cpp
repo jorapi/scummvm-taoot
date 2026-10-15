@@ -19,6 +19,7 @@ static const ADExtraGuiOptionsMap optionsList[] = {
 	{GUIO_GAMEOPTIONS8, {_s("Record branching routes"), _s("Keep discovered conversations across saves and record scene checkpoints for revisiting branches"), "dreamfactory_routes", true, 0, 0}},
 	{GUIO_GAMEOPTIONS9, {_s("Modern inventory"), _s("Show a controller-friendly inventory with larger item pictures when opening the original bag"), "dreamfactory_modern_inventory", false, 0, 0}},
 	{GUIO_GAMEOPTIONS10, {_s("Offer Continue when starting"), _s("Show saved recovery points before the original opening when available"), "dreamfactory_continue_on_start", false, 0, 0}},
+	{GUIO_GAMEOPTIONS11, {_s("Show dialogue replay button"), _s("Show a touch button during speech to fast-forward only previously heard lines"), "dreamfactory_replay_controls", false, 0, 0}},
 	AD_EXTRA_GUI_OPTIONS_TERMINATOR};
 class DreamFactoryMetaEngine : public AdvancedMetaEngine<ADGameDescription> {
 public:
@@ -81,6 +82,9 @@ public:
 		Common::Action *recovery = new Common::Action("DFRECOVERY", _("Continue / recovery saves"));
 		recovery->setCustomEngineActionEvent(DreamFactory::kOpenRecovery);
 		recovery->addDefaultInputMapping("F9"); recovery->addDefaultInputMapping("JOY_LEFT_TRIGGER"); extras->addAction(recovery);
+		Common::Action *heardSkip = new Common::Action("DFHEARDSKIP", _("Toggle fast-forward heard dialogue"));
+		heardSkip->setCustomEngineActionEvent(DreamFactory::kToggleHeardSkip);
+		heardSkip->addDefaultInputMapping("F10"); heardSkip->addDefaultInputMapping("JOY_RIGHT_STICK"); extras->addAction(heardSkip);
 		Common::Action *repeat = new Common::Action("DFREPEAT", _("Repeat last dialogue"));
 		repeat->setKeyEvent(Common::KEYCODE_F7);
 		repeat->addDefaultInputMapping("F7");

@@ -179,6 +179,10 @@ bool auditPuppetSession(const Common::FSNode &root, OSystem *backend) {
 	if (!speech.start(talker, "line.0", 0) || !session.puppetSystem.open("alternate")) return false;
 	speech.tick(350); if (speech.active() || session.puppetSystem.current->hasPose == false || !session.puppetSystem.current->subtitle.empty()) return false;
 	warning("PUPPET SPEECH STATE PASS PCM timing 30Hz poses stance tail Escape run queue cap missing audio text lookup captions owner lifetime");
+	talker->interrupted = false; const uint32 voicesBeforeFast = host.played;
+	if (!speech.start(talker, "line.0", 0, true, true) || host.played != voicesBeforeFast || !speech.active()) return false;
+	speech.tick(149); if (!speech.active()) return false;
+	speech.tick(150); if (speech.active() || talker->interrupted || talker->pose.layers[0].x != 30 || host.played != voicesBeforeFast) return false;
 
 	Session modal(backend);
 	if (!modal.init(root) || !modal.puppetSystem.open("speech")) return false;
@@ -208,6 +212,73 @@ bool auditPuppetSession(const Common::FSNode &root, OSystem *backend) {
 	const uint32 lineSkipStarted = backend->getMillis();
 	if (modal.runtime.run(test, "skiprun").value.number() != 43 || modal.puppetSystem.current->interrupted || backend->getMillis() - lineSkipStarted < 1150) return false;
 	warning("DIALOGUE LINE SKIP HOST PASS period skips first line next line plays full skip retained");
+	// Heard-only replay must never set the original sequence-interrupted flag.
+	class ControllerInputs {
+		OSystem *_backend;
+	public:
+		explicit ControllerInputs(OSystem *backend) : _backend(backend) {
+			auto *inputs = new Common::CompositeHardwareInputSet();
+			if (auto *native = backend->getHardwareInputSet()) inputs->addHardwareInputSet(native);
+			inputs->addHardwareInputSet(new Common::JoystickHardwareInputSet(Common::defaultJoystickButtons, Common::defaultJoystickAxes));
+			backend->getEventManager()->getKeymapper()->registerHardwareInputSet(inputs, backend->getKeymapperDefaultBindings());
+		}
+		~ControllerInputs() { _backend->getEventManager()->getKeymapper()->registerHardwareInputSet(_backend->getHardwareInputSet(), _backend->getKeymapperDefaultBindings()); }
+	};
+	class HeardReplaySource : public Common::EventSource {
+		OSystem *_backend; Session &_session; bool _touch, _pad, _cursor; uint32 _due;
+	public:
+		uint32 phase = 0; bool enabled = false, sawSecond = false, secondFast = false, mapped = false;
+		HeardReplaySource(OSystem *b, Session &s, bool touch, bool pad = false, bool cursor = false) : _backend(b), _session(s), _touch(touch), _pad(pad), _cursor(cursor), _due(b->getMillis() + 20) { b->getEventManager()->getEventDispatcher()->registerSource(this, false); }
+		~HeardReplaySource() { _backend->getEventManager()->getEventDispatcher()->unregisterSource(this); }
+		bool allowMapping() const override { return false; }
+		bool pollEvent(Common::Event &event) override {
+			if (!_session.puppetSpeech.active()) return false;
+			enabled = enabled || _session.fastForwarding();
+			if (_session.puppetSystem.current->subtitle == "Other words") { sawSecond = true; secondFast = _session.fastForwarding(); }
+			if (_backend->getMillis() < _due || phase >= (_touch || _cursor ? 2u : 1u)) return false;
+			if (_cursor) { event.type = phase ? Common::EVENT_CUSTOM_ENGINE_ACTION_START : Common::EVENT_MOUSEMOVE; event.customType = kPadInteract; event.mouse = Common::Point(575, 260); }
+			else if (_touch) { event.type = phase ? Common::EVENT_LBUTTONUP : Common::EVENT_LBUTTONDOWN; event.mouse = Common::Point(575, 260); }
+			else {
+				Common::Event physical; physical.type = Common::EVENT_KEYDOWN; physical.kbd.keycode = Common::KEYCODE_F10;
+				if (_pad) { physical.type = Common::EVENT_JOYBUTTON_DOWN; physical.joystick.button = Common::JOYSTICK_BUTTON_RIGHT_STICK; }
+				Common::List<Common::Event> actions; _backend->getEventManager()->getKeymapper()->mapEvent(physical, actions);
+				mapped = actions.size() == 1 && actions.front().customType == kToggleHeardSkip;
+				if (!mapped) { event.type = Common::EVENT_KEYDOWN; event.kbd.keycode = Common::KEYCODE_ESCAPE; ++phase; return true; }
+				event = actions.front();
+			}
+			++phase; _due = _backend->getMillis() + 20; return true;
+		}
+	};
+	Session heardReplay(backend);
+	if (!heardReplay.init(root) || !heardReplay.puppetSystem.open("speech") || heardReplay.runtime.run(test, "speak").value.number() != 42) return false;
+	Session unheardReplay(backend);
+	if (!unheardReplay.init(root) || !unheardReplay.puppetSystem.open("speech")) return false;
+	{
+		HeardReplaySource source(backend, unheardReplay, false); const uint32 replayStarted = backend->getMillis();
+		if (unheardReplay.runtime.run(test, "speak").value.number() != 42 || !source.mapped || source.enabled || unheardReplay.fastForwarding() || backend->getMillis() - replayStarted < 350) return false;
+	}
+	{
+		HeardReplaySource source(backend, heardReplay, false); const uint32 replayStarted = backend->getMillis();
+		if (heardReplay.runtime.run(test, "skiprun").value.number() != 43 || !source.mapped || !source.enabled || !source.sawSecond || source.secondFast || heardReplay.fastForwarding() || backend->getMillis() - replayStarted < 1150 || heardReplay.puppetSystem.current->interrupted) { warning("HEARD REPLAY FAIL new line mapped=%u enabled=%u second=%u fast=%u", source.mapped, source.enabled, source.sawSecond, source.secondFast); return false; }
+	}
+	ConfMan.setBool("dreamfactory_replay_controls", true, Common::ConfigManager::kTransientDomain);
+	{
+		heardReplay.puppetSystem.current->voiceQueue.clear(); HeardReplaySource source(backend, heardReplay, true); const uint32 replayStarted = backend->getMillis();
+		if (heardReplay.runtime.run(test, "skiprun").value.number() != 43 || source.phase != 2 || !source.enabled || !source.sawSecond || !source.secondFast || backend->getMillis() - replayStarted > 1100 || heardReplay.puppetSystem.current->interrupted || heardReplay.puppetSystem.current->voiceQueue.size() != 2) { warning("HEARD REPLAY FAIL known run phase=%u enabled=%u second=%u fast=%u", source.phase, source.enabled, source.sawSecond, source.secondFast); return false; }
+	}
+	Common::Event choose; choose.type = Common::EVENT_CUSTOM_ENGINE_ACTION_START; choose.customType = kPadUp; backend->getEventManager()->pushEvent(choose); choose.customType = kPadInteract; backend->getEventManager()->pushEvent(choose);
+	if (heardReplay.runtime.run(test, "choices").value.number() != 902 || heardReplay.fastForwarding()) return false;
+	{
+		ControllerInputs controller(backend); HeardReplaySource source(backend, heardReplay, false, true);
+		if (heardReplay.runtime.run(test, "skiprun").value.number() != 43 || !source.mapped || !source.enabled || !source.secondFast || heardReplay.puppetSystem.current->interrupted) return false;
+	}
+	Common::Event stopReplay; stopReplay.type = Common::EVENT_CUSTOM_ENGINE_ACTION_START; stopReplay.customType = kToggleHeardSkip; heardReplay.postEvent(stopReplay);
+	{
+		HeardReplaySource source(backend, heardReplay, false, false, true);
+		if (heardReplay.runtime.run(test, "skiprun").value.number() != 43 || source.phase != 2 || !source.enabled || !source.secondFast || heardReplay.puppetSystem.current->interrupted) return false;
+	}
+	ConfMan.setBool("dreamfactory_replay_controls", false, Common::ConfigManager::kTransientDomain);
+	warning("HEARD REPLAY PASS mapped F10 right-stick optional touch known lines paced silently without sequence interruption unheard activation refused new line stops choice boundary stops native queue preserved");
 	Common::Event quit; quit.type = Common::EVENT_QUIT; backend->getEventManager()->pushEvent(quit);
 	const ScriptResult abandoned = modal.runtime.run(test, "quitspeech");
 	if (abandoned.signal != ScriptResult::kAbandoned || modal.runtime.globals["afterspeech"].truth() || !modal.sound.done(true) || modal.puppetSpeech.active()) return false;
@@ -522,12 +593,12 @@ bool auditPuppetSession(const Common::FSNode &root, OSystem *backend) {
 	Bytes capture;
 	class Capture : public Common::EventSource {
 	public:
-		OSystem *backend; Session &session; Bytes &pixels; bool heard = false;
-		Capture(OSystem *b, Session &s, Bytes &p) : backend(b), session(s), pixels(p) { b->getEventManager()->getEventDispatcher()->registerSource(this, false); }
+		OSystem *backend; Session &session; Bytes &pixels; bool heard = false, requireFast;
+		Capture(OSystem *b, Session &s, Bytes &p, bool fast = false) : backend(b), session(s), pixels(p), requireFast(fast) { b->getEventManager()->getEventDispatcher()->registerSource(this, false); }
 		~Capture() { backend->getEventManager()->getEventDispatcher()->unregisterSource(this); }
 		bool allowMapping() const override { return false; }
 		bool pollEvent(Common::Event &) override {
-			if (!pixels.empty() || !session.puppetSpeech.active()) return false;
+			if (!pixels.empty() || !session.puppetSpeech.active() || (requireFast && !session.fastForwarding())) return false;
 			heard = !session.sound.done(true);
 			Graphics::Surface *surface = backend->lockScreen(); if (!surface) return false;
 			pixels.resize(640 * 480 * 4);
@@ -545,6 +616,16 @@ bool auditPuppetSession(const Common::FSNode &root, OSystem *backend) {
 	}
 	Common::DumpFile snapshot; if (!snapshot.open(root.getChild("display-preview.rgba")) || snapshot.write(capture.data(), capture.size()) != capture.size()) return false;
 	warning("PUPPET AUTHORED HOST PASS real portrait speech animation caption choices native RGB capture");
+	ConfMan.setBool("dreamfactory_replay_controls", true, Common::ConfigManager::kTransientDomain);
+	Bytes replayCapture;
+	{
+		HeardReplaySource source(backend, gfx, true); Capture observer(backend, gfx, replayCapture, true);
+		Values args; args.push_back(Value(actual->data.lines[spokenLine].ident)); const uint32 replayStarted = backend->getMillis();
+		if (gfx.runtime.run(test, "actualspeak", args).value.number() != 1 || !source.enabled || source.phase != 2 || replayCapture.empty() || backend->getMillis() - replayStarted > 1100 || actual->interrupted) { warning("HEARD AUTHORED FAIL touch replay"); return false; }
+	}
+	Common::DumpFile replaySnapshot; if (!replaySnapshot.open(root.getChild("replay-preview.rgba")) || replaySnapshot.write(replayCapture.data(), replayCapture.size()) != replayCapture.size()) return false;
+	ConfMan.setBool("dreamfactory_replay_controls", false, Common::ConfigManager::kTransientDomain);
+	warning("HEARD AUTHORED PASS original portrait voice line touch fast-forward exact learned line native RGB control capture");
 	const bool hadJournal = ConfMan.hasKey("dreamfactory_journal", Common::ConfigManager::kTransientDomain);
 	const Common::String oldJournal = hadJournal ? ConfMan.get("dreamfactory_journal", Common::ConfigManager::kTransientDomain) : Common::String();
 	ConfMan.setBool("dreamfactory_journal", true, Common::ConfigManager::kTransientDomain);
@@ -662,17 +743,6 @@ bool auditPuppetSession(const Common::FSNode &root, OSystem *backend) {
 			}
 			event.type = Common::EVENT_CUSTOM_ENGINE_ACTION_START; event.customType = commands[phase++]; return true;
 		}
-	};
-	class ControllerInputs {
-		OSystem *_backend;
-	public:
-		explicit ControllerInputs(OSystem *backend) : _backend(backend) {
-			auto *inputs = new Common::CompositeHardwareInputSet();
-			if (auto *native = backend->getHardwareInputSet()) inputs->addHardwareInputSet(native);
-			inputs->addHardwareInputSet(new Common::JoystickHardwareInputSet(Common::defaultJoystickButtons, Common::defaultJoystickAxes));
-			backend->getEventManager()->getKeymapper()->registerHardwareInputSet(inputs, backend->getKeymapperDefaultBindings());
-		}
-		~ControllerInputs() { _backend->getEventManager()->getKeymapper()->registerHardwareInputSet(_backend->getHardwareInputSet(), _backend->getKeymapperDefaultBindings()); }
 	};
 	{
 		ControllerInputs controller(backend);
