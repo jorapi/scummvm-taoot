@@ -36,7 +36,6 @@ jobs:
           $env:VCPKG_ROOT = $env:VCPKG_INSTALLATION_ROOT
           & "$env:VCPKG_ROOT/vcpkg.exe" install --triplet x64-windows --x-manifest-root=devtools/dreamfactory/windows-deps --x-install-root=build-dreamfactory/vcpkg_installed
           if ($LASTEXITCODE) { throw 'Dependency installation failed' }
-          & "$env:VCPKG_ROOT/vcpkg.exe" integrate install
           cmake -S devtools/create_project/cmake -B build-dreamfactory/generator
           cmake --build build-dreamfactory/generator --config Release
           if ($LASTEXITCODE) { throw 'Generator build failed' }
@@ -44,7 +43,7 @@ jobs:
           $disabled = & $generator 2>&1 | Select-String '^\s+enabled\s+\|\s+(\S+)' | ForEach-Object { '--disable-' + $_.Matches[0].Groups[1].Value }
           New-Item -ItemType Directory -Force build-dreamfactory/windows | Out-Null
           Push-Location build-dreamfactory/windows
-          & $generator ../.. --msvc --vcpkg --include-dir "$env:GITHUB_WORKSPACE/build-dreamfactory/vcpkg_installed/x64-windows/include/SDL2" --disable-all-engines --enable-engine=dreamfactory @disabled --enable-opengl --enable-builtin-resources --enable-freetype2 --enable-zlib --enable-highres --enable-16bit --enable-detection-static
+          & $generator ../.. --msvc --libs-path "$env:GITHUB_WORKSPACE/build-dreamfactory/vcpkg_installed/x64-windows" --include-dir "$env:GITHUB_WORKSPACE/build-dreamfactory/vcpkg_installed/x64-windows/include/freetype2" --disable-all-engines --enable-engine=dreamfactory @disabled --enable-opengl --enable-builtin-resources --enable-freetype2 --enable-zlib --enable-highres --enable-16bit --enable-detection-static
           if ($LASTEXITCODE) { throw 'Project generation failed' }
           # Embed only a PDB basename rather than the build-machine path.
           Get-ChildItem -Filter *.vcxproj | ForEach-Object {
@@ -58,8 +57,7 @@ jobs:
             }
             $project.Save($_.FullName)
           }
-          $installed = [IO.Path]::GetFullPath('../vcpkg_installed') + '/'
-          msbuild scummvm.sln /m /p:Configuration=Release /p:Platform=x64 /p:VcpkgEnableManifest=false "/p:VcpkgInstalledDir=$installed" /v:minimal
+          msbuild scummvm.sln /m /p:Configuration=Release /p:Platform=x64 /p:VcpkgEnabled=false /p:VcpkgEnableManifest=false /v:minimal
           if ($LASTEXITCODE) { throw 'Engine build failed' }
           Pop-Location
           New-Item -ItemType Directory -Force build-dreamfactory/artifacts/windows | Out-Null
