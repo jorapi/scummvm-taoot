@@ -1,4 +1,9 @@
-# DreamFactory platform builds and controls
+# DreamFactory fork: platform builds and controls
+
+This engine is maintained as part of the independent
+[jorapi/scummvm-taoot fork](https://github.com/jorapi/scummvm-taoot/tree/dreamfactory),
+with AI-assisted development. Upstream ScummVM updates are merged for maintenance;
+DreamFactory is not being prepared for an upstream pull request.
 
 See [UPSTREAM.md](UPSTREAM.md) for the current upstream base and integration checks.
 
@@ -36,10 +41,10 @@ The local build commands below run from that ScummVM source directory.
 | Android armeabi-v7a / x86_64 | Unsigned APKs | CI recipe prepared; these ABIs have not been built here |
 | PSP | Experimental homebrew ZIP / EBOOT.PBP | PSPDEV CI recipe prepared; not compiled or hardware-tested here |
 
-The workflow is `.github/workflows/dreamfactory-builds.yml`, relative to the
-**ScummVM repository**, not the surrounding game workspace. Commit the engine,
-`devtools/dreamfactory`, and workflow into a fork before running Actions. No
-workflow was published or run remotely by this task. Artifacts upload separately;
+The workflow is `.github/workflows/dreamfactory-builds.yml`, relative to this
+**ScummVM fork**, not the surrounding game workspace. The engine, platform tools
+and workflow are committed on the `dreamfactory` branch. Enable GitHub Actions
+in the fork to run the workflow. Artifacts upload separately;
 one failed platform does not cancel the others. They contain no game data.
 
 The Windows build enables ScummVM's standard **OpenGL** graphics backend and
@@ -208,9 +213,8 @@ read when conversations render, so it is not overwritten by a gameplay save.
 This change passed all nine edition/mode checks and the existing original-panel
 and persisted-settings regression on Windows.
 
-This is **not yet an upstream-quality approval**. Remaining work includes actual
-Apple/PSP and remaining Android ABI builds, device tests, PSP memory profiling, moving the large
-developer audit driver out of release engine code, and ScummVM maintainer review
-of coding conventions and architecture. Original game interfaces remain game
+This is an independently maintained fork. Remaining work includes actual
+Apple/PSP and remaining Android ABI builds, device tests, PSP memory profiling,
+and separating the large developer audit driver from release engine code. Original game interfaces remain game
 content; replacing every original panel with ScummVM widgets is not claimed.
 Saves are native DFSV saves, with modal movie/dialogue/camera saves disabled.

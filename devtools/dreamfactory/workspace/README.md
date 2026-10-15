@@ -1,10 +1,12 @@
-# DreamFactory for ScummVM
+# DreamFactory — independent ScummVM fork
 
-Optional enhancement work has begun: a disabled-by-default stereo soundtrack
-pack, a 520-frame Gigapixel production/comparison pilot, and a conservative
-content inventory. See [the enhancement guide](scummvm/devtools/dreamfactory/ENHANCEMENTS.md)
-for installation, musical-loop limitations, stereo-save compatibility and the
-remaining HD-renderer/content-restoration work.
+This project is maintained as its own ScummVM fork at
+[jorapi/scummvm-taoot](https://github.com/jorapi/scummvm-taoot/tree/dreamfactory),
+with AI-assisted development. DreamFactory work is not being prepared for an
+upstream pull request. Upstream updates are merged to maintain the shared core.
+Current enhancements focus on controller/couch play, readable text, shared
+ScummVM graphics settings and the optional remastered soundtrack. See
+[the enhancement guide](scummvm/devtools/dreamfactory/ENHANCEMENTS.md) for configuration.
 
 A native C++ ScummVM engine for **Titanic: Adventure Out of Time** (retail and the supplied September 1996 interactive demo) and **Dust: A Tale of the Wired West**. All three supplied English Windows editions pass native player-input runs from fresh startup through completion on the same archived build. Retail reaches the best ending with all four evidence items, credits and quit; the demo completes its developed-photo route; Dust completes all five days, both gunfights, the duel, four temples, Bloodstone's defeat, the Yunni ending and credits quit. Separate regressions cover alternate endings, native save/load, invalid saves, settings and death recovery. The engine remains experimental and is not included in stock ScummVM. Normal launch runs the game's scripts; use `-Viewer` for the developer room viewer.
 
@@ -291,7 +293,7 @@ Rooms without an interface stage now use the same world/screen sprite compositor
 2. Extend stage/room composition with projected SHP/PRP props and actors, hotspots, scripted scene/room changes, and the original controls. Validate boot idle/game-clock dispatch and native player-input routing in complete playthroughs. Actor, prop, scene and flat loop callbacks are implemented. Stage layouts, lifecycle events, addressed button dispatch, and timer callbacks are implemented and tested; flat/room composition is now connected; actor/prop composition is connected; bare-room composition now shares the stage sprite renderer; native player-input routing is connected in experimental session mode; complete interaction/playthrough validation remains pending. The per-format readers are implemented; remaining host commands are being identified through authored interaction traces.
 3. Connect the animated, projected actor/prop compositor and the implemented walking, PUP conversation, audio and movie services to playable scenes.
 4. Finish inventory/puzzle and timer validation, Titanic's endgame, save/load coverage, and complete playthrough tests for all three supplied editions.
-5. Expand detection tables and prepare an upstream ScummVM contribution.
+5. Expand detection tables and maintain DreamFactory in this independent ScummVM fork.
 
 ## References and provenance
 

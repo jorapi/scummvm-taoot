@@ -1,80 +1,99 @@
-# [ScummVM README](https://www.scummvm.org/) · [![Translation status](https://translations.scummvm.org/widgets/scummvm/-/scummvm/svg-badge.svg)](https://translations.scummvm.org/engage/scummvm/?utm_source=widget) [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md#pull-requests)
+# ScummVM DreamFactory
 
-## About ScummVM
+An independent fork of [ScummVM](https://www.scummvm.org/) with an experimental
+DreamFactory engine for **Titanic: Adventure Out of Time** and **Dust: A Tale of
+the Wired West**.
 
-ScummVM allows you to play classic graphic point-and-click adventure games, text adventure games, and RPGs, as long as you already have the game data files. ScummVM replaces the executable files shipped with the games, which means you can now play your favorite games on all your favorite devices.
+This is an AI-assisted project maintained in
+[jorapi/scummvm-taoot](https://github.com/jorapi/scummvm-taoot/tree/dreamfactory).
+Development, support and future releases belong to this fork. The DreamFactory
+engine is not being prepared for submission to upstream ScummVM. We continue to
+merge upstream improvements while maintaining our own engine and enhancements.
 
-So how did ScummVM get its name? Many of the famous LucasArts adventure games, such as Maniac Mansion and the Monkey Island series, were created using a utility called SCUMM (Script Creation Utility for Maniac Mansion). The ‘VM’ in ScummVM stands for Virtual Machine.
+## Games and status
 
-While ScummVM was originally designed to run LucasArts’ SCUMM games, over time support has been added for many other games: see the full list [on our wiki](https://wiki.scummvm.org/index.php?title=Category:Supported_Games). Noteworthy titles include Broken Sword, Myst and Blade Runner, although there are countless other hidden gems to explore.
+The engine targets these English Windows editions:
 
-For more information, compatibility lists, details on donating, the
-latest release, progress reports and more, please visit the ScummVM [home
-page](https://www.scummvm.org/).
+| Game | Edition |
+| --- | --- |
+| Titanic: Adventure Out of Time | Retail |
+| Titanic: Adventure Out of Time | Supplied September 1996 interactive demo |
+| Dust: A Tale of the Wired West | Retail |
 
-## Quickstart
+The engine implements original scripts, navigation, conversations, puzzles,
+movies, audio and native saves. Completion paths have been exercised for all
+three supplied editions; later integration checks cover input, dialogue and movie
+playback. This is still experimental, with broader edition and device testing
+remaining. Original Macintosh game data and importing original-game saves are
+outside the current supported scope.
 
-For the impatient among you, here is how to get ScummVM running in five simple steps.
+Windows x64 and Android ARM64 builds have been built and checked locally.
+macOS, unsigned iOS and PSP build configurations are also provided; their
+validation status is documented in the [platform guide](devtools/dreamfactory/README.md).
+The local packaging and CI recipes build DreamFactory-only applications. The
+repository retains ScummVM's other engines, which can be enabled separately.
 
-1. Download ScummVM from [our website](https://www.scummvm.org/downloads/) and install it.
+## Playing
 
-2. Create a directory on your hard drive and copy the game datafiles from the original media to this directory. Repeat this for every game you want to play.
+1. Use a DreamFactory-enabled build of this fork, or build it from source using
+   the [platform guide](devtools/dreamfactory/README.md) and
+   [build workflow](.github/workflows/dreamfactory-builds.yml).
+2. Prepare the game data from your copy of the supported Windows edition.
+3. Start ScummVM, choose **Add game**, and select its prepared data folder.
+4. Adjust the shared Graphics, Audio, Keymaps and Engine settings, then start.
 
-3. Start ScummVM, choose 'Add game', select the directory containing the game datafiles (do not try to select the datafiles themselves!) and press Choose.
+Game data and the optional replacement soundtrack are supplied separately from
+this source repository and application packages. Stock ScummVM downloads do not
+include this fork's DreamFactory engine.
 
-4. The Game Options dialog opens to allow configuration of various settings for the game. These can be reconfigured at any time, but for now everything should be OK at the default settings.
+## Controls and optional enhancements
 
-5. Select the game you want to play in the list, and press Start. To play a game next time, skip to step 5, unless you want to add more games.
+Mouse and keyboard retain their original bindings. Standard gamepad defaults:
 
->
-> Hint:
->
-> To add multiple games in one go, click the small arrow on the 'Add game' button and choose 'Mass Add'. You are again asked to select a directory, only this time ScummVM will search through all subdirectories for supported games.
+| Control | Action |
+| --- | --- |
+| D-pad | Walk/turn; navigate menus and dialogue replies |
+| Left/right shoulder | Previous/next hotspot |
+| A | Interact or confirm dialogue |
+| B | Back/skip |
+| Y | Repeat dialogue |
+| Left stick + X | Point, click and drag |
+| Start | ScummVM menu |
 
+Bindings are customizable in ScummVM's Keymaps settings. Touch devices retain
+backend gesture navigation; an optional direction pad is off by default.
+Physical controller and device playtesting remain ongoing.
 
+Optional enhancements include larger/high-contrast dialogue, hotspot hints,
+and replacement music with original-track fallback. Graphics scaling uses
+ScummVM's shared backend settings. See the
+[enhancement guide](devtools/dreamfactory/ENHANCEMENTS.md) for installation,
+configuration and current limitations.
 
-## Reporting a bug
+## Development and support
 
-To report a bug, go to the ScummVM [Issue Tracker](https://bugs.scummvm.org/) and log in with your GitHub account.
+```sh
+git clone --branch dreamfactory https://github.com/jorapi/scummvm-taoot.git
+cd scummvm-taoot
+```
 
-Please make sure the bug is reproducible, and still occurs in the latest git/[Daily build](https://buildbot.scummvm.org/#/dailybuilds) version. Also check the [compatibility list](https://www.scummvm.org/compatibility/) for that game, to ensure the issue is not already known. Please do not report bugs for games that are not listed as completable on the [Supported Games](https://wiki.scummvm.org/index.php?title=Category:Supported_Games) wiki page, or on the compatibility list. We already know those games have bugs!
+* [Platform builds and controls](devtools/dreamfactory/README.md)
+* [Upstream integration and validation](devtools/dreamfactory/UPSTREAM.md)
+* [Companion development workspace and regression tools](devtools/dreamfactory/WORKSPACE.md)
+* [Fork issue tracker](https://github.com/jorapi/scummvm-taoot/issues)
 
-Please include the following information in the bug report:
+Report DreamFactory issues in this repository, including the build/commit,
+platform, game edition, reproduction steps and relevant logs. Contributions to
+this engine should target this fork's `dreamfactory` branch.
 
-- ScummVM version (test the latest git/[Daily build](https://buildbot.scummvm.org/#/dailybuilds))
-- Bug details, including instructions for how to reproduce the bug. If possible, include log files, screenshots, and any other relevant information.
-- Game language
-- Game version (for example, talkie or floppy)
-- Platform and Compiler (for example, Win32, Linux or FreeBSD)
-- An attached saved game, if possible.
-- If this bug only occurred recently, include the last version without the bug, and the first version with the bug. That way we can fix it quicker by looking at the changes made.
+## Credits and license
 
-Finally, please report each issue separately; do not file multiple issues on the same ticket. It is difficult to track the status of each individual bug when they aren't on their own tickets.
+This fork builds on the work of the [ScummVM team](AUTHORS), and the DreamFactory
+reverse-engineering efforts in
+[JamesK89/DreamCatcher](https://github.com/JamesK89/DreamCatcher) and
+[dhobi/dreamrefactory](https://github.com/dhobi/dreamrefactory).
 
-## Documentation
-
-### User documentation
-
-For everything you need to know about how to use ScummVM, see our [user documentation](https://docs.scummvm.org/).
-
-### The ScummVM Wiki
-
-[The wiki](https://wiki.scummvm.org/) is the place to go for information about every game supported by ScummVM. If you're a developer, there's also some very handy information in the Developer section.
-
-### Changelog
-
-Our extensive change log is available [here](NEWS.md).
-
-## SAST Tools
-
-[PVS-Studio](https://pvs-studio.com/en/pvs-studio/?utm_source=github&utm_medium=organic&utm_campaign=open_source) - static analyzer for C, C++, C#, and Java code.
-
-## Credits
-
-A massive thank you to the entire team for making the ScummVM project possible. See the credits [here](AUTHORS)!
-
------
-
-> Good Luck and Happy Adventuring\!
-> The ScummVM team.
-> <https://www.scummvm.org/>
+ScummVM's copyright notices and licenses are preserved; see [COPYING](COPYING)
+and [COPYRIGHT](COPYRIGHT). DreamFactory engine sources are GPL-3.0-or-later.
+The [original upstream README](README.upstream.md) remains available for general
+ScummVM information.
