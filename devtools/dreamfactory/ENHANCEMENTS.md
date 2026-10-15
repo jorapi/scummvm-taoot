@@ -543,7 +543,7 @@ individual voice replay, rather than requiring a scene jump to hear a line.
 
 ### Modernization roadmap
 
-The active development goal follows this order, extending existing engine and
+The modernization milestones follow this order, extending existing engine and
 shared ScummVM facilities. Enhancements must remain optional where they alter
 presentation or assistance, preserve original mouse/keyboard actions and story
 rules, and remain usable with a controller at 480x272.
@@ -557,7 +557,7 @@ rules, and remain usable with a controller at 480x272.
    layout and all three editions pass; physical handheld testing is outstanding.
 6. **Implemented:** discovery-gated leads, tracked notes and optional progressive reminders; native desktop/480x272 checks, authored briefings and a real item-delivery rewind pass.
 7. **Implemented:** annotated retail/demo ship maps, current position, visited rooms, recorded conversation positions and optional next-turn directions.
-8. Ending hints: optional progressively more specific guidance based on discovered information.
+8. **Implemented:** optional ending reminders in Flow details, revealed one at a time from current-save dialogue and reached outcomes. Hidden outcome identities and unseen item owners are never used to supply a solution.
 
 Checkpoint preview companions use a bounded, checksummed format tied to the
 profile identity, checkpoint ID and native snapshot digest. A 128x96 RGB thumbnail
@@ -576,6 +576,49 @@ the saved view, clock, thumbnail and four ending-critical item owners agree befo
 and after a normal turn and route rewind. A real Dust alternate-ending rewind
 also passes. Windows compilation and Android ARM64 package checks are separate
 from physical handheld testing, which remains outstanding.
+
+New Titanic preview clocks follow the original `BOOTFILE` watch conversion: authored
+hours 13 and 14 display as 1 and 2. The original hours and sinking clock remain
+unchanged. Native tests compare the complete snapshot before and after preview
+capture and restore the earlier clock; the earned sinking-state verifier checks
+the exact saved watch time, rather than accepting any numeric string.
+
+### Optional ending hints
+
+Select a reached or unreached ending in Flow, choose Read (controller A/Y), then
+Hints (A). The reader starts without revealing a hint. X or the Hint button
+reveals exactly one reminder; Up/Down, the wheel and touch scrolling read longer
+entries. The newest requested reminder appears at the top for small screens.
+Back closes the reader, then the ending details, then the journal. Replay evidence
+appears only when a relevant recorded voice line exists.
+
+All unreached tiles offer the same discovery-gated reminders. Selecting a hidden
+tile cannot identify its outcome or reveal a different hidden solution. The
+reader counts unique reached outcomes from the existing Flow profile, while its
+story instructions come only from speech actually recorded in the loaded save.
+Offered replies, unrelated files, unseen dialogue, undisclosed item owners and
+hidden story flags do not unlock hints. Current carried-item status is used only
+for a disclosed objective. Later heard instructions supersede earlier item
+handoff advice; the original lines remain available as evidence.
+
+The curated reminders cover Titanic's learned evidence and evacuation requests,
+the demo's photograph assignment and Dust's heard Sonoma/Marie invitations.
+They are reminders, not an exhaustive walkthrough or a prediction of your future
+ending. Without recorded instructions, the reader supplies only checkpoint and
+discovery guidance. Restoring an earlier save restores earlier journal knowledge
+and inventory; profile-wide ending counts remain cumulative. No additional save
+format, quest flag or story rule is introduced. Tour mode has no ending hints.
+
+Native tests cover edition/source identity, unchosen-reply exclusion, absent
+evidence, carried-item changes, unique outcome counting, current-save rewind and
+reached/unreached readers at desktop and 480x272. Physical handheld/controller
+playtesting remains outstanding.
+
+Use `tools/verify-ending-hints.ps1` for the ending-reader and earned-knowledge
+checks. `tools/verify-modernizations.ps1` repeats the complete eight-milestone
+audit, including earned inventory, recovery and map rewinds. `-CollectOnly`
+requires current native script/stage/puppet logs and avoids rerunning those
+unchanged suites; it still exercises the earned-save checks.
 
 The inventory adapter follows Titanic retail's `countitems`/`indextoitem` order
 and original `getname` labels. The supplied demo uses its carried inventory props.

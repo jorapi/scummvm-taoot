@@ -67,6 +67,7 @@ dreamfactory_stage_fixtures=$root/build/stage-session-$edition
         if ($text -notmatch "$($auditKind.ToUpper()) PASS") { throw "$edition $auditKind audit failed; inspect $log" }
         if ($Stars -and $text -notmatch 'STAR READER PASS') { throw "$edition star reader checks failed; inspect $log" }
         if ($Puppets -and $text -notmatch 'JOURNAL POINTER PASS') { throw "$edition journal pointer selection/scroll/drag checks failed; inspect $log" }
+        if ($Puppets -and ($text -notmatch 'ENDING HINTS PASS' -or $text -notmatch 'ENDING HINT UI PASS' -or [regex]::Matches($text,'ENDING HINT REQUESTS shown=2 available=3').Count -ne 4)) {throw "$edition explicit ending hint progression or desktop/480x272 Flow input failed; inspect $log"}
         if ($Stages -and $text -notmatch 'HOVER CURSOR PASS') { throw "$edition hover cursor checks failed; inspect $log" }
         if ($Puppets -and $text -notmatch 'JOURNAL PASS') { throw "$edition journal capture/replay/modal UI checks failed; inspect $log" }
         if ($Stages -and $text -notmatch 'ROUTE GRAPH PASS') { throw "$edition route graph/codec checks failed; inspect $log" }

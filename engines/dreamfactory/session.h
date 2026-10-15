@@ -66,6 +66,7 @@ public:
 	Hit hitTest(int32 x, int32 y);
 	void updateHoverCursor();
 	uint32 routeChapter() const;
+	RoutePreview captureRoutePreview() const;
 	Common::Point pointer;
 	bool pointerDown = false;
 	bool invoke(Runtime &runtime, const Expression &call, ScriptFrame &frame, Value &result) override;
@@ -155,7 +156,6 @@ private:
 	uint32 _routeResumeScene = 0;
 	bool _routeRevisiting = false;
 	void prepareRouteCheckpoint();
-	RoutePreview captureRoutePreview() const;
 	void recordRoute(const JournalEntry &entry, bool decision);
 	uint64 _dialogGeneration = 0;
 	bool _pollingButton = false;

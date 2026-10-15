@@ -112,6 +112,8 @@ bool auditPuppetSession(const Common::FSNode &root, OSystem *backend) {
 	if (!auditTravelHistory()) { warning("NAVIGATION HISTORY FAIL bounded directed passage model"); return false; }
 	warning("NAVIGATION HISTORY PASS visited locations directed walks no invented reverse edge restored earlier knowledge corruption rejection");
 	if (!auditJournalLeads()) { warning("JOURNAL LEADS FAIL discovery gates, hints or restored state"); return false; }
+	if (!auditEndingHints()) { warning("ENDING HINTS FAIL discovery gates, edition isolation or inventory privacy"); return false; }
+	warning("ENDING HINTS PASS explicit progressive reminders current-save speech only no hidden owner or future outcome leak edition isolation unique discovered outcomes rewind tour exclusion");
 	warning("JOURNAL LEADS PASS heard-only topics incremental hints source identity item and promise state rewind manual tracking");
 	const char *bad[] = { "bad-head", "bad-version", "bad-lines", "bad-band", "bad-script", "bad-name", "bad-layer", "bad-frame", "bad-stance" };
 	Bytes bytes; for (uint32 i = 0; i < ARRAYSIZE(bad); ++i) { Puppet value; if (!read(root.getChild(Common::String(bad[i]) + ".pup"), bytes) || value.load(bytes)) { warning("PUPPET READER FAIL accepted %s", bad[i]); return false; } }
@@ -1071,6 +1073,44 @@ bool auditPuppetSession(const Common::FSNode &root, OSystem *backend) {
 		ChartSource source(backend, root, true);
 		if (openJournal(endingPreview) || source.phase != 11 || !source.currentPreserved || !source.zoomPreserved || endingPreview.routes.graph.nodes().size() != 2) return false;
 	}
+	class EndingHintSource : public Common::EventSource {
+		OSystem *_backend; const Common::FSNode &_root; uint32 _started; bool _locked, _timedOut = false;
+	public:
+		uint32 phase = 0; bool mapped = false;
+		EndingHintSource(OSystem *b, const Common::FSNode &r, bool locked) : _backend(b), _root(r), _started(b->getMillis()), _locked(locked) { b->getEventManager()->getEventDispatcher()->registerSource(this, false); }
+		~EndingHintSource() { _backend->getEventManager()->getEventDispatcher()->unregisterSource(this); }
+		bool allowMapping() const override { return false; }
+		bool pollEvent(Common::Event &event) override {
+			const uint32 elapsed = _backend->getMillis() - _started;
+			if (elapsed > 7000 && !_timedOut) { _timedOut = true; event.type = Common::EVENT_QUIT; return true; }
+			const uint32 commands[] = {kJournalViewPrevious, kJournalViewPrevious, kJournalCurrent, kJournalDown, kJournalReplay, kJournalReplay, kJournalStar, 0, 0, kJournalDown, kJournalClose, kJournalClose, kJournalClose};
+			if (phase >= ARRAYSIZE(commands) || elapsed < (phase + 1) * 160) return false;
+			if (phase == 6 || phase == 7 || phase == 9) {
+				Graphics::Surface overlay; overlay.create(_backend->getOverlayWidth(), _backend->getOverlayHeight(), _backend->getOverlayFormat()); _backend->grabOverlay(overlay); Common::DumpFile image;
+				const Common::String name = Common::String(_backend->getOverlayWidth() < 600 ? "compact-" : "") + (_locked ? "ending-hidden-" : "ending-reached-") + (phase == 6 ? "reader.bmp" : phase == 7 ? "hint1.bmp" : "hint2.bmp");
+				if (image.open(_root.getChild(name))) Image::writeBMP(image, overlay); overlay.free();
+			}
+			if (phase == 5) {
+				Common::Event physical; physical.type = Common::EVENT_JOYBUTTON_DOWN; physical.joystick.button = Common::JOYSTICK_BUTTON_A;
+				Common::List<Common::Event> actions; _backend->getEventManager()->getKeymapper()->mapEvent(physical, actions);
+				mapped = actions.size() == 1 && actions.front().customType == kJournalReplay;
+			}
+			if (phase == 7 || phase == 8) { event.type = phase == 7 ? Common::EVENT_LBUTTONDOWN : Common::EVENT_LBUTTONUP; event.mouse = Common::Point(30, _backend->getOverlayHeight() - 25); ++phase; return true; }
+			event.type = Common::EVENT_CUSTOM_ENGINE_ACTION_START;
+			event.customType = phase == 3 && !_locked ? kJournalCurrent : commands[phase]; ++phase; return true;
+		}
+	};
+	for (uint32 compactHint = 0; compactHint < 2; ++compactHint) {
+		backend->beginGFXTransaction(); backend->initSize(compactHint ? 480 : oldWidth, compactHint ? 272 : oldHeight, &oldFormat);
+		if (backend->endGFXTransaction() != OSystem::kTransactionSuccess) return false;
+		for (uint32 hiddenHint = 0; hiddenHint < 2; ++hiddenHint) {
+			ControllerInputs controller(backend); EndingHintSource source(backend, root, hiddenHint != 0);
+			if (openJournal(endingPreview) || source.phase != 13 || !source.mapped || endingPreview.routes.graph.nodes().size() != 2 || endingPreview.routes.graph.cursor() != 2) {
+				warning("ENDING HINT UI FAIL compact=%u hidden=%u phase=%u", compactHint, hiddenHint, source.phase); return false;
+			}
+		}
+	}
+	warning("ENDING HINT UI PASS reached and hidden Flow details desktop 480x272 mapped A opens hints X reveals one pointer reveals next independent scrolling three-level Back profile cursor unchanged");
 	backend->beginGFXTransaction(); backend->initSize(oldWidth, oldHeight, &oldFormat);
 	if (backend->endGFXTransaction() != OSystem::kTransactionSuccess) return false;
 	warning("VLR CHART PASS thirty dialogue records reduced to thirteen chapter return points and outcomes ordinary reply nodes omitted desktop handheld current focus zoom selection persistence details read-only discovery eight-slot ending catalog at 480x272");
@@ -3720,6 +3760,7 @@ static bool auditRetailClock(const Common::FSNode &root) {
 	for (uint32 i = 0; i < session.bootScripts.size(); ++i)
 		if (session.bootScripts[i]->script.handlers.contains("calctime") && session.bootScripts[i]->script.handlers.contains("canadvance")) clock = session.bootScripts[i];
 	if (!clock) return true; // This is the retail sinking clock, absent in Dust/demo.
+	if (!session.stageSystem.open("main.stg", nullptr, false, session.resources.canonical() ? "installed:local:main.stg" : "main.stg")) { warning("CHECKPOINT CLOCK FAIL original interface unavailable"); return false; }
 	for (uint32 sentinel = 0; sentinel < 2; ++sentinel) {
 		session.runtime.globals.clear();
 		auto &g = session.runtime.globals;
@@ -3732,6 +3773,12 @@ static bool auditRetailClock(const Common::FSNode &root) {
 			warning("RETAIL CLOCK FAIL sentinel=%u sec=%s min=%s clock=%s count=%s error=%s", sentinel, g["sec"].text().c_str(), g["min"].text().c_str(), g["clock"].text().c_str(), g["clockcount"].text().c_str(), session.runtime.error.c_str());
 			return false;
 		}
+		Bytes beforePreview, afterPreview; Common::String previewError;
+		if (!session.saveState(beforePreview, previewError)) { warning("CHECKPOINT CLOCK FAIL encode %s", previewError.c_str()); return false; }
+		const RoutePreview clockPreview = session.captureRoutePreview();
+		if (clockPreview.clock != "01:09" || !session.saveState(afterPreview, previewError) || beforePreview != afterPreview) { warning("CHECKPOINT CLOCK FAIL preview=%s isolation=%u error=%s", clockPreview.clock.c_str(), beforePreview == afterPreview, previewError.c_str()); return false; }
+		g["hrs"] = Value(14); g["min"] = Value(15);
+		if (session.captureRoutePreview().clock != "02:15" || !session.loadState(beforePreview, previewError) || session.captureRoutePreview().clock != "01:09" || g["hrs"].number() != 13) { warning("CHECKPOINT CLOCK FAIL restore preview=%s hours=%d error=%s", session.captureRoutePreview().clock.c_str(), g["hrs"].number(), previewError.c_str()); return false; }
 	}
 	const int32 limits[] = { 1315, 1330, 1345, 1355, 1400, 1405 };
 	for (uint32 phase = 0; phase < ARRAYSIZE(limits); ++phase) {
@@ -3745,6 +3792,7 @@ static bool auditRetailClock(const Common::FSNode &root) {
 		}
 	}
 	warning("RETAIL CLOCK PASS authored rollover, startdisk2 normalization and all six sinking phase boundaries");
+	warning("CHECKPOINT CLOCK PASS original calctime watch conversion 13:09 to 01:09 14:15 to 02:15 preview read-only native rewind restores authored hours");
 	return true;
 }
 

@@ -4,6 +4,7 @@
 #include "dreamfactory/journal.h"
 #include "common/hashmap.h"
 namespace DreamFactory {
+class RouteGraph;
 struct LeadState {
 	uint32 version = 0;
 	int32 day = 0;
@@ -18,6 +19,8 @@ struct JournalLead {
 };
 Common::Array<JournalLead> journalLeads(const Journal &journal, const LeadState &state);
 LeadState journalLeadState(const Session &session);
+JournalLead journalEndingHints(const Journal &journal, const LeadState &state, const RouteGraph &graph, bool retail, bool tour);
 bool auditJournalLeads();
+bool auditEndingHints();
 }
 #endif

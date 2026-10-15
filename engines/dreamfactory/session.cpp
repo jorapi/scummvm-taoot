@@ -125,7 +125,12 @@ RoutePreview Session::captureRoutePreview() const {
 	RoutePreview preview;
 	if (roomSystem.current) preview.location = roomSystem.current->data.name + " / " + roomSystem.sceneName() + " / " + roomSystem.viewName();
 	const auto global = [&](const char *name) { const auto found = runtime.globals.find(name); return found == runtime.globals.end() ? Value() : found->_value; };
-	if (runtime.globals.contains("hrs") && runtime.globals.contains("min")) preview.clock = Common::String::format("%02d:%02d", global("hrs").number(), global("min").number());
+	if (runtime.globals.contains("hrs") && runtime.globals.contains("min")) {
+		int32 hour = global("hrs").number();
+		// BOOTFILE's calctime uses this conversion for the watch face.
+		if (hour > 12) hour -= 12;
+		preview.clock = Common::String::format("%02d:%02d", hour, global("min").number());
+	}
 	if (version == 1 && runtime.globals.contains("day")) preview.clock = Common::String::format("Day %d / %s", global("day").number(), global("clock").text().c_str());
 	if (runtime.globals.contains("handitem") && global("handitem").isString) preview.heldItem = global("handitem").text();
 	for (const auto &prop : propSystem.props) {

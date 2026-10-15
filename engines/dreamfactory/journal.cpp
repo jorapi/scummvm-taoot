@@ -186,6 +186,7 @@ Common::U32String checkpointBody(const RoutePreview &preview) {
 	}
 	text += _("These are the saved checkpoint's items, not your current inventory.\n\n"); return text;
 }
+void showEndingHints(const JournalLead &lead, const Journal &journal, Replay &replay);
 class EntryDialog : public GUI::Dialog {
 	GUI::StaticTextWidget *_title;
 	GUI::RichTextWidget *_text;
@@ -193,6 +194,8 @@ class EntryDialog : public GUI::Dialog {
 	CheckpointPicture *_picture = nullptr;
 	bool _confirmRestore = false;
 	bool _information = false;
+	const JournalLead *_endingHints = nullptr;
+	const Journal *_hintJournal = nullptr;
 	const JournalEntry &_entry;
 	Replay &_replay;
 public:
@@ -220,6 +223,9 @@ public:
 		if (_confirmRestore) setResult(GUI::kMessageAlt);
 	}
 	void information(const Common::U32String &title) { _information = true; _title->setLabel(title); showPanel(_play, false); }
+	void endingHints(const JournalLead &lead, const Journal &journal, const Common::U32String &title) {
+		_endingHints = &lead; _hintJournal = &journal; _play->setLabel(_("Hints")); _play->setEnabled(true); _title->setLabel(title);
+	}
 	void reflowLayout() override {
 		fit(*this);
 		const int row = MAX(20, g_gui.getFont().getFontHeight() + 8);
@@ -241,10 +247,11 @@ public:
 	}
 	void handleTickle() override {
 		GUI::Dialog::handleTickle();
-		if (!_confirmRestore) _play->setLabel(_replay.playing(_entry) ? _("Stop") : _("Replay"));
+		if (!_confirmRestore && !_endingHints) _play->setLabel(_replay.playing(_entry) ? _("Stop") : _("Replay"));
 	}
 	void handleOtherEvent(const Common::Event &event) override {
 		if (event.type == Common::EVENT_CUSTOM_ENGINE_ACTION_START) {
+			if (_endingHints && event.customType == kJournalReplay) { showEndingHints(*_endingHints, *_hintJournal, _replay); return; }
 			if (_confirmRestore && event.customType == kJournalReplay) { setResult(GUI::kMessageOK); close(); return; }
 			if (event.customType == kJournalReplay && !_entry.ident.empty()) { _replay.play(_entry); return; }
 			if (event.customType == kJournalClose) { close(); return; }
@@ -254,7 +261,7 @@ public:
 		GUI::Dialog::handleOtherEvent(event);
 	}
 	void handleCommand(GUI::CommandSender *sender, uint32 cmd, uint32 data) override {
-		if (cmd == kReplay) { if (_confirmRestore) { setResult(GUI::kMessageOK); close(); } else _replay.play(_entry); }
+		if (cmd == kReplay) { if (_endingHints) showEndingHints(*_endingHints, *_hintJournal, _replay); else if (_confirmRestore) { setResult(GUI::kMessageOK); close(); } else _replay.play(_entry); }
 		else if (cmd == kRevisit && _revisit && _revisit->isEnabled()) { setResult(kRevisit); close(); }
 		else GUI::Dialog::handleCommand(sender, cmd, data);
 	}
@@ -593,12 +600,18 @@ class LeadReader : public GUI::Dialog {
 	GUI::ButtonWidget *_hint, *_play, *_back;
 	uint32 _revealed = 0;
 	void refresh() {
-		Common::U32String body = literal(_lead.status); body += U"\n\n"; body += literal(_lead.summary);
+		Common::U32String body = literal(_lead.status); body += U"\n\n";
 		if (_revealed) {
-			body += _("\n\n**Hints requested**\n\n");
-			for (uint32 i = 0; i < _revealed; ++i) { body += Common::U32String::format("%u. ", i + 1); body += literal(_lead.hints[i]); body += U"\n\n"; }
-		} else body += _("\n\nHints are optional. Each press reveals one reminder based on information you have already discovered.\n\n");
-		body += _("**Recorded evidence**\n\n");
+			body += Common::U32String::format(_("**Hint %u / %u**\n\n"), _revealed, uint32(_lead.hints.size()));
+			body += literal(_lead.hints[_revealed - 1]); body += U"\n\n";
+		}
+		body += literal(_lead.summary); body += U"\n\n";
+		if (!_revealed) body += _("Hints are optional. Each press reveals one reminder based on information you have already discovered.\n\n");
+		if (_revealed > 1) {
+			body += _("**Earlier reminders**\n\n");
+			for (uint32 i = 0; i + 1 < _revealed; ++i) { body += Common::U32String::format("%u. ", i + 1); body += literal(_lead.hints[i]); body += U"\n\n"; }
+		}
+		if (!_lead.evidence.empty()) body += _("**Recorded evidence**\n\n");
 		for (uint32 index : _lead.evidence) {
 			const auto &entry = _journal.entries[index];
 			body += literal(speakerText(entry)); body += U"\n\n"; body += entryBody(entry); body += U"\n\n";
@@ -610,11 +623,13 @@ class LeadReader : public GUI::Dialog {
 		if (isVisible()) { reflowLayout(); g_gui.scheduleTopDialogRedraw(); }
 	}
 public:
+	uint32 shownHints() const { return _revealed; }
 	LeadReader(const JournalLead &lead, const Journal &journal, Replay &replay, bool showHint) : GUI::Dialog(0, 0, 320, 240), _lead(lead), _journal(journal), _replay(replay) {
 		_backgroundType = GUI::ThemeEngine::kDialogBackgroundMain;
 		_title = new GUI::StaticTextWidget(this, 8, 8, 300, 24, lead.title, Graphics::kTextAlignLeft);
 		_hint = new GUI::ButtonWidget(this, 8, 208, 95, 24, _("Hint"), Common::U32String(), kHint);
 		_play = new GUI::ButtonWidget(this, 112, 208, 95, 24, _("Replay latest"), Common::U32String(), kReplay);
+		if (lead.id == "ending-hints") _play->setLabel(_("Replay evidence"));
 		_back = new GUI::ButtonWidget(this, 216, 208, 95, 24, _("Back"), Common::U32String(), GUI::kCloseCmd);
 		_play->setEnabled(!lead.evidence.empty() && !journal.entries[lead.evidence.back()].ident.empty());
 		if (showHint && !lead.hints.empty()) _revealed = 1;
@@ -624,6 +639,7 @@ public:
 		fit(*this); const int row = MAX(24, g_gui.getFont().getFontHeight() + 12), width = (_w - 32) / 3;
 		place(_title, 8, 8, _w - 16, row); place(_text, 8, row + 12, _w - 16, MAX(20, _h - row * 2 - 28));
 		place(_hint, 8, _h - row - 8, width, row); place(_play, 16 + width, _h - row - 8, width, row); place(_back, 24 + width * 2, _h - row - 8, width, row);
+		if (_lead.evidence.empty()) { showPanel(_play, false); place(_hint, 8, _h - row - 8, (_w - 24) / 2, row); place(_back, _w / 2 + 4, _h - row - 8, (_w - 24) / 2, row); }
 		GUI::Dialog::reflowLayout();
 	}
 	void handleOtherEvent(const Common::Event &event) override {
@@ -641,6 +657,10 @@ public:
 		else GUI::Dialog::handleCommand(sender, cmd, data);
 	}
 };
+void showEndingHints(const JournalLead &lead, const Journal &journal, Replay &replay) {
+	LeadReader reader(lead, journal, replay, false); reader.runModal();
+	if (ConfMan.hasKey("dreamfactory_puppet_audit") && ConfMan.getBool("dreamfactory_puppet_audit")) warning("ENDING HINT REQUESTS shown=%u available=%u", reader.shownHints(), uint32(lead.hints.size()));
+}
 class JournalDialog : public GUI::Dialog {
 	Session &_session;
 	Replay _replay;
@@ -933,6 +953,8 @@ public:
 			JournalEntry empty; empty.speaker = item->locked ? "Undiscovered" : "Continuation";
 			RoutePreview preview; const bool hasPreview = item->node && _session.routes.readPreview(item->node, preview);
 			EntryDialog detail(entry ? *entry : empty, _replay, routeBody(_session.routes.graph, *item), true, canRevisit(), hasPreview ? &preview : nullptr);
+			const JournalLead hints = journalEndingHints(_session.journal, journalLeadState(_session), _session.routes.graph, _session.sound.isTitanicRetail(), _session.runtime.globals.contains("tour") && _session.runtime.globals["tour"].truth());
+			if (item->ending && !hints.hints.empty()) detail.endingHints(hints, _session.journal, routeTitle(_session.routes.graph, *item));
 			if (detail.runModal() == kRevisit) requestRevisit();
 			return;
 		}

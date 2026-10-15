@@ -638,6 +638,11 @@ Common::Error DreamFactoryEngine::run() {
 						if (lead.id == leadID) foundLead = true;
 					}
 					if (command != "dumpleads") ok = command == "expectlead" ? foundLead : !foundLead;
+				} else if (command == "dumpendinghints") {
+					const auto hints = journalEndingHints(session.journal, journalLeadState(session), session.routes.graph, session.sound.isTitanicRetail(), session.runtime.globals.contains("tour") && session.runtime.globals["tour"].truth());
+					warning("BOOT ENDING HINTS evidence=%u hints=%u status=%s", uint32(hints.evidence.size()), uint32(hints.hints.size()), hints.status.encode(Common::kUtf8).c_str());
+					for (uint32 i = 0; i < hints.hints.size(); ++i) warning("BOOT ENDING HINT %u %s", i + 1, hints.hints[i].encode(Common::kUtf8).c_str());
+					for (uint32 evidenceIndex : hints.evidence) warning("BOOT ENDING EVIDENCE file=%s ident=%s", session.journal.entries[evidenceIndex].file.c_str(), session.journal.entries[evidenceIndex].ident.c_str());
 				} else if (command == "dumpnavigation" || command == "expectnavigation") {
 					MapPosition point; ok = session.atlas.load(session) && session.atlas.project(session, point);
 					warning("BOOT NAVIGATION room=%s scene=%s view=%s page=%d x=%d y=%d visits=%u passages=%u valid=%u", point.room.c_str(), point.scene.c_str(), point.view.c_str(), point.page, point.x, point.y, uint32(session.travel.visits.size()), uint32(session.travel.passages.size()), ok);

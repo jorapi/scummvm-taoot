@@ -10,7 +10,7 @@ try {
     & tools/trace-boot.ps1 -Editions full -RestoreCheckpoint $RestoreCheckpoint -SavePath "$run/saves" -Steps 1 -Actions (@('expectview View250', 'expectglobal mission 4', 'expectglobal phase 1') + $inventory + @('key rightarrow', 'expectview View256', 'dumppreview', 'revisitscene latest', 'expectview View250', 'expectglobal mission 4', 'expectglobal phase 1') + $inventory + @('dumppreview')) *> "$run/suite.log"
     Copy-Item -LiteralPath build/boot-full.log -Destination "$run/native.log"
     $log = Get-Content "$run/native.log" -Raw
-    if ([regex]::Matches($log, 'BOOT PREVIEW location=.* / View250 clock=\d+:\d+ picture=36864 items=\d+').Count -ne 2) { throw 'Saved checkpoint picture, location and clock evidence missing' }
+    if ([regex]::Matches($log, 'BOOT PREVIEW location=.* / View250 clock=01:15 picture=36864 items=\d+').Count -ne 2) { throw 'Saved checkpoint picture, location or original 12-hour watch time missing' }
     foreach ($item in @('realneck', 'notebook', 'painting', 'rubaiyat')) {
         if ([regex]::Matches($log, ('BOOT PREVIEW ITEM name=' + $item + ' owner=frank')).Count -ne 2) { throw "Saved item evidence missing: $item" }
     }
