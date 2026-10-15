@@ -7,6 +7,8 @@
 #include "common/translation.h"
 #include "dreamfactory/controls.h"
 #include "dreamfactory/dreamfactory.h"
+#include "dreamfactory/dialogue.h"
+#include "common/config-manager.h"
 #include "engines/advancedDetector.h"
 static const ADExtraGuiOptionsMap optionsList[] = {
 	{GUIO_GAMEOPTIONS1, {_s("Use enhancement soundtrack"), _s("Play music from the optional enhancement pack, falling back to original music for missing tracks (restart required)"), "dreamfactory_enhanced_music", false, 0, 0}},
@@ -24,6 +26,11 @@ static const ADExtraGuiOptionsMap optionsList[] = {
 class DreamFactoryMetaEngine : public AdvancedMetaEngine<ADGameDescription> {
 public:
 	const char *getName() const override { return "dreamfactory"; }
+	void registerDefaultSettings(const Common::String &target) const override {
+		MetaEngine::registerDefaultSettings(target);
+		ConfMan.registerDefault("dreamfactory_text_size", 0); ConfMan.registerDefault("dreamfactory_caption_opacity", 100); ConfMan.registerDefault("dreamfactory_speaker_labels", false);
+	}
+	GUI::OptionsContainerWidget *buildEngineOptionsWidget(GUI::GuiObject *boss, const Common::String &name, const Common::String &target) const override { return DreamFactory::dialogueOptions(boss, name, target, getExtraGuiOptions(target)); }
 	const ADExtraGuiOptionsMap *getAdvancedExtraGuiOptions() const override { return optionsList; }
 	Common::KeymapArray initKeymaps(const char *target) const override {
 		Common::KeymapArray defaults = MetaEngine::initKeymaps(target);

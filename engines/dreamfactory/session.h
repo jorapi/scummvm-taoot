@@ -123,6 +123,8 @@ private:
 	bool _recoveryRequested = false;
 	uint32 _heardFlushAt = 0;
 	bool _fastForward = false, _speechKnown = false, _speechReplay = false;
+	int32 _captionTop = 224, _replayButtonTop = 245;
+	bool replayControlAt(int32 x, int32 y) const { return x >= 510 && x < 640 && y >= _replayButtonTop && y < _replayButtonTop + 30; }
 	void toggleHeardSkip();
 	void flushHeard();
 	bool _inventoryRequested = false, _inventoryShown = false;

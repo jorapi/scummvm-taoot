@@ -53,6 +53,7 @@ void Session::flushHeard() {
 bool Session::init(const Common::FSNode &root) {
 	flushHeard(); heard = HeardStore(); _heardFlushAt = 0;
 	_fastForward = _speechKnown = _speechReplay = false;
+	_captionTop = 224; _replayButtonTop = 245;
 	_root = root;
 	movies.setCursors(&cursors);
     _controlFocused = _controlHeld = _touchHeld = false;
@@ -1272,10 +1273,11 @@ void Session::presentPuppet() {
 	if (!puppet || !puppet->visible) { presentWorld(); return; }
 	if (!loadFonts()) return;
 	const int32 originalSize = puppetParams.contains(6) ? puppetParams[6] : 12;
-	const bool larger = ConfMan.hasKey("dreamfactory_large_text") && ConfMan.getBool("dreamfactory_large_text");
+	DialogueStyle style = dialogueStyle();
+	const bool larger = !ConfMan.hasKey("dreamfactory_text_size") && ConfMan.hasKey("dreamfactory_large_text") && ConfMan.getBool("dreamfactory_large_text");
 	// Keep exceptional script font sizes intact. Enlarge the normal dialogue
 	// face within the fixed subtitle/choice bands, without changing hit targets.
-	const int32 fontSize = larger && originalSize > 0 && originalSize <= 14 ? 14 : originalSize;
+	const int32 fontSize = style.size ? style.size : larger && originalSize > 0 && originalSize <= 14 ? 14 : originalSize;
 	const Graphics::Font *font = _puppetFonts.font(fontSize);
 	const Graphics::Font *screenFont = _puppetFonts.font(fontSize, true);
 	if (!font || !screenFont) { runtime.fail("Invalid conversation font size"); return; }
@@ -1291,18 +1293,25 @@ void Session::presentPuppet() {
 		compositeText(rgba, palette);
 	}
 	const bool subtitles = subtitlesEnabled();
+	if (style.modern) {
+		if ((!puppetChoices.active() || puppetSpeech.active()) && ConfMan.hasKey("dreamfactory_speaker_labels") && ConfMan.getBool("dreamfactory_speaker_labels")) style.speaker = dialogueSpeaker(puppet->file, puppet->data.name);
+		if (subtitles && !puppet->subtitle.empty()) _captionTop = MIN(_captionTop, PuppetView::captionTop(puppet->subtitle, *screenFont, !style.speaker.empty()));
+		style.captionTop = _captionTop;
+		if (puppetChoices.active() && !puppetSpeech.active()) style.previewChoice = puppet->pressed >= 0 && puppet->pressInside ? puppet->pressed : puppetChoices.hasFocus() ? puppet->chosen : PuppetView::choiceAt(pointer.x, pointer.y, puppet->choices.size());
+	}
+	_replayButtonTop = style.modern && subtitles ? MAX<int32>(4, _captionTop * 5 / 4 - 35) : 245;
 	const Frame *backdrop = roomSystem.current ? &roomSystem.frame : nullptr;
 	const byte *roomPalette = roomSystem.current ? (_roomPalette.empty() ? roomSystem.current->data.palette : _roomPalette.data()) : nullptr;
 	Bytes screen;
-	if (!_puppetView.composite(puppet, rgba, backdrop, roomPalette, subtitles, _puppetArtPalette.empty() ? nullptr : _puppetArtPalette.data()) ||
+	if (!_puppetView.composite(puppet, rgba, backdrop, roomPalette, subtitles, _puppetArtPalette.empty() ? nullptr : _puppetArtPalette.data(), style.modern) ||
 		!Display::scaleRGBA(rgba, 512, 384, screen) ||
-		!PuppetView::overlay(*puppet, screen, *font, puppetParams, subtitles, puppetChoices.pressVisible(Scheduler::ticks(_time)), _puppetPalette.empty() ? nullptr : _puppetPalette.data(), screenFont, ConfMan.hasKey("dreamfactory_contrast") && ConfMan.getBool("dreamfactory_contrast"), larger ? _puppetFonts.font(originalSize, true) : nullptr)) { runtime.fail("Conversation rendering failed or RGB display unavailable"); return; }
-	if (puppetSpeech.active() && (_fastForward || (ConfMan.hasKey("dreamfactory_replay_controls") && ConfMan.getBool("dreamfactory_replay_controls")))) {
+		!PuppetView::overlay(*puppet, screen, *font, puppetParams, subtitles, puppetChoices.pressVisible(Scheduler::ticks(_time)), _puppetPalette.empty() ? nullptr : _puppetPalette.data(), screenFont, ConfMan.hasKey("dreamfactory_contrast") && ConfMan.getBool("dreamfactory_contrast"), larger ? _puppetFonts.font(originalSize, true) : nullptr, &style)) { runtime.fail("Conversation rendering failed or RGB display unavailable"); return; }
+	if (puppetSpeech.active() && !_speechReplay && (_fastForward || (ConfMan.hasKey("dreamfactory_replay_controls") && ConfMan.getBool("dreamfactory_replay_controls")))) {
 		Graphics::Surface surface; surface.init(640, 480, 640 * 4, screen.data(), Graphics::PixelFormat::createFormatRGBA32());
-		surface.fillRect(Common::Rect(510, 245, 640, 275), surface.format.RGBToColor(17, 26, 34));
+		surface.fillRect(Common::Rect(510, _replayButtonTop, 640, _replayButtonTop + 30), surface.format.RGBToColor(17, 26, 34));
 		const Common::U32String label = _fastForward ? _("Stop") : _speechKnown ? _("Skip heard") : _("New line");
 		const Graphics::Font *buttonFont = _puppetFonts.font(18, true);
-		(buttonFont ? buttonFont : screenFont)->drawString(&surface, label, 514, 247, 122, surface.format.RGBToColor(240, 232, 211), Graphics::kTextAlignCenter);
+		(buttonFont ? buttonFont : screenFont)->drawString(&surface, label, 514, _replayButtonTop + 2, 122, surface.format.RGBToColor(240, 232, 211), Graphics::kTextAlignCenter);
 	}
 	if (!display.rgba(screen, 640, 480, _paletteBlack)) { runtime.fail("Conversation RGB display unavailable"); return; }
 	display.palette(puppet->data.palette); memcpy(displayPalette, puppet->data.palette, 768); _paletteKind = "puppet";
@@ -1336,7 +1345,7 @@ void Session::speakPuppet(const Common::String &ident, ScriptFrame &frame, bool 
 		yieldFrame(false);
 		for (uint32 i = 0; i < pendingEvents.size(); ++i) {
 			const Common::Event &event = pendingEvents[i];
-			const bool replayButton = (event.type == Common::EVENT_LBUTTONDOWN || event.type == Common::EVENT_LBUTTONUP) && (_fastForward || (ConfMan.hasKey("dreamfactory_replay_controls") && ConfMan.getBool("dreamfactory_replay_controls"))) && event.mouse.x >= 510 && event.mouse.x < 640 && event.mouse.y >= 245 && event.mouse.y < 275;
+			const bool replayButton = !_speechReplay && (event.type == Common::EVENT_LBUTTONDOWN || event.type == Common::EVENT_LBUTTONUP) && (_fastForward || (ConfMan.hasKey("dreamfactory_replay_controls") && ConfMan.getBool("dreamfactory_replay_controls"))) && replayControlAt(event.mouse.x, event.mouse.y);
 			if (event.type == Common::EVENT_LBUTTONDOWN && replayButton) { replayTap = true; tapStarted = false; continue; }
 			if (event.type == Common::EVENT_LBUTTONUP && replayTap) { if (replayButton) toggleHeardSkip(); replayTap = false; continue; }
 			const bool enhancedControls = event.customType == kPadInteract || (ConfMan.hasKey("dreamfactory_dialogue_controls") && ConfMan.getBool("dreamfactory_dialogue_controls"));
@@ -1376,6 +1385,7 @@ void Session::repeatPuppet(ScriptFrame &frame) {
 }
 int32 Session::waitPuppet(ScriptFrame &frame) {
 	_fastForward = false;
+	_captionTop = 224;
 	flushHeard();
 	const auto puppet = puppetSystem.current; puppetChoices.start(puppet);
 	if (!puppetChoices.active()) return -1;
@@ -1477,8 +1487,8 @@ bool Session::puppetCall(const Expression &call, ScriptFrame &frame, Value &resu
 	const Value a = args.size() ? args[0] : Value(), b = args.size() > 1 ? args[1] : Value();
 	const auto puppet = puppetSystem.current;
 	switch (call.opcode) {
-	case 12018: { const bool opened = puppetSystem.open(a.text()); if (opened) { puppetChoices.escape(); puppetSpeech.abandon(); sound.haltVoice(); _puppetPalette.clear(); _puppetArtPalette.clear(); presentPuppet(); } result = Value(opened ? 1 : 0); break; }
-	case 12042: puppetChoices.escape(); puppetSpeech.abandon(); sound.haltVoice(); puppetSystem.reset(); _puppetView.reset(); presentWorld(); break;
+	case 12018: { const bool opened = puppetSystem.open(a.text()); if (opened) { _captionTop = 224; puppetChoices.escape(); puppetSpeech.abandon(); sound.haltVoice(); _puppetPalette.clear(); _puppetArtPalette.clear(); presentPuppet(); } result = Value(opened ? 1 : 0); break; }
+	case 12042: _captionTop = 224; puppetChoices.escape(); puppetSpeech.abandon(); sound.haltVoice(); puppetSystem.reset(); _puppetView.reset(); presentWorld(); break;
 	case 12043: speakPuppet(a.text(), frame); break;
 	case 20028: result = Value(waitPuppet(frame)); break;
 	case 12041: puppetSystem.clear(); presentPuppet(); break;
@@ -1634,7 +1644,7 @@ bool Session::controlEvent(const Common::Event &event) {
 	}
 	if (!down)
 		return true;
-	if (action == kPadInteract && puppetSpeech.active() && (_fastForward || (ConfMan.hasKey("dreamfactory_replay_controls") && ConfMan.getBool("dreamfactory_replay_controls"))) && pointer.x >= 408 && pointer.x < 512 && pointer.y >= 196 && pointer.y < 220) { toggleHeardSkip(); return true; }
+	if (action == kPadInteract && puppetSpeech.active() && !_speechReplay && (_fastForward || (ConfMan.hasKey("dreamfactory_replay_controls") && ConfMan.getBool("dreamfactory_replay_controls"))) && replayControlAt(pointer.x * 5 / 4, pointer.y * 5 / 4)) { toggleHeardSkip(); return true; }
 	if (action != kPadClick && (puppetChoices.active() || puppetSpeech.active() || action == kPadRepeat)) {
 		Common::Event key;
 		key.type = Common::EVENT_KEYDOWN;

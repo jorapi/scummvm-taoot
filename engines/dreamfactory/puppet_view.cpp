@@ -6,6 +6,7 @@
 #include "graphics/fonts/ttf.h"
 #include "common/memstream.h"
 #include "common/ustr.h"
+#include "common/translation.h"
 namespace DreamFactory {
 static Common::U32String text(const Common::String &value) { return Common::U32String(value, Common::kWindows1252); }
 #ifdef USE_FREETYPE2
@@ -54,7 +55,12 @@ Common::Array<Common::String> PuppetView::subtitleLines(const Common::String &va
 	// fitting space. Do not silently substitute the browser's CJK wrapper.
 	return lines;
 }
-bool PuppetView::overlay(const LoadedPuppet &puppet, Bytes &rgba, const Graphics::Font &font, const Common::HashMap<int32, int32> &params, bool subtitles, bool pressing, const byte *palette, const Graphics::Font *screenFont, bool contrast, const Graphics::Font *choiceFallback) {
+int32 PuppetView::captionTop(const Common::String &value, const Graphics::Font &font, bool label, int32 width) {
+	Common::Array<Common::U32String> lines; font.wordWrapText(text(value), width - width * 16 / 512, lines);
+	const int32 height = int32(lines.size() + (label ? 1 : 0)) * (font.getFontHeight() + 2) + 12;
+	return MAX<int32>(32, 264 - MAX<int32>(40, (height * 512 + width - 1) / width));
+}
+bool PuppetView::overlay(const LoadedPuppet &puppet, Bytes &rgba, const Graphics::Font &font, const Common::HashMap<int32, int32> &params, bool subtitles, bool pressing, const byte *palette, const Graphics::Font *screenFont, bool contrast, const Graphics::Font *choiceFallback, const DialogueStyle *style) {
 	if (!puppet.visible) return true;
 	const int32 width = screenFont ? 640 : 512, height = screenFont ? 480 : 384;
 	if (rgba.size() != uint32(width * height * 4)) return false;
@@ -65,7 +71,27 @@ bool PuppetView::overlay(const LoadedPuppet &puppet, Bytes &rgba, const Graphics
 	auto param = [&](int32 slot, int32 fallback) { return params.contains(slot) ? params[slot] : fallback; };
 	auto ink = [&](int32 index) { return index < 0 || index > 255 ? surface.format.RGBToColor(0, 0, 0) : surface.format.RGBToColor(palette[index * 3], palette[index * 3 + 1], palette[index * 3 + 2]); };
 	const int32 ascent = drawFont.getFontAscent() >= 0 ? drawFont.getFontAscent() : drawFont.getFontHeight();
-	if (subtitles && (puppet.subtitleBand || !puppet.subtitle.empty())) {
+	const bool modern = style && style->modern;
+	bool preview = modern && style->previewChoice >= 0 && uint32(style->previewChoice) < puppet.choices.size() && drawFont.getStringWidth(text(puppet.choices[style->previewChoice].text)) > scale(496);
+	if (modern && ((subtitles && (puppet.subtitleBand || !puppet.subtitle.empty())) || preview)) {
+		const Common::String caption = preview ? puppet.choices[style->previewChoice].text : puppet.subtitle;
+		const Common::U32String label = preview ? _("Reply") : text(style->speaker);
+		const int32 top = preview ? captionTop(caption, drawFont, true, width) : style->captionTop;
+		const int32 opacity = CLIP<int32>(style->opacity, 0, 100);
+		if (opacity == 100) surface.fillRect(Common::Rect(0, scale(top), width, scale(264)), surface.format.RGBToColor(0, 0, 0));
+		else if (opacity) for (int32 y = scale(top); y < scale(264); ++y) for (int32 x = 0; x < width; ++x) {
+			const uint32 pixel = (y * width + x) * 4;
+			for (uint32 c = 0; c < 3; ++c) rgba[pixel + c] = rgba[pixel + c] * (100 - opacity) / 100;
+		}
+		int32 y = scale(top) + 6;
+		const int32 lineHeight = drawFont.getFontHeight() + 2;
+		if (!label.empty()) { drawFont.drawString(&surface, label, scale(8), y, scale(496), surface.format.RGBToColor(255, 223, 140)); y += lineHeight; }
+		Common::Array<Common::U32String> lines; drawFont.wordWrapText(text(caption), scale(496), lines);
+		for (const auto &line : lines) if (y + drawFont.getFontHeight() <= scale(264)) {
+			drawFont.drawString(&surface, line, scale(8) + 1, y + 1, scale(496), surface.format.RGBToColor(0, 0, 0));
+			drawFont.drawString(&surface, line, scale(8), y, scale(496), surface.format.RGBToColor(255, 255, 255)); y += lineHeight;
+		}
+	} else if (!modern && subtitles && (puppet.subtitleBand || !puppet.subtitle.empty())) {
 		surface.fillRect(Common::Rect(0, scale(224), width, scale(264)), surface.format.RGBToColor(0, 0, 0));
 		const Common::Array<Common::String> lines = subtitleLines(puppet.subtitle, font);
 		for (uint32 i = 0; i < lines.size(); ++i) drawFont.drawString(&surface, text(lines[i]), scale(8), scale(240 + i * 16) - ascent, scale(504), contrast ? surface.format.RGBToColor(255, 255, 255) : ink(0), Graphics::kTextAlignLeft, 0, false, true);
@@ -74,13 +100,15 @@ bool PuppetView::overlay(const LoadedPuppet &puppet, Bytes &rgba, const Graphics
 	if (contrast && !puppet.choices.empty()) surface.fillRect(Common::Rect(0, scale(264), width, height), surface.format.RGBToColor(0, 0, 0));
 	for (uint32 i = 0; i < MIN<uint32>(5, puppet.choices.size()); ++i) {
 		const int32 available = MAX<int32>(0, width - scale(margin));
-		const Graphics::Font &choiceFont = choiceFallback && drawFont.getStringWidth(text(puppet.choices[i].text)) > available ? *choiceFallback : drawFont;
+		const Graphics::Font &choiceFont = !modern && choiceFallback && drawFont.getStringWidth(text(puppet.choices[i].text)) > available ? *choiceFallback : drawFont;
 		const int32 choiceAscent = choiceFont.getFontAscent() >= 0 ? choiceFont.getFontAscent() : choiceFont.getFontHeight();
-		choiceFont.drawString(&surface, text(puppet.choices[i].text), scale(margin), scale(280 + i * 24) - choiceAscent, available, contrast ? surface.format.RGBToColor(255, 255, 255) : ink(param(3, 250)), Graphics::kTextAlignLeft, 0, false, true);
+		const int32 choiceY = modern ? scale(264 + i * 24) + MAX<int32>(0, (scale(24) - choiceFont.getFontHeight()) / 2) : scale(280 + i * 24) - choiceAscent;
+		choiceFont.drawString(&surface, text(puppet.choices[i].text), scale(margin), choiceY, available, contrast || modern ? surface.format.RGBToColor(255, 255, 255) : ink(param(3, 250)), Graphics::kTextAlignLeft, 0, modern, true);
 	}
 	const int32 framed = pressing ? puppet.pressed : puppet.chosen;
 	if (framed >= 0 && uint32(framed) < MIN<uint32>(5, puppet.choices.size())) {
-		const uint32 color = contrast ? surface.format.RGBToColor(255, 230, 0) : ink(param(4, 251));
+		const uint32 color = contrast || modern ? surface.format.RGBToColor(255, 230, 0) : ink(param(4, 251));
+		if (modern) { surface.frameRect(Common::Rect(0, scale(264 + framed * 24), width, scale(288 + framed * 24)), color); return true; }
 		for (int32 y = scale(264 + framed * 24); y < scale(288 + framed * 24); ++y) for (int32 x = 0; x < width; ++x) {
 			if (x >= scale(3) && x < scale(509) && y >= scale(267 + framed * 24) && y < scale(285 + framed * 24)) continue;
 			if (pressing) { const uint32 d = (y * width + x) * 4; for (uint32 c = 0; c < 3; ++c) rgba[d + c] ^= 255; }
@@ -116,7 +144,7 @@ void PuppetView::blit(const Sprite &image, int32 x, int32 y, int32 clip, Bytes &
 			rgba[d + 3] = 255;
 		}
 }
-bool PuppetView::composite(const Common::SharedPtr<LoadedPuppet> &puppet, Bytes &rgba, const Frame *backdrop, const byte *palette, bool subtitles, const byte *artPalette) {
+bool PuppetView::composite(const Common::SharedPtr<LoadedPuppet> &puppet, Bytes &rgba, const Frame *backdrop, const byte *palette, bool subtitles, const byte *artPalette, bool captionBackdrop) {
 	if (!puppet || !puppet->visible) return true;
 	if (_owner != puppet) { reset(); _owner = puppet; }
 	_artPalette = artPalette;
@@ -131,7 +159,7 @@ bool PuppetView::composite(const Common::SharedPtr<LoadedPuppet> &puppet, Bytes 
 				memcpy(rgba.data() + d, palette + color * 3, 3); rgba[d + 3] = 255;
 			}
 	}
-	const int32 clip = subtitles && (puppet->subtitleBand || !puppet->subtitle.empty()) ? 224 : 264;
+	const int32 clip = !captionBackdrop && subtitles && (puppet->subtitleBand || !puppet->subtitle.empty()) ? 224 : 264;
 	if (clip == 224) for (uint32 d = 224 * 512 * 4; d < 264 * 512 * 4; d += 4) { memset(rgba.data() + d, 0, 3); rgba[d + 3] = 255; }
 	if (puppet->hasPose && !puppet->data.stances.empty()) {
 		const uint32 stance = puppet->stance >= 0 && uint32(puppet->stance) < puppet->data.stances.size() ? puppet->stance : 0;

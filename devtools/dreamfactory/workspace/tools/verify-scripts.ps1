@@ -1,4 +1,4 @@
-param([switch]$Puppets, [switch]$Screens, [switch]$Cursors, [switch]$Rooms, [switch]$Stars, [switch]$Stages, [switch]$Resources, [switch]$Audio, [switch]$Casts, [switch]$Movies, [switch]$Shops)
+param([switch]$Puppets, [switch]$Screens, [switch]$Cursors, [switch]$Rooms, [switch]$Stars, [switch]$Stages, [switch]$Resources, [switch]$Audio, [switch]$Casts, [switch]$Movies, [switch]$Shops, [ValidateRange(30,600)][int]$TimeoutSeconds=120)
 $ErrorActionPreference = 'Stop'
 $auditKind = if ($Puppets) { 'puppet' } elseif ($Screens) { 'screen' } elseif ($Cursors) { 'cursor' } elseif ($Rooms) { 'room' } elseif ($Stars) { 'star' } elseif ($Shops) { 'shop' } elseif ($Movies) { 'movie' } elseif ($Casts) { 'cast' } elseif ($Audio) { 'audio' } elseif ($Resources) { 'resource' } elseif ($Stages) { 'stage' } else { 'script' }
 $root = Split-Path $PSScriptRoot -Parent
@@ -59,7 +59,7 @@ dreamfactory_prop_fixtures=$root/build/prop-session-$edition
 dreamfactory_stage_fixtures=$root/build/stage-session-$edition
 "@ | Set-Content $config
         $process = Start-Process -FilePath $exe -ArgumentList "--config=`"$config`"","--logfile=`"$log`"",'audit' -WindowStyle Hidden -PassThru
-        if (!$process.WaitForExit(60000)) {
+        if (!$process.WaitForExit($TimeoutSeconds * 1000)) {
             Stop-Process -Id $process.Id -Force
             throw "$edition $auditKind audit timed out; inspect $log"
         }

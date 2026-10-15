@@ -5,6 +5,7 @@
 #include "dreamfactory/cast.h"
 #include "dreamfactory/image.h"
 #include "graphics/font.h"
+#include "dreamfactory/dialogue.h"
 namespace DreamFactory {
 class PuppetFonts {
 public:
@@ -18,10 +19,11 @@ private:
 // Keeps room and character palettes separate until the final screen transfer.
 class PuppetView {
 public:
-	bool composite(const Common::SharedPtr<LoadedPuppet> &puppet, Bytes &rgba, const Frame *backdrop = nullptr, const byte *palette = nullptr, bool subtitles = true, const byte *artPalette = nullptr);
+	bool composite(const Common::SharedPtr<LoadedPuppet> &puppet, Bytes &rgba, const Frame *backdrop = nullptr, const byte *palette = nullptr, bool subtitles = true, const byte *artPalette = nullptr, bool captionBackdrop = false);
 	static int32 choiceAt(int32 x, int32 y, uint32 count);
 	static Common::Array<Common::String> subtitleLines(const Common::String &text, const Graphics::Font &font);
-	static bool overlay(const LoadedPuppet &puppet, Bytes &rgba, const Graphics::Font &font, const Common::HashMap<int32, int32> &params, bool subtitles = true, bool pressing = false, const byte *palette = nullptr, const Graphics::Font *screenFont = nullptr, bool contrast = false, const Graphics::Font *choiceFallback = nullptr);
+	static int32 captionTop(const Common::String &value, const Graphics::Font &font, bool label, int32 width = 640);
+	static bool overlay(const LoadedPuppet &puppet, Bytes &rgba, const Graphics::Font &font, const Common::HashMap<int32, int32> &params, bool subtitles = true, bool pressing = false, const byte *palette = nullptr, const Graphics::Font *screenFont = nullptr, bool contrast = false, const Graphics::Font *choiceFallback = nullptr, const DialogueStyle *style = nullptr);
 	void reset() { _owner.reset(); _sprites.clear(); }
 private:
 	Common::SharedPtr<LoadedPuppet> _owner;

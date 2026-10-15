@@ -23,6 +23,7 @@ for(const edition of ['demo','full','dust']){
  const picture=corpusFiles(edition).find(p=>p.toUpperCase().endsWith('/'+portrait+'.PUP'));
  if(!picture)throw new Error(`Missing supplied portrait: ${edition}`);
  fs.copyFileSync(`game-data/${edition}/${picture}`,`${dir}/PORTRAIT.PUP`);
+ fs.copyFileSync(`game-data/${edition}/${picture}`,`${dir}/${portrait}.PUP`);
  const head=new Uint8Array(2160+2*312);u32(head,2,version);u32(head,0x85a,4);pstr(head,0x85e,'inside');u16(head,2158,2);
  for(let i=0;i<256;++i)for(let c=0;c<3;++c)head[58+i*8+3+c*2]=(i+c)&255;
  for(let i=0;i<4;++i){u32(head,0x83a+4*i,10+i);u32(head,0x84a+4*i,20+i);}
@@ -183,6 +184,12 @@ puppetbevel("Hello there",701)
 puppetbevel("answer",902)
 return puppetevent(-1)
 endcode
+code accesschoices()
+puppetclear()
+puppetbevel("I would like to hear the complete account of what happened earlier this evening, including the details that might help us understand where everyone went and why they made those decisions.",701)
+puppetbevel("A short reply.",902)
+return puppetevent(-1)
+endcode
 code waitchoices()
 return puppetevent(-1)
 endcode
@@ -199,7 +206,7 @@ forceupdate()
 return 1
 endcode
 code displayportrait()
-openpuppetfile("portrait")
+openpuppetfile("${portrait}")
 puppetbevel("What can you tell me?",701)
 forceupdate()
 return 1

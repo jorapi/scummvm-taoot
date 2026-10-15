@@ -2,6 +2,7 @@
 #include "dreamfactory/dreamfactory.h"
 #include "dreamfactory/controls.h"
 #include "dreamfactory/inventory.h"
+#include "dreamfactory/dialogue.h"
 #include "dreamfactory/script_audit.h"
 #include "dreamfactory/session.h"
 #include "common/config-manager.h"
@@ -625,6 +626,9 @@ Common::Error DreamFactoryEngine::run() {
 					ok = session.init(root) && !session.stageSystem.current && session.continueRecovery();
 				} else if (command == "recoverysave") {
 					ok = session.canAutosave() && saveGameState(getAutosaveSlot(), "Autosave", true).getCode() == Common::kNoError;
+				} else if (command == "auditdialogueoptions") {
+					const Common::FSNode output(ConfMan.getPath("dreamfactory_boot_checkpoint").getParent());
+					ok = auditDialogueOptions(_system, output, false) && auditDialogueOptions(_system, output, true);
 				} else if (command == "dumpheard") {
 					warning("BOOT HEARD lines=%u active=%u dirty=%u", session.heard.index().size(), session.heard.active(), session.heard.dirty());
 				} else if (command == "expectrecoveries") {

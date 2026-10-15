@@ -33,6 +33,7 @@
 #include "graphics/cursorman.h"
 #include "graphics/fonts/ttf.h"
 #include "image/bmp.h"
+#include "engines/engine.h"
 namespace DreamFactory {
 static bool collectFiles(const Common::FSNode &node, Common::FSList &files, uint32 depth = 0) {
 	Common::FSList children;
@@ -212,6 +213,22 @@ bool auditPuppetSession(const Common::FSNode &root, OSystem *backend) {
 	const uint32 lineSkipStarted = backend->getMillis();
 	if (modal.runtime.run(test, "skiprun").value.number() != 43 || modal.puppetSystem.current->interrupted || backend->getMillis() - lineSkipStarted < 1150) return false;
 	warning("DIALOGUE LINE SKIP HOST PASS period skips first line next line plays full skip retained");
+	{
+		const char *keys[] = {"music_volume", "sfx_volume", "speech_volume", "speech_mute", "mute"};
+		Common::String previous[5]; bool present[5];
+		for (uint32 i = 0; i < 5; ++i) { present[i] = ConfMan.hasKey(keys[i], Common::ConfigManager::kTransientDomain); if (present[i]) previous[i] = ConfMan.get(keys[i], Common::ConfigManager::kTransientDomain); }
+		ConfMan.setInt(keys[0], 37, Common::ConfigManager::kTransientDomain); ConfMan.setInt(keys[1], 82, Common::ConfigManager::kTransientDomain); ConfMan.setInt(keys[2], 151, Common::ConfigManager::kTransientDomain);
+		ConfMan.setBool(keys[3], false, Common::ConfigManager::kTransientDomain); ConfMan.setBool(keys[4], false, Common::ConfigManager::kTransientDomain); g_engine->syncSoundSettings();
+		Audio::Mixer *mixer = backend->getMixer();
+		bool separateAudio = mixer->getVolumeForSoundType(Audio::Mixer::kMusicSoundType) == 37 && mixer->getVolumeForSoundType(Audio::Mixer::kSFXSoundType) == 82 && mixer->getVolumeForSoundType(Audio::Mixer::kSpeechSoundType) == 151;
+		if (!modal.sound.playVoiceClip("settings-voice", sustained)) return false;
+		ConfMan.setBool("speech_mute", true, Common::ConfigManager::kTransientDomain); g_engine->syncSoundSettings(); modal.sound.setWaveVolume(9);
+		separateAudio = separateAudio && mixer->isSoundTypeMuted(Audio::Mixer::kSpeechSoundType) && !mixer->isSoundTypeMuted(Audio::Mixer::kMusicSoundType) && !mixer->isSoundTypeMuted(Audio::Mixer::kSFXSoundType) && mixer->getVolumeForSoundType(Audio::Mixer::kMusicSoundType) == 37 && mixer->getVolumeForSoundType(Audio::Mixer::kSFXSoundType) == 82 && !modal.sound.done(true);
+		modal.sound.haltVoice(); modal.sound.setWaveVolume(3);
+		for (uint32 i = 0; i < 5; ++i) { if (present[i]) ConfMan.set(keys[i], previous[i], Common::ConfigManager::kTransientDomain); else ConfMan.removeKey(keys[i], Common::ConfigManager::kTransientDomain); }
+		g_engine->syncSoundSettings(); if (!separateAudio) return false;
+		warning("SHARED AUDIO PASS standard ScummVM music effects speech preferences separate speech mute preserves other categories and authored voice timing native volume cannot overwrite mixer preferences");
+	}
 	// Heard-only replay must never set the original sequence-interrupted flag.
 	class ControllerInputs {
 		OSystem *_backend;
@@ -503,6 +520,45 @@ bool auditPuppetSession(const Common::FSNode &root, OSystem *backend) {
 	warning("PUPPET FONT PASS antialiased RGB edges unchanged grid-fitted metrics");
 #endif
 	if (fonts.load(invalid) || fonts.font() != font) return false;
+	const Graphics::Font *handheldFont = fonts.font(20, true);
+	if (!handheldFont || handheldFont->getFontHeight() > 30) return false;
+	if (dialogueSpeaker("installed:DPENNY.PUP", "dpenny") != "Penny Pringle" || dialogueSpeaker("penny2.pup", "untitled") != "Penny Pringle" || dialogueSpeaker("mwife.pup", "untitled") != "Mrs. Macintosh" || dialogueSpeaker("sasha1.pup", "side") == "Hiram Sidewinder" || dialogueSpeaker("unknown.pup", "untitled") == "untitled") return false;
+	DialogueStyle captionStyle; captionStyle.modern = true; captionStyle.size = 20; captionStyle.speaker = "Known speaker";
+	LoadedPuppet captionPuppet; captionPuppet.visible = true; captionPuppet.subtitleBand = true;
+	captionPuppet.subtitle = "This longer subtitle must remain readable on a small handheld screen. Every word needs to fit above the original reply rows, without being silently dropped or shrinking to the original tiny font.";
+	captionStyle.captionTop = PuppetView::captionTop(captionPuppet.subtitle, *handheldFont, true);
+	Common::Array<Common::U32String> captionLines; handheldFont->wordWrapText(Common::U32String(captionPuppet.subtitle), 620, captionLines);
+	if (captionLines.size() < 3 || captionStyle.captionTop >= 224 || captionStyle.captionTop * 5 / 4 + 6 + int32(captionLines.size() + 1) * (handheldFont->getFontHeight() + 2) > 330) return false;
+	for (int opacity : {0, 50, 100}) {
+		Bytes canvas; canvas.resize(640 * 480 * 4);
+		for (uint32 p = 0; p < canvas.size(); p += 4) { canvas[p] = 100; canvas[p + 1] = 80; canvas[p + 2] = 60; canvas[p + 3] = 255; }
+		captionStyle.opacity = opacity;
+		if (!PuppetView::overlay(captionPuppet, canvas, *fonts.font(20), params, true, false, nullptr, handheldFont, false, nullptr, &captionStyle)) return false;
+		const byte *captionPixel = canvas.data() + (329 * 640 + 639) * 4;
+		if (captionPixel[0] != 100 - opacity || captionPixel[1] != 80 * (100 - opacity) / 100 || captionPixel[2] != 60 * (100 - opacity) / 100) return false;
+	}
+	warning("CAPTION STYLE PASS handheld-size multi-line text speaker row bounded above original choice hit regions transparent half solid backgrounds no backdrop loss");
+	{
+		Common::FSList captionFiles;
+		if (!corpusFiles(Common::FSNode(ConfMan.getPath("path")), captionFiles)) return false;
+		uint32 captionCount = 0;
+		for (const auto &node : captionFiles) {
+			if (!node.getName().hasSuffixIgnoreCase(".pup")) continue;
+			Bytes captionData; Puppet captionAsset;
+			if (!read(node, captionData)) return false;
+			if (captionData.size() >= 32 && READ_BE_UINT32(captionData.data() + 4) == captionData.size() && READ_LE_UINT32(captionData.data() + 4) != captionData.size()) continue;
+			if (!captionAsset.load(captionData)) return false;
+			for (const auto &line : captionAsset.lines) {
+				if (line.text.empty() || line.ident.hasPrefixIgnoreCase("idle ")) continue;
+				Common::Array<Common::U32String> captionWrapped; handheldFont->wordWrapText(Common::U32String(line.text, Common::kWindows1252), 620, captionWrapped);
+				const int top = PuppetView::captionTop(line.text, *handheldFont, true);
+				if (top * 5 / 4 + 6 + int32(captionWrapped.size() + 1) * (handheldFont->getFontHeight() + 2) > 330) { warning("CAPTION CORPUS FAIL file=%s ident=%s lines=%u", node.getName().c_str(), line.ident.c_str(), captionWrapped.size()); return false; }
+				++captionCount;
+			}
+		}
+		if (!captionCount) return false;
+		warning("CAPTION CORPUS PASS authored=%u all supplied Windows PUP subtitle records fit handheld font 20 with speaker label above unchanged reply rows", captionCount);
+	}
 	bytes.clear(); // Glyphs may be loaded lazily; the font must own its stream.
 	art->subtitle = "A native conversation subtitle, with punctuation: it"; art->subtitle += char(0x92); art->subtitle += "s working.";
 	art->choices.push_back(first); art->chosen = 0; clear();
@@ -626,6 +682,44 @@ bool auditPuppetSession(const Common::FSNode &root, OSystem *backend) {
 	Common::DumpFile replaySnapshot; if (!replaySnapshot.open(root.getChild("replay-preview.rgba")) || replaySnapshot.write(replayCapture.data(), replayCapture.size()) != replayCapture.size()) return false;
 	ConfMan.setBool("dreamfactory_replay_controls", false, Common::ConfigManager::kTransientDomain);
 	warning("HEARD AUTHORED PASS original portrait voice line touch fast-forward exact learned line native RGB control capture");
+	const char *styleKeys[] = {"dreamfactory_text_size", "dreamfactory_caption_opacity", "dreamfactory_speaker_labels"};
+	Common::String previousStyle[3]; bool hadStyle[3];
+	for (uint32 i = 0; i < 3; ++i) { hadStyle[i] = ConfMan.hasKey(styleKeys[i], Common::ConfigManager::kTransientDomain); if (hadStyle[i]) previousStyle[i] = ConfMan.get(styleKeys[i], Common::ConfigManager::kTransientDomain); }
+	ConfMan.setInt(styleKeys[0], 20, Common::ConfigManager::kTransientDomain); ConfMan.setInt(styleKeys[1], 50, Common::ConfigManager::kTransientDomain); ConfMan.setBool(styleKeys[2], true, Common::ConfigManager::kTransientDomain);
+	gfx.puppetParams[6] = -16; // Explicit accessibility sizes override native cell sizing too.
+	Common::Event stopAccessibleReplay; stopAccessibleReplay.type = Common::EVENT_CUSTOM_ENGINE_ACTION_START; stopAccessibleReplay.customType = kToggleHeardSkip; gfx.postEvent(stopAccessibleReplay);
+	Bytes accessibleCapture;
+	{
+		Capture observer(backend, gfx, accessibleCapture); Values args; args.push_back(Value(actual->data.lines[spokenLine].ident));
+		if (gfx.runtime.run(test, "actualspeak", args).value.number() != 1 || !observer.heard || accessibleCapture.empty()) return false;
+	}
+	Common::DumpFile captionSnapshot; if (!captionSnapshot.open(root.getChild("accessibility-caption-preview.rgba")) || captionSnapshot.write(accessibleCapture.data(), accessibleCapture.size()) != accessibleCapture.size()) return false;
+	class ReplyPreviewSource : public Common::EventSource {
+		OSystem *_backend; Session &_session; const Common::FSNode &_root; uint32 _due;
+	public:
+		uint32 phase = 0; bool captured = false, capturedRepeat = false;
+		ReplyPreviewSource(OSystem *b, Session &s, const Common::FSNode &r) : _backend(b), _session(s), _root(r), _due(b->getMillis() + 40) { b->getEventManager()->getEventDispatcher()->registerSource(this, false); }
+		~ReplyPreviewSource() { _backend->getEventManager()->getEventDispatcher()->unregisterSource(this); }
+		bool allowMapping() const override { return false; }
+		bool pollEvent(Common::Event &event) override {
+			if (!_session.puppetChoices.active() || _backend->getMillis() < _due) return false;
+			if ((phase == 1 && _session.puppetChoices.hasFocus()) || (phase == 3 && _session.puppetSpeech.active())) {
+				Graphics::Surface *surface = _backend->lockScreen(); if (!surface) return false; Bytes image; image.resize(640 * 480 * 4);
+				for (uint32 y = 0; y < 480; ++y) for (uint32 x = 0; x < 640; ++x) { byte *rgbaPixel = image.data() + (y * 640 + x) * 4; surface->format.colorToRGB(surface->getPixel(x, y), rgbaPixel[0], rgbaPixel[1], rgbaPixel[2]); rgbaPixel[3] = 255; }
+				_backend->unlockScreen(); Common::DumpFile file;
+				const bool written = file.open(_root.getChild(phase == 1 ? "accessibility-reply-preview.rgba" : "accessibility-repeat-preview.rgba")) && file.write(image.data(), image.size()) == image.size();
+				if (phase == 1) captured = written; else capturedRepeat = written; ++phase; _due = _backend->getMillis() + 150; return false;
+			}
+			if (phase == 0 || phase == 2 || (phase == 4 && !_session.puppetSpeech.active())) { event.type = Common::EVENT_CUSTOM_ENGINE_ACTION_START; event.customType = phase == 0 ? kPadDown : phase == 2 ? kPadRepeat : kPadInteract; ++phase; return true; }
+			return false;
+		}
+	};
+	{
+		ReplyPreviewSource source(backend, gfx, root);
+		if (gfx.runtime.run(test, "accesschoices").value.number() != 701 || source.phase != 5 || !source.captured || !source.capturedRepeat) return false;
+	}
+	for (uint32 i = 0; i < 3; ++i) { if (hadStyle[i]) ConfMan.set(styleKeys[i], previousStyle[i], Common::ConfigManager::kTransientDomain); else ConfMan.removeKey(styleKeys[i], Common::ConfigManager::kTransientDomain); }
+	warning("CAPTION AUTHORED PASS original portrait speech font 20 speaker label half-opacity capture and long controller-focused reply preview original chosen id preserved");
 	const bool hadJournal = ConfMan.hasKey("dreamfactory_journal", Common::ConfigManager::kTransientDomain);
 	const Common::String oldJournal = hadJournal ? ConfMan.get("dreamfactory_journal", Common::ConfigManager::kTransientDomain) : Common::String();
 	ConfMan.setBool("dreamfactory_journal", true, Common::ConfigManager::kTransientDomain);
@@ -942,6 +1036,7 @@ bool auditPuppetSession(const Common::FSNode &root, OSystem *backend) {
 	const auto *standardMap = backend->getEventManager()->getKeymapper()->getKeymap(Common::kGuiKeymapName);
 	if (!journalMap || journalMap->isEnabled() || !standardMap || !standardMap->isEnabled()) return false;
 	warning("JOURNAL PASS heard lines independent replay pause modal reading recording toggle wrapped transcript scoped controller keymap");
+	if (!auditDialogueOptions(backend, root, false) || !auditDialogueOptions(backend, root, true)) return false;
 	return true;
 }
 bool auditPuppets(const Common::FSNode &root) {

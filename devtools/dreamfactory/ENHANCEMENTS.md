@@ -60,11 +60,17 @@ cut content are not implemented. Original archives and scripts stay intact.
 
 ## Accessibility and controls
 
-The per-game Engine tab exposes separate switches, all initially off:
+The per-game Game tab exposes the engine's options; presentation changes are
+disabled by default:
 
-* Larger dialogue text: increases normal 12-point dialogue to 14 points and
-  rasterizes directly at 640x480. Long replies use the original-size screen font
-  to retain their authored row targets. Exceptional script font sizes are kept.
+* Dialogue size: Original follows script sizing; explicit sizes 14, 16, 18 and
+  20 rasterize directly at 640x480. Long replies retain their original row targets
+  and show their full text above the choices when focused, hovered or held.
+  Existing Larger dialogue text configurations migrate to size 14.
+* Caption background: choose 100%, 75%, 50%, 25% or 0% opacity. Modern caption
+  bands expand for wrapped text and retain their height between spoken lines.
+* Show speaker labels: adds verified character names where available, otherwise
+  a neutral Speaker label. This does not change stored script or journal IDs.
 * High contrast dialogue: white captions/choices, black choice area, yellow
   selection border. Portraits and the original input geometry are preserved.
 * Enhanced dialogue controls: Up/Down cycles replies, Enter confirms, 1-5 selects
@@ -85,6 +91,16 @@ The per-game Engine tab exposes separate switches, all initially off:
   Markers cover sampled props, actors, painting hotspots and interface buttons,
   using ordinary occlusion-aware hit tests. They do not prove a target's script
   will currently do anything, and tiny targets may fall between sample points.
+
+Original size, 100% background and speaker labels off preserve the original
+caption presentation. Music, effects and speech levels use ScummVM's shared
+Audio/Volume settings; speech mute silences voices without shortening lines or
+advancing the story. No separate engine volume controls are needed.
+`tools/verify-dialogue-accessibility.ps1` checks native shared settings save/cancel
+and legacy migration at desktop and 480x272, all supplied Windows PUP dialogue
+records at size 20, opacity blending, original voice/portrait captures, long
+controller-focused replies, repeat playback and native save/route compatibility.
+Physical Android/controller and PSP runtime testing remains outstanding.
 
 `./tools/run.ps1 full -Accessible -HotspotHints -EnhancedMusic` enables the
 accessibility group in the helper's isolated config. The normal launcher keeps
@@ -533,7 +549,9 @@ rules, and remain usable with a controller at 480x272.
 2. **Implemented:** optional controller inventory: larger original item previews, readable descriptions and authentic examine/use/give actions, including conversation inventory.
 3. **Implemented:** rotating recovery saves separate from route/manual saves and a Continue view.
 4. **Implemented:** distinct line/full skips and optional fast-forward of previously heard dialogue, stopping at new lines and decisions.
-5. Accessibility: subtitle size, background opacity, speaker labels and shared audio controls.
+5. Accessibility: implemented subtitle size, background opacity, speaker labels
+   and verified shared audio controls. Native desktop/480x272 settings, caption
+   layout and all three editions pass; physical handheld testing is outstanding.
 6. Journal: discovered clues, promises and unresolved leads with optional progressive hints.
 7. Map: visited rooms, current location, encountered characters and optional next-direction guidance.
 8. Ending hints: optional progressively more specific guidance based on discovered information.
