@@ -2978,10 +2978,10 @@ static bool auditRouteGraph() {
 		endings.build(discovered, 4, true);
 		if (endings.items().size() != 8) return false;
 		for (const auto &item : endings.items()) if (!item.locked || item.node || !item.ending || item.parent != -1) return false;
-		JournalEntry chapter; const uint32 start = discovered.recordScene(chapter); discovered.attachCheckpoint(start, 28);
+		JournalEntry chapter; const uint32 catalogReturn = discovered.recordScene(chapter); discovered.attachCheckpoint(catalogReturn, 28);
 		for (uint32 i = 0; i < 8; ++i) {
-			discovered.restoreCursor(start, -1); JournalEntry ending = catalog[i]; ending.file = "disc1/endings/" + ending.file;
-			discovered.recordEnding(ending); endings.build(discovered, 4, true);
+			discovered.restoreCursor(catalogReturn, -1); JournalEntry catalogEnding = catalog[i]; catalogEnding.file = "disc1/endings/" + catalogEnding.file;
+			discovered.recordEnding(catalogEnding); endings.build(discovered, 4, true);
 			uint32 reached = 0, unreached = 0;
 			for (const auto &item : endings.items()) if (item.ending) { if (item.locked) ++unreached; else ++reached; }
 			if (reached != i + 1 || unreached != 7 - i || endings.items().size() != 9) return false;
