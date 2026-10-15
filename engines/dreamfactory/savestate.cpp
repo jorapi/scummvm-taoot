@@ -364,10 +364,10 @@ bool SaveState::sync(Session &g, StateIO &io) {
 	}
 	uint32 event = reference(g.movies._event); if (io.loading) io.movieEvent = event;
 	if (io.formatVersion >= 2) {
-		for (auto &slot : g.balls.balls) {
-			bool active = bool(slot); io.flag(active);
-			if (!active) { if (io.loading) slot.reset(); continue; }
-			if (io.loading) slot.reset(new Ball()); Ball &b = *slot;
+		for (auto &ballSlot : g.balls.balls) {
+			bool active = bool(ballSlot); io.flag(active);
+			if (!active) { if (io.loading) ballSlot.reset(); continue; }
+			if (io.loading) ballSlot.reset(new Ball()); Ball &b = *ballSlot;
 			io.str(b.name); io.i16(b.x); io.i16(b.y); io.i16(b.z);
 			io.i16(b.vx); io.i16(b.vy); io.i16(b.vz);
 			io.i16(b.gravity); io.i16(b.bounce); io.i16(b.frames); io.i16(b.paused);

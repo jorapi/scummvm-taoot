@@ -508,13 +508,13 @@ bool auditPuppets(const Common::FSNode &root) {
 			const PuppetLine *line = nullptr;
 			for (uint32 i = 0; i < pup.lines.size(); ++i) if (pup.lines[i].stance == int32(stance)) { line = &pup.lines[i]; break; }
 			if (!line) continue;
-			Common::Array<PuppetPose> poses; if (!pup.animation(line->animation, poses) || poses.empty()) continue;
+			Common::Array<PuppetPose> stancePoses; if (!pup.animation(line->animation, stancePoses) || stancePoses.empty()) continue;
 			for (uint32 endpoint = 0; endpoint < 2; ++endpoint) for (uint32 caption = 0; caption < 2; ++caption) {
 				Frame backdrop; backdrop.width = 512; backdrop.height = 264; backdrop.pixels.resize(512 * 264);
 				for (uint32 y = 0; y < 264; ++y) for (uint32 x = 0; x < 512; ++x) backdrop.pixels[y * 512 + x] = byte((x >> 5) + (y >> 4) + pictures * 17);
 				byte palette[768]; for (uint32 i = 0; i < 256; ++i) for (uint32 c = 0; c < 3; ++c) palette[i * 3 + c] = byte(i * 3 + c * 61 + pictures * 13);
 				Bytes rgba; rgba.resize(512 * 384 * 4); for (uint32 i = 0; i < rgba.size(); i += 4) { rgba[i] = 17; rgba[i + 1] = 31; rgba[i + 2] = 47; rgba[i + 3] = 255; }
-				loaded->stance = stance; loaded->pose = endpoint ? poses.back() : poses[0]; loaded->subtitle = caption ? "caption" : "";
+				loaded->stance = stance; loaded->pose = endpoint ? stancePoses.back() : stancePoses[0]; loaded->subtitle = caption ? "caption" : "";
 				if (!painter.composite(loaded, rgba, &backdrop, palette)) { warning("PUPPET FAIL %s composition", name.c_str()); ++failures; }
 				for (uint32 i = 0; i < rgba.size(); ++i) rendered.byteValue(rgba[i]); ++pictures;
 			}
@@ -1151,12 +1151,12 @@ bool auditCasts(const Common::FSNode &root) {
 					actor->x = 13 + int32(floor(160 * cos(angle) + 0.5)) + int32(floor(20 * sin(angle) + 0.5));
 					actor->y = -27 + int32(floor(160 * sin(angle) + 0.5)) - int32(floor(20 * cos(angle) + 0.5)); actor->z = 35;
 					WorldCamera camera; camera.x = 13; camera.y = -27; camera.z = 45; camera.degree = headings[h]; camera.focal = 48; camera.width = 96; camera.height = 72;
-					Frame depth; depth.width = 96; depth.height = 72; depth.depth.resize(96 * 72); for (uint32 p = 0; p < depth.depth.size(); ++p) depth.depth[p] = ((p / 96) * 7 + (p % 96) * 3) % 16;
+					Frame depth; depth.width = 96; depth.height = 72; depth.depth.resize(96 * 72); for (uint32 pixel = 0; pixel < depth.depth.size(); ++pixel) depth.depth[pixel] = ((pixel / 96) * 7 + (pixel % 96) * 3) % 16;
 					Occlusion occlusion; occlusion.frame = &depth; occlusion.scale = 32; occlusion.bias = cast.version == 1 ? 64 : 0;
 					actors.actors.clear(); actors.actors.push_back(actor);
-					Bytes rgba; rgba.resize(96 * 72 * 4); for (uint32 p = 0; p < rgba.size(); p += 4) { rgba[p] = 19; rgba[p + 1] = 31; rgba[p + 2] = 47; rgba[p + 3] = 255; }
+					Bytes rgba; rgba.resize(96 * 72 * 4); for (uint32 pixel = 0; pixel < rgba.size(); pixel += 4) { rgba[pixel] = 19; rgba[pixel + 1] = 31; rgba[pixel + 2] = 47; rgba[pixel + 3] = 255; }
 					for (const auto &entry : actors.drawList(camera, "")) if (!actors.compositeOne(entry, rgba, 96, 72, cast.palette, camera, occlusion)) ++failures;
-					for (uint32 p = 0; p < rgba.size(); ++p) art.byteValue(rgba[p]); ++pictures;
+					for (uint32 pixel = 0; pixel < rgba.size(); ++pixel) art.byteValue(rgba[pixel]); ++pictures;
 				}
 				actor->worldSpace = false; actor->scale = 0;
 				const uint32 screenSteps[] = {0, pose.play.empty() ? 0 : pose.play.size() - 1}; const int32 degrees[] = {0, 73};
@@ -1164,9 +1164,9 @@ bool auditCasts(const Common::FSNode &root) {
 					actor->step = screenSteps[step]; actor->deg = degrees[d]; const auto frame = actor->frameRecord(nullptr); const Sprite *sprite = frame ? loaded->frame(frame->location) : nullptr;
 					actor->anchorX = (sprite ? sprite->x : 0) - 3; actor->anchorY = (sprite ? sprite->y : 0) + 2;
 					actors.actors.clear(); actors.actors.push_back(actor);
-					Bytes rgba; rgba.resize(96 * 72 * 4); for (uint32 p = 0; p < rgba.size(); p += 4) { rgba[p] = 19; rgba[p + 1] = 31; rgba[p + 2] = 47; rgba[p + 3] = 255; }
+					Bytes rgba; rgba.resize(96 * 72 * 4); for (uint32 pixel = 0; pixel < rgba.size(); pixel += 4) { rgba[pixel] = 19; rgba[pixel + 1] = 31; rgba[pixel + 2] = 47; rgba[pixel + 3] = 255; }
 					if (!actors.compositeScreen(rgba, 96, 72, cast.palette, "")) ++failures;
-					for (uint32 p = 0; p < rgba.size(); ++p) art.byteValue(rgba[p]); ++pictures;
+					for (uint32 pixel = 0; pixel < rgba.size(); ++pixel) art.byteValue(rgba[pixel]); ++pictures;
 				}
 
 			}
@@ -1714,7 +1714,7 @@ bool SoundAudit::banks(Session &session, OSystem *backend, const ScriptInstance 
 		sound._voice.bankID != 2 || !voice(sound, mixer, 120, session.version == 1 ? 0 : 72)) { warning("BANK OWNERS FAIL duplicate-instance v7 restore %s", error.c_str()); return false; }
 	auto stringBytes = [](const Common::String &value) { Bytes bytes; bytes.resize(4 + value.size()); WRITE_LE_UINT32(bytes.data(), value.size()); memcpy(bytes.data() + 4, value.c_str(), value.size()); return bytes; };
 	auto append = [](Bytes &to, const Bytes &from) { for (byte b : from) to.push_back(b); };
-	auto locate = [&](const Bytes &needle, uint32 from) {
+	auto locate = [&](const Bytes &needle, uint32 from) -> uint32 {
 		for (uint32 at = from; at + needle.size() <= saved.size(); ++at) if (!memcmp(saved.data() + at, needle.data(), needle.size())) return at;
 		return UINT32_MAX;
 	};
@@ -2320,14 +2320,14 @@ bool auditRooms(const Common::FSNode &root) {
 	Road road; road.from = 0; road.to = 12; road.destinations[0] = 200; road.destinations[1] = 100;
 	MotionFrame motion; motion.camera.degree = 0; road.walks[0].push_back(motion);
 	motion.camera.degree = 128; road.walks[1].push_back(motion);
-	int32 scene, view;
-	if (!arrival.roadArrival(road, 0, scene, view) || scene != 1 || view != 0 ||
-		!arrival.roadArrival(road, 1, scene, view) || scene != 0 || view != 2) return false;
+	int32 arrivalSceneIndex, arrivalViewIndex;
+	if (!arrival.roadArrival(road, 0, arrivalSceneIndex, arrivalViewIndex) || arrivalSceneIndex != 1 || arrivalViewIndex != 0 ||
+		!arrival.roadArrival(road, 1, arrivalSceneIndex, arrivalViewIndex) || arrivalSceneIndex != 0 || arrivalViewIndex != 2) return false;
 	road.destinations[0] = 0; road.walks[0].back().camera.degree = 255;
-	if (!arrival.roadArrival(road, 0, scene, view) || scene != 1 || view != 0) return false;
+	if (!arrival.roadArrival(road, 0, arrivalSceneIndex, arrivalViewIndex) || arrivalSceneIndex != 1 || arrivalViewIndex != 0) return false;
 	road.destinations[0] = 100; road.walks[0].back().camera.degree = 32;
-	if (!arrival.roadArrival(road, 0, scene, view) || scene != 0 || view != 0 ||
-		arrival.roadArrival(road, 2, scene, view)) return false;
+	if (!arrival.roadArrival(road, 0, arrivalSceneIndex, arrivalViewIndex) || arrivalSceneIndex != 0 || arrivalViewIndex != 0 ||
+		arrival.roadArrival(road, 2, arrivalSceneIndex, arrivalViewIndex)) return false;
 	warning("ROOM ARRIVAL PASS travel facing destination register reverse wraparound stable ties fallback");
 	Common::FSList files; uint32 count = 0, failures = 0;
 	if (!corpusFiles(root, files)) { warning("ROOM FAIL corpus enumeration"); return false; }
@@ -2336,17 +2336,17 @@ bool auditRooms(const Common::FSNode &root) {
 		Bytes bytes; Room room; if (!read(files[i], bytes) || !room.load(bytes)) { warning("ROOM FAIL %s metadata", name.c_str()); ++failures; continue; }
 		if (room.version == 4 && room.name.equalsIgnoreCase("gstair2")) {
 			bool corrected = false;
-			for (const auto &road : room.roads) for (uint32 dir = 0; dir < 2; ++dir) {
-				const Sequence &raw = road.walks[dir]; if (raw.empty()) continue;
+			for (const auto &corpusRoad : room.roads) for (uint32 dir = 0; dir < 2; ++dir) {
+				const Sequence &raw = corpusRoad.walks[dir]; if (raw.empty()) continue;
 				Sequence playback; int32 arrivalScene, arrivalView;
-				if (!room.roadSequence(road, dir, playback, arrivalScene, arrivalView) || playback.size() != raw.size()) return false;
+				if (!room.roadSequence(corpusRoad, dir, playback, arrivalScene, arrivalView) || playback.size() != raw.size()) return false;
 				for (uint32 f = 0; f < raw.size(); ++f) {
 					if (playback[f].image != raw[f].image || playback[f].camera.x != raw[f].camera.x || playback[f].camera.y != raw[f].camera.y || playback[f].camera.degree != raw[f].camera.degree) return false;
 					if (f > 0 && f + 1 < raw.size() && playback[f].camera.z != raw[f].camera.z) return false;
 				}
 				Frame still; CameraPose arrivalCamera;
 				if (!room.stand(arrivalScene, arrivalView, still, &arrivalCamera) || playback.back().camera.z != arrivalCamera.z) return false;
-				if (road.from == 23 && road.to == 26 && dir == 0) {
+				if (corpusRoad.from == 23 && corpusRoad.to == 26 && dir == 0) {
 					// Road58 on A deck: the first row incorrectly retained the
 					// upper landing's height, shifting a crowd NPC into view.
 					if (raw.front().camera.z != 7645 || playback.front().camera.z != 5976 || playback.back().camera.z != 5976) return false;

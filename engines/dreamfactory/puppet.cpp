@@ -40,7 +40,7 @@ bool Puppet::load(const Bytes &bytes) {
 	if (!r.good() || !scriptsReader.good()) return false;
 	if (version == 1) { if (!stance(3)) return false; }
 	else {
-		const Bytes &directory = archive.get(3); if (directory.size() < 22 + 64 * 4) return false; Reader sr(directory, 22);
+		const Bytes &stanceDirectory = archive.get(3); if (stanceDirectory.size() < 22 + 64 * 4) return false; Reader sr(stanceDirectory, 22);
 		// The first non-reference terminates the used directory. Unused slots
 		// contain authoring scratch, including large positive words in DPENNY.
 		for (uint32 i = 0; i < 64; ++i) { const int32 location = int32(sr.u32()); if (location <= 0 || uint32(location) >= archive.size()) break; if (!stance(uint32(location))) return false; }

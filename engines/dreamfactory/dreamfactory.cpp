@@ -854,8 +854,8 @@ Common::Error DreamFactoryEngine::run() {
 			// Use ScummVM's configured autosave interval and reserved slot.
 			// Never enter a save from inside a modal script or held gesture.
 			if (session.canAutosave()) {
-				const uint32 started = _system->getMillis();
-				handleAutoSave(); session.excludeWallTime(started);
+				const uint32 autosaveStarted = _system->getMillis();
+				handleAutoSave(); session.excludeWallTime(autosaveStarted);
 			}
 		}
 		_session = nullptr;

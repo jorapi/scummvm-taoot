@@ -9,7 +9,9 @@ out="$src/build-dreamfactory/$platform-$arch"
 export CFLAGS="${CFLAGS:-} -ffile-prefix-map=$src=/scummvm -fdebug-prefix-map=$src=/scummvm"
 export CXXFLAGS="${CXXFLAGS:-} -ffile-prefix-map=$src=/scummvm -fdebug-prefix-map=$src=/scummvm"
 mkdir -p "$out" "$src/build-dreamfactory/artifacts"
-cmake -S "$src/devtools/create_project/cmake" -B "$src/build-dreamfactory/generator" -DCMAKE_BUILD_TYPE=Release
+# The CMake generator target does not set POSIX itself. Xcode generation needs
+# it to resolve output paths for generated engine headers and XCFrameworks.
+cmake -S "$src/devtools/create_project/cmake" -B "$src/build-dreamfactory/generator" -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_FLAGS=-DPOSIX
 cmake --build "$src/build-dreamfactory/generator" --config Release --parallel 3
 generator="$src/build-dreamfactory/generator/create_project"
 # Match the minimal, native Windows engine build rather than enabling unrelated libraries.
