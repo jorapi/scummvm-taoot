@@ -1,9 +1,11 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 #include "dreamfactory/journal.h"
 #include "dreamfactory/leads.h"
+#include "dreamfactory/navigation_ui.h"
 #include "dreamfactory/controls.h"
 #include "dreamfactory/session.h"
 #include "common/system.h"
+#include "common/config-manager.h"
 #include "common/translation.h"
 #include "common/tokenizer.h"
 #include "engines/engine.h"
@@ -36,7 +38,7 @@ bool Session::journalAudio(const JournalEntry &entry, Common::SharedPtr<AudioCli
 	return true;
 }
 namespace {
-enum { kRead = 'JRed', kReplay = 'JPly', kStar = 'JStr', kSearch = 'JSrc', kLines = 'JLin', kPaths = 'JPth', kRoutes = 'JRte', kLeads = 'JLds', kHint = 'JHnt', kRouteSelect = 'JRSl', kRevisit = 'JRev', kRouteZoom = 'JRZm', kRouteCurrent = 'JRCr' };
+enum { kRead = 'JRed', kReplay = 'JPly', kStar = 'JStr', kSearch = 'JSrc', kLines = 'JLin', kPaths = 'JPth', kRoutes = 'JRte', kLeads = 'JLds', kShipMap = 'JMap', kHint = 'JHnt', kRouteSelect = 'JRSl', kRevisit = 'JRev', kRouteZoom = 'JRZm', kRouteCurrent = 'JRCr' };
 Common::U32String gameText(const Common::String &text) { return Common::U32String(text, Common::kWindows1252); }
 Common::U32String speakerText(const JournalEntry &entry) {
 	Common::String name = entry.speaker; name.trim();
@@ -93,7 +95,7 @@ public:
 		if (!_journal) {
 			_journal = new Common::Keymap(Common::Keymap::kKeymapTypeGui, "dreamfactory-journal-ui", _("DreamFactory journal"));
 			const char *ids[] = {"JNPLAY", "JNSTAR", "JNPREV", "JNNEXT", "JNREAD", "JNCLOSE", "JNBACK", "JNZOOM", "JNCURRENT"};
-			const char *labels[] = {_s("Replay line / read lead or route"), _s("Track line / request hint / revisit scene"), _s("Previous journal view"), _s("Next journal view"), _s("Read entry details"), _s("Close journal"), _s("Close journal"), _s("Switch route overview and cards"), _s("Focus current route position")};
+			const char *labels[] = {_s("Replay line / read details"), _s("Track / hint / revisit / directions"), _s("Previous journal view"), _s("Next journal view"), _s("Read entry / zoom map"), _s("Close journal"), _s("Close journal"), _s("Zoom route / map"), _s("Focus current route / map position")};
 			const char *inputs[] = {"JOY_A", "JOY_X", "JOY_LEFT_SHOULDER", "JOY_RIGHT_SHOULDER", "JOY_Y", "JOY_B", "JOY_BACK", "JOY_RIGHT_STICK", "JOY_LEFT_STICK"};
 			const uint32 commands[] = {kJournalReplay, kJournalStar, kJournalViewPrevious, kJournalViewNext, kJournalRead, kJournalClose, kJournalClose, kJournalZoom, kJournalCurrent};
 			for (uint32 i = 0; i < ARRAYSIZE(ids); ++i) {
@@ -190,6 +192,7 @@ class EntryDialog : public GUI::Dialog {
 	GUI::ButtonWidget *_play, *_close, *_revisit = nullptr;
 	CheckpointPicture *_picture = nullptr;
 	bool _confirmRestore = false;
+	bool _information = false;
 	const JournalEntry &_entry;
 	Replay &_replay;
 public:
@@ -216,6 +219,7 @@ public:
 		GUI::Dialog::open();
 		if (_confirmRestore) setResult(GUI::kMessageAlt);
 	}
+	void information(const Common::U32String &title) { _information = true; _title->setLabel(title); showPanel(_play, false); }
 	void reflowLayout() override {
 		fit(*this);
 		const int row = MAX(20, g_gui.getFont().getFontHeight() + 8);
@@ -232,6 +236,7 @@ public:
 			const int width = (_w - 32) / 3;
 			place(_play, 8, _h - row - 8, width, row); place(_revisit, 16 + width, _h - row - 8, width, row); place(_close, 24 + width * 2, _h - row - 8, width, row);
 		}
+		if (_information) { showPanel(_play, false); place(_close, 8, _h - row - 8, _w - 16, row); }
 		GUI::Dialog::reflowLayout();
 	}
 	void handleTickle() override {
@@ -646,7 +651,8 @@ class JournalDialog : public GUI::Dialog {
 	GUI::EditTextWidget *_search;
 	TranscriptWidget *_list;
 	RouteMapWidget *_mapWidget;
-	GUI::ButtonWidget *_tabs[4], *_buttons[5];
+	NavigationWidget *_navigationWidget = nullptr;
+	GUI::ButtonWidget *_tabs[5] = {}, *_buttons[5];
 	Common::Array<JournalLead> _leads;
 	Journal _leadRows;
 	Common::Array<uint32> _indices;
@@ -654,6 +660,7 @@ class JournalDialog : public GUI::Dialog {
 	uint32 _revisitNode = 0;
 	const JournalLead *selectedLead() const { const int32 index = selected(); return _mode == kLeads && index >= 0 && uint32(index) < _leads.size() ? &_leads[index] : nullptr; }
 	const JournalEntry *selectedEntry() const {
+		if (_mode == kShipMap) return nullptr;
 		if (_mode == kLeads) { const auto *lead = selectedLead(); return lead && !lead->evidence.empty() ? &_session.journal.entries[lead->evidence.back()] : nullptr; }
 		if (_mode == kRoutes) {
 			const RouteMapItem *item = _mapWidget->selected(); const RouteNode *node = item ? _session.routes.graph.node(item->node) : nullptr;
@@ -700,8 +707,8 @@ class JournalDialog : public GUI::Dialog {
 		int selected = _indices.empty() ? -1 : int(_indices.size()) - 1;
 		for (uint32 i = 0; i < _indices.size(); ++i) if (int32(_indices[i]) == previous) selected = i;
 		_list->setSelected(selected);
-		const uint32 modes[] = {kLines, kPaths, kRoutes, kLeads};
-		for (uint32 i = 0; i < 4; ++i) _tabs[i]->setEnabled(_mode != modes[i]);
+		const uint32 modes[] = {kLines, kPaths, kRoutes, kLeads, kShipMap};
+		for (uint32 i = 0; i < (_navigationWidget ? 5u : 4u); ++i) _tabs[i]->setEnabled(_mode != modes[i]);
 		_previewIndex = -2;
 		updateButtons();
 	}
@@ -710,6 +717,14 @@ class JournalDialog : public GUI::Dialog {
 		return index >= 0 && uint32(index) < _indices.size() ? int32(_indices[index]) : -1;
 	}
 	void updateButtons() {
+		if (_mode == kShipMap && _navigationWidget) {
+			const MapPosition point = _navigationWidget->selectedPosition();
+			_buttons[0]->setEnabled(point.valid()); _buttons[1]->setLabel(_("Directions")); _buttons[1]->setEnabled(_navigationWidget->selectedVisit() != 0);
+			_buttons[2]->setLabel(_navigationWidget->zoomed() ? _("Fit") : _("Zoom")); showPanel(_buttons[2], true); _buttons[2]->setEnabled(_navigationWidget->page() != 0);
+			showPanel(_buttons[4], true); _buttons[4]->setEnabled(true);
+			_status->setLabel(point.valid() ? mapLocationName(point) + Common::U32String::format(_("  |  %u visited rooms"), _navigationWidget->count()) : _("No recorded visit on this map page"));
+			return;
+		}
 		const bool routes = _mode == kRoutes;
 		const int32 index = routes ? _mapWidget->selectedIndex() : selected();
 		const int32 previewIndex = routes ? -10 - index : index;
@@ -757,6 +772,12 @@ class JournalDialog : public GUI::Dialog {
 		if (_preview) place(_preview, left, top + row * 2 + 8, MAX(20, _w - left - 12), MAX(20, _h - top - row * 4 - 28));
 	}
 public:
+	bool auditMapInput() {
+		if (!_navigationWidget || _mode != kShipMap || !_navigationWidget->auditPointerInput()) return false;
+		const auto point = _navigationWidget->markerPoint(0); const int x = _navigationWidget->getRelX() + point.x, y = _navigationWidget->getRelY() + point.y;
+		if (findWidget(x, y) != _navigationWidget) return false;
+		handleMouseDown(x, y, 1, 1); handleMouseUp(x, y, 1, 1); return _navigationWidget->selectedIndex() == 0;
+	}
 	bool auditPointerInput() {
 		struct RestoreTracking {
 			Journal &journal; Common::Array<bool> flags;
@@ -781,7 +802,7 @@ public:
 		}
 		return true;
 	}
-	explicit JournalDialog(Session &session) : GUI::Dialog(0, 0, 320, 240), _session(session), _replay(session) {
+	explicit JournalDialog(Session &session, bool shipMap = false) : GUI::Dialog(0, 0, 320, 240), _session(session), _replay(session) {
 		_backgroundType = GUI::ThemeEngine::kDialogBackgroundMain;
 		_speaker = new GUI::StaticTextWidget(this, 8, 80, 200, 24, Common::U32String(), Graphics::kTextAlignLeft);
 		_context = new GUI::StaticTextWidget(this, 8, 104, 200, 24, Common::U32String(), Graphics::kTextAlignLeft, Common::U32String(), GUI::ThemeEngine::kFontStyleNormal);
@@ -799,29 +820,38 @@ public:
 		const uint32 commands[] = {kRead, kReplay, kStar, GUI::kCloseCmd};
 		for (uint32 i = 0; i < 4; ++i) _buttons[i] = new GUI::ButtonWidget(this, 8 + i * 76, 208, 70, 24, labels[i], Common::U32String(), commands[i]);
 		_buttons[4] = new GUI::ButtonWidget(this, 8, 208, 70, 24, _("Current"), Common::U32String(), kRouteCurrent); showPanel(_buttons[4], false);
+		if (session.atlas.load(session)) {
+			_tabs[4] = new GUI::ButtonWidget(this, 408, 32, 95, 20, _("Map"), Common::U32String(), kShipMap);
+			_navigationWidget = new NavigationWidget(this, session); showPanel(_navigationWidget, false);
+			if (shipMap) _mode = kShipMap;
+		}
 		refresh();
 	}
 	uint32 revisitNode() const { return _revisitNode; }
-	void open() override { GUI::Dialog::open(); setFocusWidget(_list); }
+	void open() override { GUI::Dialog::open(); setFocusWidget(_mode == kShipMap ? static_cast<GUI::Widget *>(_navigationWidget) : _list); }
 	void reflowLayout() override {
 		fit(*this);
 		const int row = MAX(24, g_gui.getFont().getFontHeight() + 12);
 		_wide = _mode == kRoutes && !_mapWidget->overview() && _w >= 600 && _h >= 360;
 		const bool compact = _h < 360;
-		for (uint32 i = 0; i < 4; ++i) place(_tabs[i], 8 + i * (_w - 12) / 4, 6, (_w - 28) / 4, row);
+		const int tabs = _navigationWidget ? 5 : 4;
+		for (int i = 0; i < tabs; ++i) place(_tabs[i], 8 + i * (_w - 12) / tabs, 6, (_w - 12 - tabs * 4) / tabs, row);
 		place(_searchLabel, 12, row + 10, 56, row);
 		place(_search, 72, row + 10, _w - 84, row);
 		place(_routeLegend, 12, row + 10, _w - 24, row);
-		showPanel(_search, _mode != kRoutes && !compact); showPanel(_searchLabel, _mode != kRoutes && !compact); showPanel(_routeLegend, _mode == kRoutes && !compact);
+		showPanel(_search, _mode != kRoutes && _mode != kShipMap && !compact); showPanel(_searchLabel, _mode != kRoutes && _mode != kShipMap && !compact);
+		_routeLegend->setLabel(_mode == kShipMap ? _("Left/Right: page  Up/Down: room  Y: zoom  Blue: you  Gold: visited") : _("C: Return point  E: Reached ending  ?: Unreached ending"));
+		showPanel(_routeLegend, (_mode == kRoutes || _mode == kShipMap) && !compact);
 		const int top = compact ? row + 12 : row * 2 + 16;
 		place(_list, 12, top, _wide ? (_w - 28) * 42 / 100 : _w - 24, MAX(20, _h - top - row * 2 - 20));
 		place(_mapWidget, 12, top, _wide ? (_w - 28) * 62 / 100 : _w - 24, MAX(20, _h - top - row * 2 - 20));
-		showPanel(_list, _mode != kRoutes); showPanel(_mapWidget, _mode == kRoutes);
+		showPanel(_list, _mode != kRoutes && _mode != kShipMap); showPanel(_mapWidget, _mode == kRoutes);
+		if (_navigationWidget) { place(_navigationWidget, 12, top, _w - 24, MAX(20, _h - top - row * 2 - 20)); showPanel(_navigationWidget, _mode == kShipMap); }
 		layoutPreview();
 		showPanel(_speaker, _wide); showPanel(_context, _wide);
 		if (_preview) showPanel(_preview, _wide);
 		place(_status, 12, _h - row * 2 - 12, _w - 24, row);
-		const int count = _mode == kRoutes ? 5 : _mode == kLeads ? 3 : 4;
+		const int count = _mode == kRoutes || _mode == kShipMap ? 5 : _mode == kLeads ? 3 : 4;
 		for (int i = 0; i < count; ++i) {
 			const int button = count == 5 && i >= 3 ? i == 3 ? 4 : 3 : count == 3 && i == 2 ? 3 : i;
 			place(_buttons[button], 12 + i * (_w - 20) / count, _h - row - 8, (_w - 16 - count * 5) / count, row);
@@ -834,21 +864,29 @@ public:
 		const JournalEntry *entry = selectedEntry();
 		const bool playing = _replay.active();
 		if (playing != _wasPlaying) { _wasPlaying = playing; _list->markAsDirty(); }
-		if (_mode != kRoutes && _mode != kLeads) _buttons[1]->setLabel(entry && _replay.playing(*entry) ? _("Stop") : _("Replay"));
+		if (_mode != kRoutes && _mode != kLeads && _mode != kShipMap) _buttons[1]->setLabel(entry && _replay.playing(*entry) ? _("Stop") : _("Replay"));
 	}
 
 	void switchView(int direction) {
-		const uint32 modes[] = {kLines, kPaths, kRoutes, kLeads};
-		int current = _mode == kLines ? 0 : _mode == kPaths ? 1 : _mode == kRoutes ? 2 : 3;
-		handleCommand(nullptr, modes[(current + direction + 4) % 4], 0);
+		const uint32 modes[] = {kLines, kPaths, kRoutes, kLeads, kShipMap}; const int count = _navigationWidget ? 5 : 4;
+		int current = _mode == kLines ? 0 : _mode == kPaths ? 1 : _mode == kRoutes ? 2 : _mode == kLeads ? 3 : 4;
+		handleCommand(nullptr, modes[(current + direction + count) % count], 0);
 	}
 	void handleKeyDown(Common::KeyState key) override {
+		if (_mode == kShipMap && _navigationWidget && _navigationWidget->handleKeyDown(key)) return;
 		if (_mode == kRoutes && getFocusWidget() == _mapWidget && _mapWidget->handleKeyDown(key)) return;
 		if (_mode != kRoutes && getFocusWidget() != _search && (key.keycode == Common::KEYCODE_LEFT || key.keycode == Common::KEYCODE_RIGHT)) switchView(key.keycode == Common::KEYCODE_LEFT ? -1 : 1);
 		else GUI::Dialog::handleKeyDown(key);
 	}
 	void handleOtherEvent(const Common::Event &event) override {
 		if (event.type == Common::EVENT_CUSTOM_ENGINE_ACTION_START) {
+			if (_mode == kShipMap && _navigationWidget) {
+				if (event.customType >= kJournalUp && event.customType <= kJournalRight) { const Common::KeyCode keys[] = {Common::KEYCODE_UP, Common::KEYCODE_DOWN, Common::KEYCODE_LEFT, Common::KEYCODE_RIGHT}; _navigationWidget->handleKeyDown(Common::KeyState(keys[event.customType - kJournalUp])); return; }
+				if (event.customType == kJournalReplay) { handleCommand(nullptr, kRead, 0); return; }
+				if (event.customType == kJournalStar) { handleCommand(nullptr, kReplay, 0); return; }
+				if (event.customType == kJournalRead || event.customType == kJournalZoom) { handleCommand(nullptr, kStar, 0); return; }
+				if (event.customType == kJournalCurrent) { handleCommand(nullptr, kRouteCurrent, 0); return; }
+			}
 			if (_mode == kRoutes && (event.customType == kJournalZoom || event.customType == kJournalCurrent)) { handleCommand(nullptr, event.customType == kJournalZoom ? kRouteZoom : kRouteCurrent, 0); return; }
 			if (_mode == kRoutes && event.customType >= kJournalUp && event.customType <= kJournalRight) {
 				const Common::KeyCode keys[] = {Common::KEYCODE_UP, Common::KEYCODE_DOWN, Common::KEYCODE_LEFT, Common::KEYCODE_RIGHT};
@@ -867,6 +905,18 @@ public:
 	}
 
 	void handleCommand(GUI::CommandSender *sender, uint32 cmd, uint32 data) override {
+		if (_mode == kShipMap && _navigationWidget) {
+			if (cmd == kNavigationSelect) { updateButtons(); return; }
+			if (cmd == kStar) { if (_navigationWidget->page()) _navigationWidget->toggleZoom(); return; }
+			if (cmd == kRouteCurrent) { _navigationWidget->focusCurrent(); return; }
+			if (cmd == kRead || cmd == kReplay) {
+				if (cmd == kReplay && !_navigationWidget->selectedVisit()) return;
+				const MapPosition point = _navigationWidget->selectedPosition(); if (!point.valid()) return;
+				JournalEntry empty; Common::U32String body = _navigationWidget->description();
+				if (cmd == kReplay) { body = navigationDirection(_session, _navigationWidget->selectedVisit()); body += _("\n\nDirections use only passages recorded in this save. Reopen Directions after moving for the next step. No movement or map jump is performed."); }
+				EntryDialog detail(empty, _replay, body); detail.information(mapLocationName(point)); detail.runModal(); return;
+			}
+		}
 		const int32 index = selected();
 		if (_mode == kLeads && (cmd == kRead || cmd == kReplay || cmd == GUI::kListItemActivatedCmd || cmd == GUI::kListItemDoubleClickedCmd)) {
 			const auto *lead = selectedLead(); if (lead) { LeadReader reader(*lead, _session.journal, _replay, cmd == kReplay); reader.runModal(); } return;
@@ -886,7 +936,7 @@ public:
 			if (detail.runModal() == kRevisit) requestRevisit();
 			return;
 		}
-		if (cmd == kLines || cmd == kPaths || cmd == kRoutes || cmd == kLeads) { _mode = cmd; refresh(); reflowLayout(); g_gui.scheduleTopDialogRedraw(); setFocusWidget(_mode == kRoutes ? static_cast<GUI::Widget *>(_mapWidget) : _list); }
+		if (cmd == kLines || cmd == kPaths || cmd == kRoutes || cmd == kLeads || (cmd == kShipMap && _navigationWidget)) { _mode = cmd; refresh(); reflowLayout(); g_gui.scheduleTopDialogRedraw(); setFocusWidget(_mode == kShipMap ? static_cast<GUI::Widget *>(_navigationWidget) : _mode == kRoutes ? static_cast<GUI::Widget *>(_mapWidget) : _list); }
 		else if (cmd == kStar && _mode != kLeads && index >= 0) { _session.journal.entries[index].bookmarked = !_session.journal.entries[index].bookmarked; refresh(); }
 		else if (cmd == kSearch) refresh();
 		else if (cmd == GUI::kListSelectionChangedCmd || cmd == kRouteSelect) updateButtons();
@@ -897,10 +947,18 @@ public:
 	}
 };
 }
-uint32 openJournal(Session &session) {
+uint32 openJournal(Session &session, bool shipMap) {
 	PauseToken pause = g_engine ? g_engine->pauseEngine() : PauseToken();
+	struct OverlaySize {
+		bool changed = false; uint width = 0, height = 0; Graphics::PixelFormat format;
+		explicit OverlaySize(bool compact) {
+			if (!compact) return; width = g_system->getWidth(); height = g_system->getHeight(); format = g_system->getScreenFormat();
+			g_system->beginGFXTransaction(); g_system->initSize(480, 272, &format); changed = g_system->endGFXTransaction() == OSystem::kTransactionSuccess;
+		}
+		~OverlaySize() { if (changed) { g_system->beginGFXTransaction(); g_system->initSize(width, height, &format); g_system->endGFXTransaction(); } }
+	} size(shipMap && ConfMan.hasKey("dreamfactory_navigation_test_compact") && ConfMan.getBool("dreamfactory_navigation_test_compact"));
 	JournalKeymapScope keys;
-	JournalDialog dialog(session);
+	JournalDialog dialog(session, shipMap);
 	dialog.runModal();
 	return dialog.revisitNode();
 }
@@ -908,6 +966,21 @@ bool auditJournalInput(Session &session) {
 	JournalKeymapScope keys;
 	JournalDialog dialog(session); dialog.open();
 	const bool valid = dialog.auditPointerInput(); dialog.close(); return valid;
+}
+bool auditNavigationInput(Session &session) {
+	PauseToken pause = g_engine ? g_engine->pauseEngine() : PauseToken();
+	Bytes before, after; Common::String error;
+	if (!session.saveState(before, error)) return false;
+	const uint width = g_system->getWidth(), height = g_system->getHeight(); const auto format = g_system->getScreenFormat();
+	bool valid = true;
+	for (bool compact : {false, true}) {
+		if (compact) { g_system->beginGFXTransaction(); g_system->initSize(480, 272, &format); if (g_system->endGFXTransaction() != OSystem::kTransactionSuccess) { valid = false; break; } }
+		JournalKeymapScope keys; JournalDialog dialog(session, true); dialog.open(); valid = dialog.auditMapInput() && valid; dialog.close();
+	}
+	g_system->beginGFXTransaction(); g_system->initSize(width, height, &format); valid = g_system->endGFXTransaction() == OSystem::kTransactionSuccess && valid;
+	valid = session.saveState(after, error) && before == after && valid;
+	if (valid) warning("NAVIGATION INPUT PASS desktop 480x272 native marker hit testing wheel selection touch pan original game snapshot unchanged");
+	return valid;
 }
 void journalNotice(const Common::String &message) {
 	JournalKeymapScope keys;

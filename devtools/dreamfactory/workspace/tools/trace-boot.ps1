@@ -1,4 +1,4 @@
-param([string[]]$MovieClicks = @(), [string[]]$ModalClicks = @(), [int]$DialogSlot = -1, [string]$RestoreCheckpoint = "", [string]$Checkpoint = "", [string[]]$Choices = @(), [string[]]$OptionalChoices = @(), [string[]]$Actions = @(), [string[]]$SkipMovies = @(), [string[]]$ClickMovies = @(), [string[]]$Keys = @(), [int]$ClickX = -1, [int]$ClickY = -1, [int]$Steps = 0, [switch]$ChooseGame, [switch]$SkipSpeech = ($env:DREAMFACTORY_BOOT_SKIP_SPEECH -eq '1'), [int]$TimeoutSeconds = 60, [int]$DebugLevel = 1, [ValidateSet('demo','full','dust')][string[]]$Editions = @('demo','full','dust'), [switch]$DefaultFont, [string]$Executable="", [ValidateSet('game','on','off','only')][string]$SubtitleMode='game', [string]$ExtraPath = "", [string[]]$DialogAnswers = @(), [string[]]$GuiKeys = @(), [string]$SavePath = "", [ValidateSet('list','grid')][string]$Chooser = 'list', [switch]$EnhancedMusic, [switch]$HotspotHints, [switch]$TouchControls, [ValidateRange(0,3600)][int]$AutosaveSeconds=0, [switch]$InventoryCompact, [switch]$ModernInventory, [switch]$RecoveryCompact)
+param([string[]]$MovieClicks = @(), [string[]]$ModalClicks = @(), [int]$DialogSlot = -1, [string]$RestoreCheckpoint = "", [string]$Checkpoint = "", [string[]]$Choices = @(), [string[]]$OptionalChoices = @(), [string[]]$Actions = @(), [string[]]$SkipMovies = @(), [string[]]$ClickMovies = @(), [string[]]$Keys = @(), [int]$ClickX = -1, [int]$ClickY = -1, [int]$Steps = 0, [switch]$ChooseGame, [switch]$SkipSpeech = ($env:DREAMFACTORY_BOOT_SKIP_SPEECH -eq '1'), [int]$TimeoutSeconds = 60, [int]$DebugLevel = 1, [ValidateSet('demo','full','dust')][string[]]$Editions = @('demo','full','dust'), [switch]$DefaultFont, [string]$Executable="", [ValidateSet('game','on','off','only')][string]$SubtitleMode='game', [string]$ExtraPath = "", [string[]]$DialogAnswers = @(), [string[]]$GuiKeys = @(), [string]$SavePath = "", [ValidateSet('list','grid')][string]$Chooser = 'list', [switch]$EnhancedMusic, [switch]$HotspotHints, [switch]$TouchControls, [ValidateRange(0,3600)][int]$AutosaveSeconds=0, [switch]$InventoryCompact, [switch]$ModernInventory, [switch]$RecoveryCompact, [switch]$NoNavigationHistory)
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
 New-Item -ItemType Directory -Force (Join-Path $root "build/test-saves") | Out-Null
@@ -78,6 +78,7 @@ dreamfactory_boot_trace=true
 dreamfactory_enhanced_music=$($EnhancedMusic.ToString().ToLowerInvariant())
 dreamfactory_hotspot_hints=$($HotspotHints.ToString().ToLowerInvariant())
 dreamfactory_touch_controls=$($TouchControls.ToString().ToLowerInvariant())
+dreamfactory_navigation=$((!$NoNavigationHistory).ToString().ToLowerInvariant())
 dreamfactory_boot_checkpoint=$checkpointPath
 $dialogConfig
 dreamfactory_boot_restore=$traceRestore

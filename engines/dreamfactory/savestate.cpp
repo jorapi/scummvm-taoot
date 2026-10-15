@@ -394,6 +394,14 @@ bool SaveState::sync(Session &g, StateIO &io) {
 			(!g._savedRouteCursor && (g._savedRouteChoice != -1 || !g._savedRouteToken.empty())) ||
 			(g._savedRouteCursor && g._savedRouteToken.size() != 32)) io.good = false;
 	}
+	if (io.formatVersion >= 12) {
+		io.array(g.travel.visits, TravelHistory::kMaxVisits, [&](MapVisit &visit) {
+			auto &point = visit.position; io.str(point.room); io.str(point.scene); io.str(point.view); io.str(point.deck); io.i32(point.page); io.i32(point.x); io.i32(point.y); io.u64(visit.first); io.u64(visit.last);
+		});
+		io.array(g.travel.passages, TravelHistory::kMaxPassages, [&](MapPassage &edge) { io.u32(edge.from); io.u32(edge.to); io.str(edge.exitView); });
+		io.array(g.travel.encounters, 512, [&](MapEncounter &encounter) { io.u32(encounter.visit); io.str(encounter.identity); io.str(encounter.file); io.str(encounter.speaker); io.u64(encounter.time); });
+		if (!g.travel.valid()) io.good = false;
+	}
 	return io.good && !io.s.err() && g.runtime.error.empty();
 }
 
@@ -414,6 +422,7 @@ void SaveState::commit(Session &g, Session &p, const StateIO &state) {
 	g._time = p._time; g._lastMillis = g._system ? g._system->getMillis() : 0; g._random.setSeed(p._random.getSeed());
 	g.frameRate = p.frameRate; g.cameraHi = p.cameraHi; g.menuVisible = p.menuVisible; g.keyAborts = p.keyAborts; g.puppetGrab = p.puppetGrab;
 	g.journal = p.journal;
+	g.travel = p.travel; g.atlas = NavigationAtlas(); g._navigationObserved.clear(); g._navigationKey.clear(); g._navigationPoint = MapPosition(); g._navigationWalking = false;
 	g._routePending.clear(); g._routeOwner.reset(); g._routeResumeScene = 0; g._routeRevisiting = false;
 	if (p._savedRouteToken != g.routes.graph.cursorToken(p._savedRouteCursor) || !g.routes.graph.restoreCursor(p._savedRouteCursor, p._savedRouteChoice))
 		g.routes.graph.restoreCursor(0, -1);
@@ -422,6 +431,7 @@ void SaveState::commit(Session &g, Session &p, const StateIO &state) {
 	g._paletteBlack = g.screenBlack = g.pointerDown = g._stopped = g._scriptQuit = false; g._pointerButtons = 0; g._controlFocused = g._controlHeld = g._touchHeld = false;
 	g._inventoryRequested = g._inventoryShown = false; g._inventoryOfferItem.clear();
 	g._recoveryRequested = false;
+	g._journalMapRequested = false;
 	g._fastForward = g._speechKnown = g._speechReplay = false;
 	g._captionTop = 224; g._replayButtonTop = 245;
 	g._inventoryClicks.clear(); g._inventoryClickDown = g._inventoryReopen = false; g._inventoryClickDue = 0;
@@ -484,6 +494,7 @@ bool Session::saveState(Bytes &bytes, Common::String &error) {
 	if (SaveState::stereoTheme(sound)) io.formatVersion = 9;
 	if (!journal.entries.empty()) io.formatVersion = 10;
 	if (routes.graph.cursor()) io.formatVersion = 11;
+	if (!travel.visits.empty()) io.formatVersion = 12;
 	if (!SaveState::sync(*this, io) || payload.size() > 128 * 1024 * 1024) { error = "Cannot encode game state"; return false; }
 	Common::MemoryReadStream content(payload.getData(), uint32(payload.size())); byte digest[16]; Common::computeStreamMD5(content, digest);
 	Common::MemoryWriteStreamDynamic out(DisposeAfterUse::YES); out.writeUint32BE(MKTAG('D','F','S','V')); out.writeUint32LE(io.formatVersion); out.writeUint32LE(uint32(payload.size())); out.write(digest, 16); out.write(payload.getData(), uint32(payload.size()));
@@ -494,7 +505,7 @@ bool Session::loadState(const Bytes &bytes, Common::String &error) {
 	if (bytes.size() < 28 || bytes.size() > 128 * 1024 * 1024 + 28) { error = "Invalid save size"; return false; }
 	Common::MemoryReadStream in(bytes.data(), bytes.size());
 	const uint32 magic = in.readUint32BE(), formatVersion = in.readUint32LE(), payloadSize = in.readUint32LE();
-	if (magic != MKTAG('D','F','S','V') || (formatVersion < 1 || formatVersion > 11) || payloadSize != bytes.size() - 28) { error = "Unsupported DreamFactory save"; return false; }
+	if (magic != MKTAG('D','F','S','V') || (formatVersion < 1 || formatVersion > 12) || payloadSize != bytes.size() - 28) { error = "Unsupported DreamFactory save"; return false; }
 	byte expected[16], digest[16]; in.read(expected, 16); Common::computeStreamMD5(in, digest); in.seek(28);
 	if (memcmp(expected, digest, 16)) { error = "Save checksum mismatch"; return false; }
 	Session prepared;

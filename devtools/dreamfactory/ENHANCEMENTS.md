@@ -556,7 +556,7 @@ rules, and remain usable with a controller at 480x272.
    and verified shared audio controls. Native desktop/480x272 settings, caption
    layout and all three editions pass; physical handheld testing is outstanding.
 6. **Implemented:** discovery-gated leads, tracked notes and optional progressive reminders; native desktop/480x272 checks, authored briefings and a real item-delivery rewind pass.
-7. Map: visited rooms, current location, encountered characters and optional next-direction guidance.
+7. **Implemented:** annotated retail/demo ship maps, current position, visited rooms, recorded conversation positions and optional next-turn directions.
 8. Ending hints: optional progressively more specific guidance based on discovered information.
 
 Checkpoint preview companions use a bounded, checksummed format tied to the
@@ -670,6 +670,56 @@ and an earlier-state restore after delivery. It requires the earned Dust
 schoolhouse-pages checkpoint. `-CollectOnly -EvidenceDirectory <folder>` verifies
 existing earned snapshots against the current executable and collects the
 native logs and screenshots. Physical handheld runtime remains untested.
+
+### Annotated ship map
+
+F11 or clicking the left stick opens the Map view directly. It is also available
+as a journal tab when the supplied Titanic map resources are present. Dust has
+no ship-map view or unused map setting. The original in-game map and its authored
+jumps remain available through the original controls.
+
+The new view uses the original retail eight-page chart or the demo's separate
+two-page chart. Current-position markers follow the supplied map scripts and
+sprites, evaluated without invoking live stage or prop handlers. Blue marks the
+current position, gold marks visited rooms, a white ring marks the selection and
+speech dots mark recorded conversations. Read identifies the last characters
+spoken to at that location. These are saved encounter positions, not live NPC
+tracking. Unmarked areas have no recorded visit. Locations outside the supplied
+chart remain in the Not charted page.
+
+Left/Right changes pages and Up/Down selects known rooms on that page. A reads
+details, X requests Directions, Y toggles Zoom/Fit, and the shoulders switch
+journal views. Current focuses the player's location; it is also mapped to the
+left-stick button inside the viewer. Mouse/touch selects known markers, the wheel
+cycles rooms and dragging pans a zoomed chart. All actions use the shared,
+configurable ScummVM keymaps and GUI. No replacement artwork is needed.
+
+Directions gives the next turn or forward step along passages recorded while
+walking. Reopen it after moving for the next step. It does not move the player,
+open doors or promise that a previously accessible door is still open. Original
+map jumps record a destination visit but do not create a walking passage.
+Selecting the new chart's artwork never performs an original map jump.
+
+**Record visited locations** in the shared per-game settings is enabled by
+default. Disabling it stops new visit, passage and encounter recording while
+retaining existing saved history. Viewing the current position still works.
+History belongs to the native save, so restoring an earlier checkpoint removes
+later visits and conversation positions even when the route profile retains
+later discoveries. Older saves start without an invented travel history.
+
+History-bearing snapshots use bounded native format v12; previous v1-v11 saves
+remain readable. Recovery storage accepts both versions. Map maintenance and
+browsing time are excluded from the authored game clock. The companion previews,
+native story variables, inventory and object logic remain independent of the
+viewer.
+
+`tools/verify-navigation.ps1` records authored retail/demo journeys, verifies
+native desktop/480x272 map input and byte-identical saved state after browsing,
+checks a walked return route, excludes an original map teleport from the walking
+graph, restores earlier knowledge and checks the recording opt-out. It also
+requires the native save/recovery and dialogue regressions for all three editions.
+`-CollectOnly` uses existing earned briefing snapshots in `build/navigation-earned`.
+Physical Android/controller and PSP runtime remains untested.
 
 ### Dialogue replay
 

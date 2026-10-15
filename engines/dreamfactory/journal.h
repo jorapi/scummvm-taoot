@@ -20,8 +20,9 @@ public:
 		entries.push_back(entry);
 	}
 };
-uint32 openJournal(Session &session);
+uint32 openJournal(Session &session, bool shipMap = false);
 bool auditJournalInput(Session &session);
+bool auditNavigationInput(Session &session);
 void journalNotice(const Common::String &message);
 }
 #endif

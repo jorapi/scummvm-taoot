@@ -323,8 +323,8 @@ Common::Error DreamFactoryEngine::run() {
 					if (int32(backend->getMillis() - guiKeyDue) < 0) return false;
 					const Common::String key = guiKeys[guiKeyIndex++]; guiKeyDue = backend->getMillis() + 200;
 					if (key.hasPrefix("pad:")) {
-						const char *names[] = {"a", "b", "y", "up", "down", "lb", "rb"};
-						const byte buttons[] = {Common::JOYSTICK_BUTTON_A, Common::JOYSTICK_BUTTON_B, Common::JOYSTICK_BUTTON_Y, Common::JOYSTICK_BUTTON_DPAD_UP, Common::JOYSTICK_BUTTON_DPAD_DOWN, Common::JOYSTICK_BUTTON_LEFT_SHOULDER, Common::JOYSTICK_BUTTON_RIGHT_SHOULDER};
+						const char *names[] = {"a", "b", "y", "up", "down", "lb", "rb", "x", "left", "right", "l3", "r3"};
+						const byte buttons[] = {Common::JOYSTICK_BUTTON_A, Common::JOYSTICK_BUTTON_B, Common::JOYSTICK_BUTTON_Y, Common::JOYSTICK_BUTTON_DPAD_UP, Common::JOYSTICK_BUTTON_DPAD_DOWN, Common::JOYSTICK_BUTTON_LEFT_SHOULDER, Common::JOYSTICK_BUTTON_RIGHT_SHOULDER, Common::JOYSTICK_BUTTON_X, Common::JOYSTICK_BUTTON_DPAD_LEFT, Common::JOYSTICK_BUTTON_DPAD_RIGHT, Common::JOYSTICK_BUTTON_LEFT_STICK, Common::JOYSTICK_BUTTON_RIGHT_STICK};
 						for (uint32 i = 0; i < ARRAYSIZE(names); ++i) if (key.substr(4) == names[i]) {
 							Common::Event physical; physical.type = Common::EVENT_JOYBUTTON_DOWN; physical.joystick.button = buttons[i];
 							Common::List<Common::Event> mapped; backend->getEventManager()->getKeymapper()->mapEvent(physical, mapped);
@@ -638,6 +638,20 @@ Common::Error DreamFactoryEngine::run() {
 						if (lead.id == leadID) foundLead = true;
 					}
 					if (command != "dumpleads") ok = command == "expectlead" ? foundLead : !foundLead;
+				} else if (command == "dumpnavigation" || command == "expectnavigation") {
+					MapPosition point; ok = session.atlas.load(session) && session.atlas.project(session, point);
+					warning("BOOT NAVIGATION room=%s scene=%s view=%s page=%d x=%d y=%d visits=%u passages=%u valid=%u", point.room.c_str(), point.scene.c_str(), point.view.c_str(), point.page, point.x, point.y, uint32(session.travel.visits.size()), uint32(session.travel.passages.size()), ok);
+					if (command == "expectnavigation") ok = ok && point.page == atoi(words.nextToken().c_str()) && point.x == atoi(words.nextToken().c_str()) && point.y == atoi(words.nextToken().c_str());
+				} else if (command == "openmap" || command == "openmapcompact") {
+					ConfMan.setBool("dreamfactory_navigation_test_compact", command == "openmapcompact", Common::ConfigManager::kTransientDomain);
+					Common::Event raw; raw.type = Common::EVENT_KEYDOWN; raw.kbd = Common::KeyState(Common::KEYCODE_F11); Common::List<Common::Event> mapped;
+					_system->getEventManager()->getKeymapper()->mapEvent(raw, mapped);
+					ok = mapped.size() == 1 && mapped.front().type == Common::EVENT_CUSTOM_ENGINE_ACTION_START && mapped.front().customType == kOpenNavigation;
+					if (ok) { session.postEvent(mapped.front()); warning("NAVIGATION KEYMAP PASS physical F11 opens annotated map"); }
+					const uint32 before = input.guiKeyIndex; ok = ok && session.step() && !g_gui.isActive() && input.guiKeyIndex > before;
+					ConfMan.removeKey("dreamfactory_navigation_test_compact", Common::ConfigManager::kTransientDomain);
+				} else if (command == "auditmapinput") {
+					ok = auditNavigationInput(session);
 				} else if (command == "dumpheard") {
 					warning("BOOT HEARD lines=%u active=%u dirty=%u", session.heard.index().size(), session.heard.active(), session.heard.dirty());
 				} else if (command == "expectrecoveries") {

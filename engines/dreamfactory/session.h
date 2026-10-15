@@ -6,6 +6,7 @@
 #include "dreamfactory/routes.h"
 #include "dreamfactory/recovery.h"
 #include "dreamfactory/heard.h"
+#include "dreamfactory/navigation.h"
 #include "dreamfactory/runtime.h"
 #include "dreamfactory/sound.h"
 #include "dreamfactory/crickets.h"
@@ -48,6 +49,10 @@ public:
 	RouteStore routes;
 	RecoveryStore recovery;
 	HeardStore heard;
+	TravelHistory travel;
+	NavigationAtlas atlas;
+	bool navigationPosition(MapPosition &position);
+	void recordNavigation(const MapPosition *origin = nullptr);
 	bool fastForwarding() const { return _fastForward; }
 	bool recordRecovery(const Bytes &snapshot, Common::String &error);
 	bool continueRecovery();
@@ -120,6 +125,11 @@ private:
 	bool _scriptQuit = false;
 	bool _dialogActive = false;
 	bool _journalRequested = false;
+	bool _journalMapRequested = false;
+	bool _navigationWalking = false;
+	Common::String _navigationObserved;
+	Common::String _navigationKey;
+	MapPosition _navigationPoint;
 	bool _recoveryRequested = false;
 	uint32 _heardFlushAt = 0;
 	bool _fastForward = false, _speechKnown = false, _speechReplay = false;

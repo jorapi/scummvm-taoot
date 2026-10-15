@@ -63,7 +63,8 @@ bool Session::init(const Common::FSNode &root) {
 	_time = 0; _lastMillis = _system ? _system->getMillis() : 0; _paletteBlack = false;
 	runtime.abandon(); runtime.globals.clear(); runtime.fallbacks.clear(); runtime.error.clear(); bootScripts.clear();
 	puppetParams.clear(); playerHitbox = Common::Point(); cameraHi = 0; memset(displayPalette, 0, sizeof(displayPalette)); lastResult = Value();
-	journal.entries.clear(); _journalRequested = false;
+	journal.entries.clear(); _journalRequested = _journalMapRequested = false;
+	travel = TravelHistory(); atlas = NavigationAtlas(); _navigationObserved.clear(); _navigationKey.clear(); _navigationPoint = MapPosition(); _navigationWalking = false;
 	_recoveryRequested = false;
 	_inventoryRequested = _inventoryShown = false; _inventoryOfferItem.clear();
 	_inventoryClicks.clear(); _inventoryClickDown = _inventoryReopen = false; _inventoryClickDue = 0;
@@ -1025,7 +1026,7 @@ bool Session::roomCall(const Expression &call, ScriptFrame &frame, Value &result
 	const Value a = args.size() ? args[0] : Value(), b = args.size() > 1 ? args[1] : Value(); const auto loaded = roomSystem.current;
 	const int32 s = roomSystem.sceneIndex(a.text()), v = roomSystem.viewIndex(s, b.text());
 	switch (call.opcode) {
-	case 12032: roomSystem.open(a.text(), args.size() > 1 ? b.text() : Common::String(), args.size() > 2 ? args[2].text() : Common::String(), &frame); break;
+	case 12032: if (runtime.isRunning("keydown")) _navigationWalking = true; roomSystem.open(a.text(), args.size() > 1 ? b.text() : Common::String(), args.size() > 2 ? args[2].text() : Common::String(), &frame); break;
 	case 12033: roomSystem.close(&frame); break;
 	case 16007: if (!args.empty()) { roomSystem.visible = a.truth(); presentPuppet(); } else result = Value(loaded && roomSystem.visible ? 1 : 0); break;
 	case 16011: if (args.empty()) result = Value(roomSystem.viewName()); else roomSystem.jump("", a.text(), &frame); break;
@@ -1033,7 +1034,7 @@ bool Session::roomCall(const Expression &call, ScriptFrame &frame, Value &result
 		if (args.empty()) result = Value(roomSystem.sceneName());
 		else if (a.text().equalsIgnoreCase("right")) roomSystem.move(0, &frame);
 		else if (a.text().equalsIgnoreCase("left")) roomSystem.move(1, &frame);
-		else if (a.text().equalsIgnoreCase("strait")) roomSystem.move(2, &frame);
+		else if (a.text().equalsIgnoreCase("strait")) { _navigationWalking = true; roomSystem.move(2, &frame); }
 		else roomSystem.jump(a.text(), "", &frame);
 		break;
 	case 16031: result = Value(loaded && roomSystem.scene >= 0 && roomSystem.view >= 0 ? loaded->data.scenes[roomSystem.scene].views[roomSystem.view].facing & 255 : -1); break;
@@ -1336,6 +1337,11 @@ void Session::speakPuppet(const Common::String &ident, ScriptFrame &frame, bool 
 		if (line >= 0) entry.ident = puppet->data.lines[line].ident;
 		entry.text = puppet->subtitle; entry.time = _time; entry.room = roomSystem.current ? roomSystem.current->data.name : Common::String();
 		if (!ConfMan.hasKey("dreamfactory_journal") || ConfMan.getBool("dreamfactory_journal")) journal.add(entry);
+		if (version == 4 && (!ConfMan.hasKey("dreamfactory_navigation") || ConfMan.getBool("dreamfactory_navigation"))) {
+			const uint32 navigationStarted = _system ? _system->getMillis() : 0;
+			MapPosition position; if (atlas.load(*this) && atlas.project(*this, position)) travel.meet(position, entry.file, entry.speaker, elapsedMillis());
+			excludeWallTime(navigationStarted);
+		}
 		recordRoute(entry, false);
 	}
 	if (!_system) { puppetSpeech.abandon(); runtime.fail("Puppet speech requires a display/audio host"); return; }
@@ -1704,7 +1710,11 @@ void Session::postEvent(const Common::Event &event) {
 		_inventoryOfferItem.clear(); return;
 	}
 	if (event.type == Common::EVENT_CUSTOM_ENGINE_ACTION_START && event.customType == kOpenJournal) {
-		if (!movies.active()) _journalRequested = true;
+		if (!movies.active()) { _journalRequested = true; _journalMapRequested = false; }
+		return;
+	}
+	if (event.type == Common::EVENT_CUSTOM_ENGINE_ACTION_START && event.customType == kOpenNavigation) {
+		if (!movies.active() && version == 4) { _journalRequested = true; _journalMapRequested = true; }
 		return;
 	}
 	if (event.type == Common::EVENT_CUSTOM_ENGINE_ACTION_START && event.customType == 1) {
@@ -1750,7 +1760,8 @@ void Session::pollInput() {
 		const uint32 started = _system->getMillis();
 		PauseToken journalPause = g_engine ? g_engine->pauseEngine() : PauseToken();
 		_dialogActive = true;
-		const uint32 revisit = openJournal(*this);
+		const bool shipMap = _journalMapRequested; _journalMapRequested = false;
+		const uint32 revisit = openJournal(*this, shipMap);
 		_dialogActive = false;
 		pointerDown = false; _pointerButtons = 0; _controlHeld = _touchHeld = false;
 		if (revisit && !_system->getEventManager()->shouldQuit() && !_system->getEventManager()->shouldReturnToLauncher()) {
@@ -1934,8 +1945,29 @@ void Session::serviceInventory() {
 	}
 	presentWorld();
 }
+bool Session::navigationPosition(MapPosition &position) {
+	position = MapPosition();
+	if (version != 4 || !roomSystem.current || !roomSystem.visible || !stageSystem.current || stageSystem.current->name != "main.stg" || puppetSystem.current || movies.active() || screenBlack || _paletteBlack) return false;
+	if (ConfMan.hasKey("dreamfactory_navigation") && !ConfMan.getBool("dreamfactory_navigation")) return false;
+	if (!atlas.load(*this)) return false;
+	const auto global = [&](const char *name) { return runtime.globals.contains(name) ? runtime.globals[name].text() : Common::String(); };
+	const Common::String key = roomSystem.current->source + ":" + roomSystem.name() + ":" + roomSystem.sceneName() + ":" + roomSystem.viewName() + ":" + global("savedeck") + ":" + global("hallside");
+	if (key != _navigationKey) { _navigationKey = key; atlas.project(*this, _navigationPoint); }
+	position = _navigationPoint; return position.valid();
+}
+void Session::recordNavigation(const MapPosition *origin) {
+	if (!runtime.error.empty() || _stopped || _dialogActive || runtime.busy() || roomSystem.moving || roomSystem.turning) return;
+	struct ExcludeNavigationTime { Session &session; uint32 started; ~ExcludeNavigationTime() { session.excludeWallTime(started); } } timer{*this, _system ? _system->getMillis() : 0};
+	MapPosition position;
+	if (!navigationPosition(position)) return;
+	if (origin && origin->valid() && _navigationWalking) travel.passage(*origin, position, elapsedMillis());
+	Common::String key = position.room + ":" + position.scene + ":" + position.view + ":" + Common::String::format("%d:%d:%d", position.page, position.x, position.y);
+	if (key != _navigationObserved) { travel.visit(position, elapsedMillis()); _navigationObserved = key; }
+}
 bool Session::step() {
 	if (_stopped || !runtime.error.empty()) return false;
+	recordNavigation();
+	struct ObserveNavigation { Session &session; ~ObserveNavigation() { session.recordNavigation(); } } observation{*this};
 	pollInput(); if (_stopped) return false;
 	if (_system && !runtime.busy() && uint32(_system->getMillis() - _heardFlushAt) >= 10000) flushHeard();
 	if (_recoveryRequested && !_dialogActive && !runtime.busy() && !movies.active() && !puppetSystem.current && !pointerDown && !roomSystem.moving && !roomSystem.turning) { continueRecovery(); return !_stopped && runtime.error.empty(); }
@@ -1948,14 +1980,15 @@ bool Session::step() {
 		const Common::Event event = pendingEvents[0]; pendingEvents.remove_at(0);
 		if (event.type == Common::EVENT_QUIT || event.type == Common::EVENT_RETURN_TO_LAUNCHER) { postEvent(event); return false; }
 		if ((event.type == Common::EVENT_KEYDOWN && !event.kbdRepeat) || event.type == Common::EVENT_LBUTTONDOWN || event.type == Common::EVENT_RBUTTONDOWN) prepareRouteCheckpoint();
-		if (event.type == Common::EVENT_KEYDOWN) { keyInput(event); presentPuppet(); return !_stopped && runtime.error.empty(); }
+		MapPosition origin; navigationPosition(origin); _navigationWalking = false;
+		if (event.type == Common::EVENT_KEYDOWN) { keyInput(event); recordNavigation(&origin); presentPuppet(); return !_stopped && runtime.error.empty(); }
 		if (event.type == Common::EVENT_LBUTTONDOWN || event.type == Common::EVENT_RBUTTONDOWN) {
 			if (!_inventoryOfferItem.empty() && event.type == Common::EVENT_LBUTTONDOWN && (event.customType == kPadInteract || !event.customType)) {
 				const Common::String item = _inventoryOfferItem; _inventoryOfferItem.clear(); pointerDown = false; _pointerButtons = 0;
 				const int16 x = event.mouse.x * 512 / 640, y = event.mouse.y * 384 / 480;
 				if (!(x >= 440 && y >= 264 && y < 286)) inventoryOffer(*this, item, x, y);
 			} else mouseInput(event);
-			presentPuppet(); return !_stopped && runtime.error.empty();
+			recordNavigation(&origin); presentPuppet(); return !_stopped && runtime.error.empty();
 		}
 	}
 	// idle owns the shipped timing, cursor routing and calctime call. It yields

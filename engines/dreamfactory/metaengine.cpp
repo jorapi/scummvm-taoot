@@ -22,6 +22,7 @@ static const ADExtraGuiOptionsMap optionsList[] = {
 	{GUIO_GAMEOPTIONS9, {_s("Modern inventory"), _s("Show a controller-friendly inventory with larger item pictures when opening the original bag"), "dreamfactory_modern_inventory", false, 0, 0}},
 	{GUIO_GAMEOPTIONS10, {_s("Offer Continue when starting"), _s("Show saved recovery points before the original opening when available"), "dreamfactory_continue_on_start", false, 0, 0}},
 	{GUIO_GAMEOPTIONS11, {_s("Show dialogue replay button"), _s("Show a touch button during speech to fast-forward only previously heard lines"), "dreamfactory_replay_controls", false, 0, 0}},
+	{GUIO_GAMEOPTIONS12, {_s("Record visited locations"), _s("Record visited ship locations and walked passages in this save for the optional annotated map"), "dreamfactory_navigation", true, 0, 0}},
 	AD_EXTRA_GUI_OPTIONS_TERMINATOR};
 class DreamFactoryMetaEngine : public AdvancedMetaEngine<ADGameDescription> {
 public:
@@ -78,6 +79,10 @@ public:
 			}
 		}
 		Common::Keymap *extras = maps[0];
+		if (ConfMan.get("gameid", target) != "dust") {
+			Common::Action *map = new Common::Action("DFNAVIGATION", _("Annotated ship map")); map->setCustomEngineActionEvent(DreamFactory::kOpenNavigation);
+			map->addDefaultInputMapping("F11"); map->addDefaultInputMapping("JOY_LEFT_STICK"); extras->addAction(map);
+		}
 		Common::Action *journal = new Common::Action("DFJOURNAL", _("Dialogue journal"));
 		journal->setCustomEngineActionEvent(DreamFactory::kOpenJournal);
 		journal->addDefaultInputMapping("j");

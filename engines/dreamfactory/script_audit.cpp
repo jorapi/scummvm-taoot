@@ -109,6 +109,8 @@ public:
 	bool exists(const Common::String &name) override { return files.contains(name); }
 };
 bool auditPuppetSession(const Common::FSNode &root, OSystem *backend) {
+	if (!auditTravelHistory()) { warning("NAVIGATION HISTORY FAIL bounded directed passage model"); return false; }
+	warning("NAVIGATION HISTORY PASS visited locations directed walks no invented reverse edge restored earlier knowledge corruption rejection");
 	if (!auditJournalLeads()) { warning("JOURNAL LEADS FAIL discovery gates, hints or restored state"); return false; }
 	warning("JOURNAL LEADS PASS heard-only topics incremental hints source identity item and promise state rewind manual tracking");
 	const char *bad[] = { "bad-head", "bad-version", "bad-lines", "bad-band", "bad-script", "bad-name", "bad-layer", "bad-frame", "bad-stance" };
@@ -3585,6 +3587,22 @@ bool auditStageSession(const Common::FSNode &root, OSystem *system) {
 	if (journalSave.saveState(invalidJournal, journalError)) return false;
 	if (!journalSave.loadState(withoutJournal, journalError) || !journalSave.journal.entries.empty()) { warning("JOURNAL SAVE FAIL legacy %s", journalError.c_str()); return false; }
 	warning("JOURNAL SAVE PASS bounded v10 history choices bookmarks timestamps invalid row rejection old-save compatibility");
+	MapPosition firstVisit; firstVisit.room = "halla"; firstVisit.scene = "Scene52"; firstVisit.view = "View63"; firstVisit.page = 2; firstVisit.x = 100; firstVisit.y = 120;
+	MapPosition laterVisit = firstVisit; laterVisit.scene = "Scene51"; laterVisit.view = "View60";
+	journalSave.travel.visit(firstVisit, 10); Bytes navigationBefore, navigationAfter;
+	if (!journalSave.saveState(navigationBefore, journalError) || READ_LE_UINT32(navigationBefore.data() + 4) != 12) return false;
+	journalSave.travel.passage(firstVisit, laterVisit, 20);
+	journalSave.travel.meet(laterVisit, "PENNY1.PUP", "penny1", 20);
+	if (!journalSave.saveState(navigationAfter, journalError) || !journalSave.loadState(navigationAfter, journalError) || journalSave.travel.visits.size() != 2 || journalSave.travel.passages.size() != 1 || journalSave.travel.encounters.size() != 1) return false;
+	RouteTestFiles navigationFiles; RecoveryStore navigationRecovery;
+	if (!navigationRecovery.open(&navigationFiles, "navigation-test", "fixture") || !navigationRecovery.write(navigationAfter, RoutePreview(), journalError)) return false;
+	const auto navigationRecoveries = navigationRecovery.list(); Bytes recoveredNavigation;
+	if (navigationRecoveries.size() != 1 || !navigationRecovery.read(navigationRecoveries[0], recoveredNavigation, journalError) || recoveredNavigation != navigationAfter || !journalSave.loadState(recoveredNavigation, journalError)) return false;
+	if (!journalSave.loadState(navigationBefore, journalError) || journalSave.travel.visits.size() != 1 || !journalSave.travel.passages.empty() || !journalSave.travel.encounters.empty()) return false;
+	journalSave.travel.visits[0].position.page = 99;
+	if (journalSave.saveState(invalidJournal, journalError)) return false;
+	if (!journalSave.loadState(withoutJournal, journalError) || !journalSave.travel.visits.empty()) return false;
+	warning("NAVIGATION SAVE PASS v12 visits walked passages and exact encounter positions rewind with native state recovery round trip invalid position rejection legacy empty history");
 	JournalEntry heardEntry; heardEntry.file = "speech.pup"; heardEntry.ident = "line.0"; heardEntry.text = "Hello there";
 	journalSave.journal.add(heardEntry); Bytes heardSave;
 	if (!journalSave.saveState(heardSave, journalError)) return false;

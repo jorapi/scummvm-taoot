@@ -10,7 +10,7 @@ const uint32 kMaxPreview = 128 * 1024;
 bool validSnapshot(const Bytes &bytes) {
 	if (bytes.size() < 28 || bytes.size() > RouteGraph::kMaxCheckpointBytes || READ_BE_UINT32(bytes.data()) != MKTAG('D','F','S','V') || READ_LE_UINT32(bytes.data() + 8) != bytes.size() - 28) return false;
 	const uint32 version = READ_LE_UINT32(bytes.data() + 4);
-	if (version < 1 || version > 11) return false;
+	if (version < 1 || version > 12) return false;
 	Common::MemoryReadStream payload(bytes.data() + 28, bytes.size() - 28); byte digest[16];
 	Common::computeStreamMD5(payload, digest);
 	return !memcmp(digest, bytes.data() + 12, 16);
@@ -40,7 +40,7 @@ bool RecoveryStore::header(Common::SeekableReadStream &input, uint32 slot, Recov
 	if (!RoutePreviewCodec::decode(preview, Common::String::format("%s:recovery:%u", _signature.c_str(), sequence), prepared.preview)) return false;
 	const int64 nativeStart = input.pos(); byte native[28];
 	if (input.read(native, sizeof(native)) != sizeof(native) || input.err() || READ_BE_UINT32(native) != MKTAG('D','F','S','V') || READ_LE_UINT32(native + 8) != size - 28 || prepared.preview.snapshotDigest.size() != 16 || memcmp(native + 12, prepared.preview.snapshotDigest.data(), 16)) return false;
-	if (READ_LE_UINT32(native + 4) < 1 || READ_LE_UINT32(native + 4) > 11 || !input.seek(nativeStart)) return false;
+	if (READ_LE_UINT32(native + 4) < 1 || READ_LE_UINT32(native + 4) > 12 || !input.seek(nativeStart)) return false;
 	entry = prepared; return true;
 }
 Common::Array<RecoveryEntry> RecoveryStore::scan(bool verify) const {
