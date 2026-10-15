@@ -484,6 +484,10 @@ The log audit covers wrapped text, scrolling, bookmarks, search, voice replay an
 controller navigation. Device runtime validation remains separate from these
 native GUI and Android package checks.
 
-After route functionality is complete, compare the interface against actual
-Virtue's Last Reward screenshots and match its log/flowchart interaction as
-closely as practical, including controller navigation and spoiler concealment.
+The VLR interaction model is adapted to these games: browse a connected overview,
+inspect a discovered scene, then confirm a return to its beginning. Controller
+branch traversal, current-position focus and hidden outcomes work in both map
+layouts. Unlike VLR's authored fixed chart, this map grows from actual encounters;
+it cannot reveal the location or number of story branches not yet encountered.
+The conversation log remains a continuous speaker-labelled transcript with
+individual voice replay, rather than requiring a scene jump to hear a line.
