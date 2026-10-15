@@ -530,7 +530,7 @@ presentation or assistance, preserve original mouse/keyboard actions and story
 rules, and remain usable with a controller at 480x272.
 
 1. **Implemented:** checkpoint previews with saved thumbnail, location, clock and inventory before restoring.
-2. Controller inventory: readable item previews/descriptions and authentic examine/use/give actions.
+2. **In progress:** controller inventory: readable item previews/descriptions and authentic examine/use/give actions. Native catalog and read-only artwork adapter are implemented; the controller interface and action dispatch remain to be completed.
 3. Recovery: rotating recovery saves separate from route/manual saves and a Continue view.
 4. Replay: distinct line/full skips and fast-forward of previously heard dialogue only.
 5. Accessibility: subtitle size, background opacity, speaker labels and shared audio controls.
@@ -555,3 +555,12 @@ the saved view, clock, thumbnail and four ending-critical item owners agree befo
 and after a normal turn and route rewind. A real Dust alternate-ending rewind
 also passes. Windows compilation and Android ARM64 package checks are separate
 from physical handheld testing, which remains outstanding.
+
+The inventory adapter follows Titanic retail's `countitems`/`indextoitem` order
+and original `getname` labels. The supplied demo uses its carried inventory props.
+Dust follows the `avatar` flat's `countday`/`indextoday` functions: an item still
+owned from an earlier day is not necessarily available in the current inventory.
+Original large item sprites are decoded from a copy of the prop, without changing
+its view, animation, ownership or story globals. `tools/verify-inventory-model.ps1`
+checks earned retail, demo and Dust saves, including the day-five chest-only list.
+This is adapter verification, not a claim that the new inventory UI is finished.

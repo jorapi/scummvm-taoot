@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 #include "dreamfactory/dreamfactory.h"
 #include "dreamfactory/controls.h"
+#include "dreamfactory/inventory.h"
 #include "dreamfactory/script_audit.h"
 #include "dreamfactory/session.h"
 #include "common/config-manager.h"
@@ -557,6 +558,18 @@ Common::Error DreamFactoryEngine::run() {
 						const RouteNode &node = session.routes.graph.nodes()[n];
 						warning("BOOT ROUTE node=%u kind=%u parent=%u choice=%d seen=%u checkpoint=%u file=%s speaker=%s", n + 1, uint32(node.kind), node.parent, node.parentChoice, node.seenChoices, node.checkpoint, node.entry.file.c_str(), node.entry.speaker.c_str());
 					}
+				} else if (command == "dumpinventory") {
+					Common::Array<InventoryItem> items; const Variables globals = session.runtime.globals;
+					ok = inventoryItems(session, items);
+					warning("BOOT INVENTORY items=%u", uint32(items.size()));
+					for (const auto &item : items) {
+						const auto prop = session.propSystem.get(item.name); const Prop before = *prop;
+						Bytes picture; uint32 width = 0, height = 0; inventoryPicture(session, item.name, picture, width, height);
+						ok = ok && prop->view == before.view && prop->deg == before.deg && prop->step == before.step && prop->owner.equals(before.owner) && prop->visible == before.visible;
+						warning("BOOT INVENTORY ITEM name=%s title=%s examine=%u picture=%ux%u", item.name.c_str(), item.title.c_str(), item.examinable, width, height);
+					}
+					ok = ok && globals.size() == session.runtime.globals.size();
+					for (const auto &variable : globals) ok = ok && session.runtime.globals.contains(variable._key) && variable._value.equals(session.runtime.globals[variable._key]);
 				} else if (command == "dumppreview") {
 					RoutePreview preview; ok = session.routes.readPreview(session.routes.graph.cursor(), preview);
 					if (ok) {
