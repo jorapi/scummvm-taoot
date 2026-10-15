@@ -188,6 +188,8 @@ int ListWidget::findDataIndex(int dataIndex) const {
 	// Sanity check to avoid iterating on the _listIndex if we know the given index is invalid.
 	if (dataIndex < -1 || dataIndex >= (int)_dataList.size())
 		return -1;
+	if (_filter.empty())
+		return dataIndex;
 	for (uint i = 0; i < _listIndex.size(); ++i) {
 		if (_listIndex[i] == dataIndex)
 			return i;
@@ -208,7 +210,7 @@ void ListWidget::setSelected(int item) {
 		return;
 
 	// We only have to do something if the widget is enabled and the selection actually changes
-	if (isEnabled() && (_selectedItem == -1 || _selectedItem >= (int)_list.size() || _listIndex[_selectedItem] != item)) {
+	if (isEnabled() && (_selectedItem == -1 || _selectedItem >= (int)_list.size() || (_filter.empty() ? _selectedItem : _listIndex[_selectedItem]) != item)) {
 		if (_editMode)
 			abortEditMode();
 
