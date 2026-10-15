@@ -25,6 +25,9 @@ class PrivacyChecks(unittest.TestCase):
     def test_separate_native_strings(self):
         release.scan(b"/home/runner\0unrelated-string\0", "native string table")
 
+    def test_cloud_api_routes(self):
+        release.scan(b"/users/me\0/users/get_space_usage\0/users/get_current_account", "API routes")
+
     def test_nested_archive_leak(self):
         data = io.BytesIO()
         with zipfile.ZipFile(data, "w") as archive:

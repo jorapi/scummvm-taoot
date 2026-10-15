@@ -20,7 +20,7 @@ EXPECTED = {
     "dreamfactory-android-x86_64-unsigned.apk",
     "dreamfactory-psp-experimental.zip",
 }
-HOME = re.compile(rb"(?:[A-Za-z]:[/\\]Users[/\\]|/(?:Users|home)/)([^/\\\x00\s]+)", re.I)
+HOME = re.compile(rb"(?:(?i:[A-Za-z]:[/\\]Users[/\\])|/(?:Users|home)/)([^/\\\x00\s]+)")
 PUBLIC_BUILD_USERS = {b"runner", b"runneradmin", b"vsts", b"build", b"builder"}
 CREDENTIAL = re.compile(rb"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|\bgh[pousr]_[A-Za-z0-9]{20,}|\bgithub_pat_[A-Za-z0-9_]{20,}")
 

@@ -4,15 +4,7 @@ on:
   workflow_call:
   push:
     branches: [dreamfactory]
-    paths:
-      - 'engines/dreamfactory/**'
-      - 'devtools/dreamfactory/**'
-      - '.github/workflows/dreamfactory*.yml'
   pull_request:
-    paths:
-      - 'engines/dreamfactory/**'
-      - 'devtools/dreamfactory/**'
-      - '.github/workflows/dreamfactory*.yml'
 permissions:
   contents: read
 concurrency:
