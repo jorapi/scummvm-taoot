@@ -1,7 +1,7 @@
 # CI builds and releases
 
 The maintained/default branch is `dreamfactory`; the older `master` remains in
-the repository. Build workflows run on engine/build-tool changes, pull requests
+the repository. Build workflows run on branch changes, pull requests
 and manual dispatch. The same reusable workflow builds Windows x64, macOS arm64
 and x86_64, unsigned iOS arm64, three Android ABIs and experimental PSP homebrew.
 

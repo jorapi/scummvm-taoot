@@ -44,7 +44,7 @@ jobs:
           $disabled = & $generator 2>&1 | Select-String '^\s+enabled\s+\|\s+(\S+)' | ForEach-Object { '--disable-' + $_.Matches[0].Groups[1].Value }
           New-Item -ItemType Directory -Force build-dreamfactory/windows | Out-Null
           Push-Location build-dreamfactory/windows
-          & $generator ../.. --msvc --vcpkg --disable-all-engines --enable-engine=dreamfactory @disabled --enable-opengl --enable-builtin-resources --enable-freetype2 --enable-zlib --enable-highres --enable-16bit --enable-detection-static
+          & $generator ../.. --msvc --vcpkg --include-dir "$env:GITHUB_WORKSPACE/build-dreamfactory/vcpkg_installed/x64-windows/include/SDL2" --disable-all-engines --enable-engine=dreamfactory @disabled --enable-opengl --enable-builtin-resources --enable-freetype2 --enable-zlib --enable-highres --enable-16bit --enable-detection-static
           if ($LASTEXITCODE) { throw 'Project generation failed' }
           # Embed only a PDB basename rather than the build-machine path.
           Get-ChildItem -Filter *.vcxproj | ForEach-Object {
