@@ -40,7 +40,7 @@ artifacts=[]
 names=['dreamfactory-windows-x64-unsigned.zip','dreamfactory-source-overlay.zip']+[p.name for p in sorted(out.glob('dreamfactory-android-*.apk'))]
 for name in names:
  p=out/name;artifacts.append({'file':name,'sha256':hashlib.sha256(p.read_bytes()).hexdigest(),'bytes':p.stat().st_size})
-manifest={'scope':'Available native packages and ScummVM-relative source overlay; see PLATFORMS.md for platform verification status. No game data included.','baseScummVMRevision':'4aa1ef851824ea1f5569a9504ab1b1a07fe670cc','windowsBinarySha256':hashlib.sha256((root/'build/scummvm/Release/scummvm.exe').read_bytes()).hexdigest(),'artifacts':artifacts}
+manifest={'scope':'Available native packages and ScummVM-relative source overlay; see PLATFORMS.md for platform verification status. No game data included.','baseScummVMRevision':'c6777a499f23247b91469ea86b361dd8a655f4e0','windowsBinarySha256':hashlib.sha256((root/'build/scummvm/Release/scummvm.exe').read_bytes()).hexdigest(),'artifacts':artifacts}
 (out/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
 print('Packages:',out)
 '@ | python -

@@ -1,5 +1,7 @@
 # DreamFactory platform builds and controls
 
+See [UPSTREAM.md](UPSTREAM.md) for the current upstream base and integration checks.
+
 See [ENHANCEMENTS.md](ENHANCEMENTS.md) for optional soundtrack packs, the Gigapixel
 pilot and content research. Music replacement is disabled by default and uses a
 standard ScummVM Engine option. Live HD images and restored cut content remain
@@ -17,7 +19,7 @@ computer, apply it to the matching ScummVM source revision:
 ```sh
 git clone https://github.com/scummvm/scummvm.git scummvm-dreamfactory
 cd scummvm-dreamfactory
-git checkout 4aa1ef851824ea1f5569a9504ab1b1a07fe670cc
+git checkout c6777a499f23247b91469ea86b361dd8a655f4e0
 unzip /path/to/dreamfactory-source-overlay.zip
 ```
 

@@ -45,6 +45,13 @@ void readRect(Common::SeekableReadStream &stream, Common::Rect &inRect) {
 	}
 }
 
+void readExclusiveRect(Common::SeekableReadStream &stream, Common::Rect &inRect) {
+	inRect.left = stream.readSint32LE();
+	inRect.top = stream.readSint32LE();
+	inRect.right = stream.readSint32LE();
+	inRect.bottom = stream.readSint32LE();
+}
+
 void readRect(Common::Serializer &stream, Common::Rect &inRect, Common::Serializer::Version minVersion, Common::Serializer::Version maxVersion) {
 	Common::Serializer::Version version = stream.getVersion();
 	if (version >= minVersion && version <= maxVersion) {
@@ -315,7 +322,7 @@ void readUIButton(Common::SeekableReadStream &stream, UIButtonRecord &dst) {
 	dst.hoverCursorFlag = stream.readUint32LE();
 	dst.secondaryStateField = stream.readUint32LE();
 	dst.initialState = stream.readUint32LE();
-	dst.reservedField = stream.readUint32LE();
+	dst.pressedDuration = stream.readUint32LE();
 
 	dst.clickSound.readNormal(stream);
 }

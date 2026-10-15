@@ -23,7 +23,6 @@
 
 #include "common/algorithm.h"
 #include "common/config-manager.h"
-#include "common/endian.h"
 #include "common/events.h"
 #include "common/formats/ini-file.h"
 #include "common/memstream.h"
@@ -39,7 +38,7 @@
 #include "harvester/palette_utils.h"
 #include "harvester/resources.h"
 #include "harvester/room_support.h"
-#include "harvester/runtime_entity.h"
+#include "harvester/entity.h"
 #include "harvester/art.h"
 #include "harvester/flow.h"
 #include "harvester/script.h"
@@ -147,6 +146,7 @@ static const int kPasswordMaxCharacters = 8;
 static const uint32 kPasswordCursorBlinkMs = 480;
 static const uint32 kPaletteFadeTickMs = 4;
 static const float kPaletteFadeStep = 0.1f;
+static const char *const kCdChangePromptPalettePath = "1:/GRAPHIC/PAL/CD1.PAL";
 static const float kPaletteBrightnessBlack = 0.0f;
 
 class ScopedSceneTimerPause {
@@ -368,11 +368,6 @@ bool loadMenuTextConfig(HarvesterEngine &engine, MenuTextConfig &config) {
 	loadMenuDisplayValue(menu, "keyword", config.dialogueKeywordLabel);
 	for (uint i = 0; i < config.weekdayLabels.size(); ++i)
 		loadMenuDisplayValue(menu, kMenuWeekdays[i].key, config.weekdayLabels[i]);
-	debugC(2, kDebugGeneral,
-		"Harvester: inventory weekdays monday='%s' tuesday='%s' wednesday='%s' thursday='%s' friday='%s' saturday='%s'",
-		config.weekdayLabels[0].c_str(), config.weekdayLabels[1].c_str(),
-		config.weekdayLabels[2].c_str(), config.weekdayLabels[3].c_str(),
-		config.weekdayLabels[4].c_str(), config.weekdayLabels[5].c_str());
 	loadMenuDisplayValue(menu, "Exit", config.quickTipsExitLabel);
 	loadMenuDisplayValue(menu, "next", config.quickTipsNextLabel);
 	loadMenuDisplayValue(menu, "show_tips_on", config.quickTipsOnLabel);
@@ -421,15 +416,7 @@ static bool loadBitmapResource(ResourceManager &resources, const Common::String 
 	if (!resources.loadFile(path, data) || data.size() < 12)
 		return false;
 
-	bitmap.width = READ_LE_UINT32(data.data());
-	bitmap.height = READ_LE_UINT32(data.data() + 4);
-	const uint32 pixelCount = bitmap.width * bitmap.height;
-	if (bitmap.width == 0 || bitmap.height == 0 || data.size() < 12 + pixelCount)
-		return false;
-
-	bitmap.pixels.resize(pixelCount);
-	memcpy(bitmap.pixels.data(), data.data() + 12, pixelCount);
-	return true;
+	return decodeBitmap(data, bitmap);
 }
 
 static bool loadPaletteResource(ResourceManager &resources, const Common::String &path, byte *palette) {
@@ -449,6 +436,22 @@ static void applyMenuPalette(Graphics::Screen &screen, const HarvesterEngine &en
 	byte displayPalette[256 * 3];
 	buildHarvesterDisplayPalette(palette, brightness * engine.getGammaBrightnessScale(), displayPalette);
 	screen.setPalette(displayPalette);
+}
+
+static void renderCdChangePromptScreen(HarvesterEngine &engine, const IndexedBitmap &bitmap,
+		const byte *palette) {
+	Graphics::Screen *screen = engine.getScreen();
+	if (!screen)
+		return;
+
+	applyMenuPalette(*screen, engine, palette, 1.0f);
+	screen->fillRect(screen->getBounds(), 0);
+	if (bitmap.isValid())
+		screen->copyRectToSurface(bitmap.pixels.data(), bitmap.width, 0, 0, bitmap.width, bitmap.height);
+	if (engine.getRuntimeEntities())
+		engine.getRuntimeEntities()->drawCursor(*screen);
+	screen->makeAllDirty();
+	screen->update();
 }
 
 static void renderHelpScreen(HarvesterEngine &engine, const IndexedBitmap &bitmap, const byte *palette) {
@@ -854,7 +857,79 @@ MenuSystem::MenuSystem(HarvesterEngine &engine, Common::Point &mousePos,
 	: _engine(engine), _mousePos(mousePos), _menuItems(menuItems) {
 }
 
-Common::Error MenuSystem::runMainMenuStub(Flow &flow) {
+Common::Error MenuSystem::showCdChangePrompt(int discNumber, ResourceManager &resources,
+		Flow &flow, bool &promptCompleted) {
+	promptCompleted = false;
+	Graphics::Screen *screen = _engine.getScreen();
+	if (!screen)
+		return Common::kReadingFailed;
+
+	const Common::String bitmapPath = Common::String::format("1:/GRAPHIC/OTHER/CD%d.BM", discNumber);
+	IndexedBitmap promptBitmap;
+	byte promptPalette[256 * 3];
+	if (!loadBitmapResource(resources, bitmapPath, promptBitmap) ||
+			!loadPaletteResource(resources, kCdChangePromptPalettePath, promptPalette)) {
+		warning("Harvester: unable to load CD change prompt assets for disc %d", discNumber);
+		return Common::kReadingFailed;
+	}
+
+	debugC(1, kDebugScene, "Harvester: showing CD change prompt for disc %d", discNumber);
+	_engine.stopMusic();
+
+	Common::Event event;
+	while (g_system->getEventManager()->pollEvent(event)) {
+		Common::Error result = Common::kNoError;
+		if (flow.handleSystemEvent(event, result))
+			return result;
+		if (event.type == Common::EVENT_MOUSEMOVE)
+			_mousePos = event.mouse;
+	}
+
+	bool waitingForRelease = false;
+	bool needsRedraw = true;
+	bool activateRequestedDisc = false;
+	Graphics::FrameLimiter limiter(g_system, 60);
+
+	while (!_engine.shouldQuit() && !activateRequestedDisc) {
+		if (needsRedraw) {
+			renderCdChangePromptScreen(_engine, promptBitmap, promptPalette);
+			needsRedraw = false;
+		}
+
+		while (g_system->getEventManager()->pollEvent(event)) {
+			Common::Error result = Common::kNoError;
+			if (flow.handleSystemEvent(event, result))
+				return result;
+
+			switch (event.type) {
+			case Common::EVENT_MOUSEMOVE:
+				_mousePos = event.mouse;
+				needsRedraw = true;
+				break;
+			case Common::EVENT_LBUTTONDOWN:
+				waitingForRelease = true;
+				break;
+			case Common::EVENT_LBUTTONUP:
+				if (waitingForRelease)
+					activateRequestedDisc = true;
+				break;
+			default:
+				break;
+			}
+		}
+
+		EntityManager *entityManager = _engine.getRuntimeEntities();
+		if (entityManager && entityManager->syncCursorEntityPosition(_mousePos))
+			needsRedraw = true;
+
+		limiter.delayBeforeSwap();
+		limiter.startFrame();
+	}
+	promptCompleted = true;
+	return Common::kNoError;
+}
+
+Common::Error MenuSystem::runMainMenu(Flow &flow) {
 	const Art *art = _engine.getArt();
 	if (!art)
 		return Common::kReadingFailed;
@@ -1010,7 +1085,7 @@ Common::Error MenuSystem::runMainMenuStub(Flow &flow) {
 			if (_hasMainMenuBackdrop)
 				renderBackdropMenuScreen(_mainMenuBackdrop, _mainMenuBackdropPalette, 1.0f, mainMenuItems, selectedItem);
 			else
-				renderMainMenuStub(mainMenuItems, selectedItem, statusMessage);
+				renderMainMenuScreen(selectedItem, statusMessage, true, mainMenuItems);
 			needsRedraw = false;
 		}
 
@@ -1151,7 +1226,7 @@ void MenuSystem::clearMainMenuBackdrop() {
 	_hasMainMenuBackdrop = false;
 }
 
-Common::Error MenuSystem::runRoomMenuStub(const IndexedBitmap &backdrop, const byte *palette,
+Common::Error MenuSystem::runRoomMenu(const IndexedBitmap &backdrop, const byte *palette,
 		float paletteBrightness, Flow &flow, bool canSaveGame) {
 	Graphics::FrameLimiter limiter(g_system, 60);
 	Common::Array<Common::String> roomMenuItems;
@@ -2399,11 +2474,6 @@ Common::Error MenuSystem::runHelpScreen(const byte *palette, float paletteBright
 	}
 
 	return Common::kNoError;
-}
-
-void MenuSystem::renderMainMenuStub(const Common::Array<Common::String> &menuItems, int selectedItem,
-		const Common::String &statusMessage) const {
-	renderMainMenuScreen(selectedItem, statusMessage, true, menuItems);
 }
 
 void MenuSystem::renderMainMenuScreen(int selectedItem, const Common::String &statusMessage,

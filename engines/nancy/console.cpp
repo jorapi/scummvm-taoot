@@ -529,11 +529,31 @@ static uint numPlayerCharacters() {
 	return pcui ? MIN<uint>(pcui->characters.size(), kMaxPlayerCharacters) : 1;
 }
 
+// The name of an inventory item, from wherever the game keeps it: the inventory
+// data, Nancy17's item table, or Nancy16's list of names next to the event flags
+static Common::String inventoryItemName(uint itemID) {
+	const INV *inventoryData = GetEngineData(INV);
+	if (inventoryData) {
+		return itemID < inventoryData->itemDescriptions.size() ? inventoryData->itemDescriptions[itemID].name : "Invalid";
+	}
+
+	const INVD *itemTable = GetEngineData(INVD);
+	if (itemTable) {
+		for (const INVD::Item &item : itemTable->items) {
+			if (item.id == (int16)itemID) {
+				return item.name;
+			}
+		}
+
+		return "Invalid";
+	}
+
+	const EVNT *names = (const EVNT *)g_nancy->getEngineData("EVNT");
+	return names && itemID < names->itemNames.size() ? names->itemNames[itemID] : "Invalid";
+}
+
 void NancyConsole::recursePrintDependencies(const Action::DependencyRecord &record) {
 	using namespace Action;
-
-	auto *inventoryData = GetEngineData(INV);
-	assert(inventoryData);
 
 	for (const DependencyRecord &dep : record.children) {
 		debugPrintf("\n\t\t");
@@ -544,9 +564,7 @@ void NancyConsole::recursePrintDependencies(const Action::DependencyRecord &reco
 		case DependencyType::kInventory:
 			debugPrintf("kInventory, item %u, %s, %s",
 				dep.label,
-				(uint16)dep.label < inventoryData->itemDescriptions.size() ?
-					inventoryData->itemDescriptions[dep.label].name.c_str() :
-					"Invalid",
+				inventoryItemName((uint16)dep.label).c_str(),
 				dep.condition == g_nancy->_true ? "true" : "false");
 
 			// Nancy15+ can ask about a character other than the one being played
@@ -582,12 +600,15 @@ void NancyConsole::recursePrintDependencies(const Action::DependencyRecord &reco
 				dep.milliseconds);
 			break;
 		case DependencyType::kElapsedPlayerTime:
-			debugPrintf("kPlayerTime, player time %s %i hours, %i minutes, %i seconds, %i milliseconds",
-				dep.condition == 0 ? "at or after" : (dep.condition == 1 ? "at or before" : (dep.condition == 2 ? "equals" : "between")),
-				dep.hours,
-				dep.minutes,
-				dep.seconds,
-				dep.milliseconds);
+			if (dep.condition == 3) {
+				// A range keeps its end in the seconds and milliseconds fields
+				debugPrintf("kPlayerTime, player time between %i:%02i and %i:%02i",
+					dep.hours, dep.minutes, dep.seconds, dep.milliseconds);
+			} else {
+				debugPrintf("kPlayerTime, player time %s %i:%02i",
+					dep.condition == 0 ? "at or after" : (dep.condition == 1 ? "at or before" : "equals"),
+					dep.hours, dep.minutes);
+			}
 			break;
 		case DependencyType::kSceneCount:
 			debugPrintf("kSceneCount, scene ID %i, hit count %s %i",
@@ -601,7 +622,7 @@ void NancyConsole::recursePrintDependencies(const Action::DependencyRecord &reco
 		case DependencyType::kCursorType:
 			debugPrintf("kCursorType, item %u, %s",
 				dep.label,
-				inventoryData->itemDescriptions[dep.label].name.c_str());
+				inventoryItemName((uint16)dep.label).c_str());
 			break;
 		case DependencyType::kPlayerTOD:
 			debugPrintf("kPlayerTOD, %s",
@@ -611,9 +632,24 @@ void NancyConsole::recursePrintDependencies(const Action::DependencyRecord &reco
 			if (g_nancy->getGameType() >= kGameTypeNancy14) {
 				// Repurposed as a value-table test in Nancy14
 				static const char *const comparisons[] = { "==", ">", ">=", "<", "<=" };
-				debugPrintf("kValueTest, value %u %s %i", dep.label,
-					dep.condition < ARRAYSIZE(comparisons) ? comparisons[dep.condition] : "?",
-					dep.milliseconds);
+				const char *comparison = dep.condition < ARRAYSIZE(comparisons) ? comparisons[dep.condition] : "?";
+				const TableData *table = State::Scene::hasInstance() ?
+					(const TableData *)NancySceneState.getPuzzleData(TableData::getTag()) : nullptr;
+
+				if (g_nancy->getGameType() >= kGameTypeNancy16 && table) {
+					// Nancy16 compares against another value when the hours field is 1; values
+					// are indexed with a byte, and the last one is the day. Show what they hold.
+					if (dep.hours == 1) {
+						debugPrintf("kValueTest, value %u (now %i) %s value %u (now %i)", (byte)dep.label,
+							table->getValueOrZero((byte)dep.label), comparison,
+							(byte)dep.milliseconds, table->getValueOrZero((byte)dep.milliseconds));
+					} else {
+						debugPrintf("kValueTest, value %u (now %i) %s %i", (byte)dep.label,
+							table->getValueOrZero((byte)dep.label), comparison, dep.milliseconds);
+					}
+				} else {
+					debugPrintf("kValueTest, value %u %s %i", dep.label, comparison, dep.milliseconds);
+				}
 			} else {
 				debugPrintf("kTimerLessThanDependencyTime");
 			}
@@ -1106,14 +1142,14 @@ bool NancyConsole::Cmd_setEventFlags(int argc, const char **argv) {
 }
 
 void NancyConsole::printInventoryItem(uint itemID) {
-	auto *inventoryData = GetEngineData(INV);
-	assert(inventoryData);
+	debugPrintf("\nItem %u, %s", itemID, inventoryItemName(itemID).c_str());
 
-	byte keep = inventoryData->itemDescriptions[itemID].keepItem;
-	debugPrintf("\nItem %u, %s, %s",
-		itemID,
-		inventoryData->itemDescriptions[itemID].name.c_str(),
-		keep == 0 ? "UseThenLose" : keep == 1 ? "KeepAlways" : keep == 2 ? "ReturnToInventory" : "NewSceneView");
+	// Only the games with inventory data say what happens to a used item
+	auto *inventoryData = GetEngineData(INV);
+	if (inventoryData) {
+		byte keep = inventoryData->itemDescriptions[itemID].keepItem;
+		debugPrintf(", %s", keep == 0 ? "UseThenLose" : keep == 1 ? "KeepAlways" : keep == 2 ? "ReturnToInventory" : "NewSceneView");
+	}
 
 	uint numCharacters = numPlayerCharacters();
 	if (numCharacters == 1) {
@@ -1166,9 +1202,6 @@ bool NancyConsole::Cmd_getInventory(int argc, const char **argv) {
 }
 
 bool NancyConsole::Cmd_setInventory(int argc, const char **argv) {
-	auto *inventoryData = GetEngineData(INV);
-	assert(inventoryData);
-
 	if (g_nancy->getState() != NancyState::kScene) {
 		debugPrintf("Not in the kScene state\n");
 		return true;
@@ -1217,13 +1250,13 @@ bool NancyConsole::Cmd_setInventory(int argc, const char **argv) {
 			NancySceneState.addItemToCharacterInventory(characterIndex, itemID);
 			debugPrintf("Added item %i, %s, to %s\n",
 				itemID,
-				inventoryData->itemDescriptions[itemID].name.c_str(),
+				inventoryItemName(itemID).c_str(),
 				targetDescription.c_str());
 		} else if (Common::String(argv[i + 1]).compareTo("false") == 0) {
 			NancySceneState.removeItemFromCharacterInventory(characterIndex, itemID);
 			debugPrintf("Removed item %i, %s, from %s\n",
 				itemID,
-				inventoryData->itemDescriptions[itemID].name.c_str(),
+				inventoryItemName(itemID).c_str(),
 				targetDescription.c_str());
 		} else {
 			debugPrintf("Invalid value %s\n", argv[i + 1]);

@@ -992,7 +992,7 @@ static const NancyGameDescription gameDescriptions[] = {
 			AD_ENTRY1s("ciftree.dat", "039950bfb8d1d614727ace5359ba6e20", 55775218),
 			Common::EN_ANY,
 			Common::kPlatformWindows,
-			ADGF_UNSUPPORTED | ADGF_DROPPLATFORM,
+			ADGF_UNSTABLE | ADGF_DROPPLATFORM,
 			NANCY8_GUIOPTIONS
 		},
 		kGameTypeNancy17
@@ -1003,7 +1003,7 @@ static const NancyGameDescription gameDescriptions[] = {
 			AD_ENTRY1s("ciftree.dat", "f414a802b64d3a9e28ba8e69e953a2b8", 50123969),
 			Common::EN_ANY,
 			Common::kPlatformWindows,
-			ADGF_UNSUPPORTED | ADGF_DROPPLATFORM,
+			ADGF_UNSTABLE | ADGF_DROPPLATFORM,
 			NANCY8_GUIOPTIONS
 		},
 		kGameTypeNancy18
@@ -1014,7 +1014,7 @@ static const NancyGameDescription gameDescriptions[] = {
 			AD_ENTRY1s("ciftree.dat", "e1d50b6fc3b72335863a45fdaf6f3da7", 53613856),
 			Common::EN_ANY,
 			Common::kPlatformWindows,
-			ADGF_UNSUPPORTED | ADGF_DROPPLATFORM,
+			ADGF_UNSTABLE | ADGF_DROPPLATFORM,
 			NANCY8_GUIOPTIONS
 		},
 		kGameTypeNancy19

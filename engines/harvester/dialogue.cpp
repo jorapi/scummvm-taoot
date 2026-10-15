@@ -23,7 +23,6 @@
 
 #include "common/algorithm.h"
 #include "common/debug.h"
-#include "common/endian.h"
 #include "common/events.h"
 #include "common/ptr.h"
 #include "common/system.h"
@@ -87,7 +86,7 @@
 #include "harvester/npc/whaley_dialogue.h"
 #include "harvester/npc/wasp_woman_dialogue.h"
 #include "harvester/resources.h"
-#include "harvester/runtime_entity.h"
+#include "harvester/entity.h"
 #include "harvester/art.h"
 #include "harvester/flow.h"
 #include "harvester/text.h"
@@ -284,15 +283,7 @@ static bool loadBitmapResource(ResourceManager &resources, const Common::String 
 		return false;
 
 	bitmap = IndexedBitmap();
-	bitmap.width = READ_LE_UINT32(data.data());
-	bitmap.height = READ_LE_UINT32(data.data() + 4);
-	const uint32 pixelCount = bitmap.width * bitmap.height;
-	if (bitmap.width == 0 || bitmap.height == 0 || data.size() < 12 + pixelCount)
-		return false;
-
-	bitmap.pixels.resize(pixelCount);
-	memcpy(bitmap.pixels.data(), data.data() + 12, pixelCount);
-	return true;
+	return decodeBitmap(data, bitmap);
 }
 
 static bool loadPaletteResource(ResourceManager &resources, const Common::String &path, byte *dest) {
@@ -393,10 +384,10 @@ static void splitDialogueMenuLine(const Common::String &line, Common::Array<Comm
 static void logDialogueMenuItems(const char *label, int sourceLineIndex,
 		const Common::String &rawLine, const Common::Array<Common::String> &items) {
 	if (sourceLineIndex >= 0) {
-		debugC(1, kDebugDialogue, "Harvester: %s source line 0x%x (%d) raw='%s'",
+		debugC(3, kDebugDialogue, "Harvester: %s source line 0x%x (%d) raw='%s'",
 			label, sourceLineIndex, sourceLineIndex + 1, rawLine.c_str());
 	} else {
-		debugC(1, kDebugDialogue, "Harvester: %s source raw='%s'", label, rawLine.c_str());
+		debugC(3, kDebugDialogue, "Harvester: %s source raw='%s'", label, rawLine.c_str());
 	}
 
 	if (items.empty()) {
@@ -405,7 +396,7 @@ static void logDialogueMenuItems(const char *label, int sourceLineIndex,
 	}
 
 	for (uint i = 0; i < items.size(); ++i)
-		debugC(1, kDebugDialogue, "Harvester: %s item[%u]='%s'", label, i + 1, items[i].c_str());
+		debugC(3, kDebugDialogue, "Harvester: %s item[%u]='%s'", label, i + 1, items[i].c_str());
 }
 
 static Common::String buildDialogueHeadId(const Common::String &speakerId, int headVariant) {

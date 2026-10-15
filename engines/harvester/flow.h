@@ -30,7 +30,7 @@
 #include "harvester/dialogue.h"
 #include "harvester/inventory.h"
 #include "harvester/menu.h"
-#include "harvester/room.h"
+#include "harvester/scene.h"
 #include "harvester/script.h"
 
 namespace Common {
@@ -41,7 +41,7 @@ namespace Harvester {
 
 class HarvesterEngine;
 class DialogueFlowAccess;
-class RoomInteractionProcessor;
+class Interaction;
 struct IndexedBitmap;
 
 class Flow {
@@ -52,6 +52,8 @@ public:
 	bool buildDialogueSaveStateBlob(Common::Array<byte> &blob, uint32 saveVersion);
 	bool loadDialogueSaveStateBlob(const Common::Array<byte> &blob, uint32 saveVersion);
 	Common::Error run();
+	Common::Error showCdChangePrompt(int discNumber);
+	bool handleSystemEvent(const Common::Event &event, Common::Error &result);
 
 private:
 	friend class HarvesterEngine;
@@ -59,16 +61,18 @@ private:
 	friend class DialogueSystem;
 	friend class InventorySystem;
 	friend class MenuSystem;
-	friend class RoomInteractionProcessor;
-	friend class RoomSystem;
+	friend class Interaction;
+	friend class SceneRunner;
+	friend class Input;
+	friend class Scene;
 
 	bool loadQuickTips();
 	bool loadMenuItems();
 	Common::Error runQuickTips();
 	Common::Error runDemoIntroduction();
 	Common::Error runDemoEnding();
-	Common::Error runMainMenuStub();
-	Common::Error runRoomMenuStub(const IndexedBitmap &backdrop, const byte *palette,
+	Common::Error runMainMenu();
+	Common::Error runRoomMenu(const IndexedBitmap &backdrop, const byte *palette,
 		float paletteBrightness, bool canSaveGame);
 	Common::Error runRoomNpcDialogue(const IndexedBitmap &backdrop, const byte *palette,
 		float paletteBrightness, const NpcRecord &npc, const Common::String &usedItemName);
@@ -114,7 +118,6 @@ private:
 	void resetRoomNpcDialogueState();
 	void resetCursorAnimationSequence();
 	bool tickRuntimeEntities();
-	bool handleSystemEvent(const Common::Event &event, Common::Error &result);
 
 	HarvesterEngine &_engine;
 	Common::Array<Common::String> _quickTips;
@@ -125,7 +128,7 @@ private:
 	InventorySystem _inventory;
 	MenuSystem _menu;
 	CheatSystem _cheats;
-	RoomSystem _room;
+	SceneRunner _room;
 	InteractionResult _queuedDialogueInteraction;
 	bool _hasQueuedDialogueInteraction = false;
 	InteractionResult _queuedDebugInteraction;

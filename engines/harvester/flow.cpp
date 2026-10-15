@@ -26,7 +26,6 @@
 #include "common/algorithm.h"
 #include "common/config-manager.h"
 #include "common/debug.h"
-#include "common/endian.h"
 #include "common/events.h"
 #include "common/formats/ini-file.h"
 #include "common/memstream.h"
@@ -43,7 +42,8 @@
 #include "harvester/harvester.h"
 #include "harvester/palette_utils.h"
 #include "harvester/resources.h"
-#include "harvester/runtime_entity.h"
+#include "harvester/entity.h"
+#include "harvester/scene_entities.h"
 #include "harvester/art.h"
 #include "harvester/monster.h"
 #include "harvester/player.h"
@@ -99,8 +99,6 @@ static const char *const kDemoIntroductionText =
 static const float kTownMapNightPaletteBrightness = 0.6f;
 // Native keeps WAIT_BM visible while room construction runs; fast local loads need a short floor.
 static const uint32 kTransitionWaitFrameMinMs = 120;
-static const int kRoomNpcAmbientLastFrame = 0x3b;
-static const float kNativeNpcMonsterZExtent = 5.0f;
 static const int kTownMapEdgeThreshold = 9;
 static const int kTownMapCursorHitExtent = 5;
 
@@ -207,7 +205,7 @@ static void drawRoomDebugLabel(Graphics::Screen &screen, const Graphics::Font &f
 }
 
 static void drawRoomDebugOverlay(HarvesterEngine &engine, Graphics::Screen &screen,
-		const RoomSceneResources &scene) {
+		const SceneState &scene) {
 	if (!engine.isRoomDebugEnabled())
 		return;
 
@@ -235,7 +233,7 @@ static void drawRoomDebugOverlay(HarvesterEngine &engine, Graphics::Screen &scre
 		const Entity *entity = entityManager
 			? entityManager->findSceneEntityByName(object.objectName)
 			: nullptr;
-		if (entity && entity->getClassId() == kRuntimeEntityClassBackground)
+		if (entity && entity->getClassId() == kEntityClassBackground)
 			continue;
 
 		drawRoomDebugLabel(screen, *font, resolveRoomDebugObjectLabel(engine, object),
@@ -246,7 +244,7 @@ static void drawRoomDebugOverlay(HarvesterEngine &engine, Graphics::Screen &scre
 		const Entity *entity = entityManager
 			? entityManager->findSceneEntityByName(npc.npcName)
 			: nullptr;
-		if (!entity || entity->getClassId() != kRuntimeEntityClassNpc || !entity->isVisible())
+		if (!entity || entity->getClassId() != kEntityClassNpc || !entity->isVisible())
 			continue;
 
 		const Common::Rect npcRect = entity->getScreenRect();
@@ -256,7 +254,7 @@ static void drawRoomDebugOverlay(HarvesterEngine &engine, Graphics::Screen &scre
 }
 
 static void drawCombatDebugOverlay(HarvesterEngine &engine, Graphics::Screen &screen,
-		const RoomSceneResources &scene) {
+		const SceneState &scene) {
 	if (!engine.isCombatDebugEnabled())
 		return;
 
@@ -274,7 +272,7 @@ static void drawCombatDebugOverlay(HarvesterEngine &engine, Graphics::Screen &sc
 
 	const Entity *playerEntity = entityManager->findSceneEntityByName(kPlayerActorEntityName);
 	if (script && playerEntity &&
-			playerEntity->getClassId() == kRuntimeEntityClassPlayer &&
+			playerEntity->getClassId() == kEntityClassPlayer &&
 			playerEntity->isVisible()) {
 		const Common::Rect playerRect = playerEntity->getScreenRect();
 		drawRoomDebugLabel(screen, *font,
@@ -285,7 +283,7 @@ static void drawCombatDebugOverlay(HarvesterEngine &engine, Graphics::Screen &sc
 
 	for (const MonsterRecord &monster : scene.state.roomMonsters) {
 		const Entity *entity = entityManager->findSceneEntityByName(monster.monsterName);
-		if (!entity || entity->getClassId() != kRuntimeEntityClassMonster || !entity->isVisible())
+		if (!entity || entity->getClassId() != kEntityClassMonster || !entity->isVisible())
 			continue;
 
 		const Common::Rect monsterRect = entity->getScreenRect();
@@ -317,18 +315,18 @@ static bool canEntityAffectPlayerPathfinding(const Entity &entity) {
 		return false;
 
 	switch (entity.getClassId()) {
-	case kRuntimeEntityClassCursor:
-	case kRuntimeEntityClassBackground:
-	case kRuntimeEntityClassPlayer:
-	case kRuntimeEntityClassRectHotspot:
-	case kRuntimeEntityClassRectHotspot19:
-	case kRuntimeEntityClassTimer:
+	case kEntityClassCursor:
+	case kEntityClassBackground:
+	case kEntityClassPlayer:
+	case kEntityClassRectHotspot:
+	case kEntityClassRectHotspot19:
+	case kEntityClassTimer:
 		return false;
 	default:
 		break;
 	}
 
-	return entity.getClassId() == kRuntimeEntityClassDisabledHotspot || entity.hasFrames();
+	return entity.getClassId() == kEntityClassDisabledHotspot || entity.hasFrames();
 }
 
 static void drawPathfindingBlockerOutline(Graphics::Screen &screen, EntityManager &entityManager,
@@ -350,7 +348,7 @@ static void drawPathfindingBlockerOutline(Graphics::Screen &screen, EntityManage
 }
 
 static void drawPathfindingDebugOverlay(HarvesterEngine &engine, Graphics::Screen &screen,
-		const RoomSceneResources &scene) {
+		const SceneState &scene) {
 	if (!engine.isPathfindingDebugEnabled())
 		return;
 
@@ -386,7 +384,7 @@ static Common::String resolveTimerDebugLabel(const TimerRecord &timer, const Ent
 }
 
 static void drawTimerDebugOverlay(HarvesterEngine &engine, Graphics::Screen &screen,
-		const RoomSceneResources &) {
+		const SceneState &) {
 	if (!engine.isTimerDebugEnabled())
 		return;
 
@@ -399,7 +397,7 @@ static void drawTimerDebugOverlay(HarvesterEngine &engine, Graphics::Screen &scr
 	Common::Array<Common::String> labels;
 	for (const TimerRecord &timer : script->getTimers()) {
 		const Entity *entity = entityManager->findSceneEntityByName(timer.timerName);
-		if (!entity || entity->getClassId() != kRuntimeEntityClassTimer || !entity->isTimerEnabled())
+		if (!entity || entity->getClassId() != kEntityClassTimer || !entity->isTimerEnabled())
 			continue;
 
 		const TimerRecord *runtimeTimer = script->findRuntimeTimerRecord(timer.timerName);
@@ -531,7 +529,7 @@ static bool applyRoomActorPlacementInternal(const RoomSetupState &state, Entity 
 		return false;
 
 	const float renderZ = computeRoomActorRenderZ(z, entity);
-	entity.setAnchorMode(kRuntimeEntityAnchorTopLeft);
+	entity.setAnchorMode(kEntityAnchorTopLeft);
 	setRoomActorScreenPosition(entity, centerX, bottomY, renderZ, width, height, xOffset, yOffset);
 
 	float depthScale = 1.0f;
@@ -576,20 +574,9 @@ static uint32 hashPalette(const byte *palette) {
 	return hash;
 }
 
-void logScenePaletteSummary(const char *label, const RoomSceneResources &scene, float brightness) {
-	const byte *palette = scene.palette;
-	byte minValue = 0;
-	byte maxValue = 0;
-	getPaletteByteRange(palette, minValue, maxValue);
-
-	debugC(1, kDebugRoom,
-		"Harvester: %s room='%s' palette='%s' bytes=%u range=[%u,%u] brightness=%.2f hash=%08x idx0=(%u,%u,%u) idx1=(%u,%u,%u) idx127=(%u,%u,%u) idx255=(%u,%u,%u)",
-		label, scene.state.roomName.c_str(), scene.state.palettePath.c_str(), 256U * 3U, minValue, maxValue,
-		(double)brightness, hashPalette(palette),
-		palette[0], palette[1], palette[2],
-		palette[3], palette[4], palette[5],
-		palette[127 * 3], palette[127 * 3 + 1], palette[127 * 3 + 2],
-		palette[255 * 3], palette[255 * 3 + 1], palette[255 * 3 + 2]);
+void logScenePaletteSummary(const char *label, const SceneState &scene, float brightness) {
+	debugC(2, kDebugRoom, "Harvester: %s room='%s' palette='%s' brightness=%.2f",
+		label, scene.state.roomName.c_str(), scene.state.palettePath.c_str(), (double)brightness);
 }
 
 static void blitBitmap(Graphics::Screen &screen, const IndexedBitmap &bitmap, int x, int y) {
@@ -686,10 +673,12 @@ static bool loadPaletteResource(ResourceManager &resources, const Common::String
 	byte minValue = 0;
 	byte maxValue = 0;
 	getPaletteByteRange(dest, minValue, maxValue);
-	debugC(1, kDebugRoom,
-		"Harvester: decoded room palette '%s' bytes=%u range=[%u,%u] idx0=(%u,%u,%u) idx255=(%u,%u,%u)",
-		path.c_str(), (uint)data.size(), minValue, maxValue,
+	debugC(3, kDebugRoom,
+		"Harvester: decoded room palette '%s' bytes=%u range=[%u,%u] hash=%08x idx0=(%u,%u,%u) idx1=(%u,%u,%u) idx127=(%u,%u,%u) idx255=(%u,%u,%u)",
+		path.c_str(), (uint)data.size(), minValue, maxValue, hashPalette(dest),
 		dest[0], dest[1], dest[2],
+		dest[3], dest[4], dest[5],
+		dest[127 * 3], dest[127 * 3 + 1], dest[127 * 3 + 2],
 		dest[255 * 3], dest[255 * 3 + 1], dest[255 * 3 + 2]);
 
 	return true;
@@ -704,7 +693,7 @@ Common::Rect getRoomObjectHotspotBounds(const ObjectRecord &object) {
 
 static Common::Rect getRegionBounds(const RegionRecord &region) {
 	if (region.right > region.left && region.bottom > region.top)
-		return Common::Rect(region.left, region.top, region.right + 1, region.bottom + 1);
+		return Common::Rect(region.left, region.top, region.right, region.bottom);
 
 	return Common::Rect();
 }
@@ -726,22 +715,14 @@ bool loadBitmapResource(ResourceManager &resources, const Common::String &path, 
 		return false;
 
 	bitmap = IndexedBitmap();
-	bitmap.width = READ_LE_UINT32(data.data());
-	bitmap.height = READ_LE_UINT32(data.data() + 4);
-	const uint32 pixelCount = bitmap.width * bitmap.height;
-	if (bitmap.width == 0 || bitmap.height == 0 || data.size() < 12 + pixelCount)
-		return false;
-
-	bitmap.pixels.resize(pixelCount);
-	memcpy(bitmap.pixels.data(), data.data() + 12, pixelCount);
-	return true;
+	return decodeBitmap(data, bitmap);
 }
 
 static void logSceneObjectSelection(const char *decision, const char *source, const ObjectRecord &object,
 		const Common::String &detail = Common::String()) {
 	const Common::Rect hotspotBounds = getRoomObjectHotspotBounds(object);
 	const Common::String resolvedSpritePath = resolveSceneObjectSpritePath(object);
-	debugC(1, kDebugScene,
+	debugC(3, kDebugScene,
 		"Harvester: scene object %s source='%s' object='%s' owner='%s' visible=%d runtimeVisible=%d sprite='%s' alt='%s' resolved='%s' pos=(%d,%d,%d) bounds=(%d,%d)-(%d,%d) action='%s' detail='%s'",
 		decision, source, object.objectName.c_str(), object.currentOwnerOrRoom.c_str(),
 		object.visible, object.runtimeVisible, object.spritePath.c_str(), object.altSpritePath.c_str(),
@@ -749,41 +730,6 @@ static void logSceneObjectSelection(const char *decision, const char *source, co
 		object.currentX, object.currentY, object.currentZ,
 		hotspotBounds.left, hotspotBounds.top, hotspotBounds.right, hotspotBounds.bottom,
 		object.actionTag.c_str(), detail.c_str());
-}
-
-static bool isBackgroundSceneObject(const RoomSetupState &state,
-		const ObjectRecord &object, const Entity &entity) {
-	if (!state.backgroundObjectName.empty() &&
-			object.objectName.equalsIgnoreCase(state.backgroundObjectName)) {
-		return true;
-	}
-
-	return object.initialX == 0 && object.initialY == 0 &&
-		entity.getBoundsWidth() == 640 && entity.getBoundsHeight() == 480;
-}
-
-static bool isInteractiveSceneHotspot(const ObjectRecord &object, Script *script) {
-	if (object.operatable || !object.actionTag.empty())
-		return true;
-	if (!script)
-		return false;
-	if (script->isPickupObject(object))
-		return true;
-
-	ResolvedText inspectText;
-	return script->resolveObjectInspectText(object, inspectText);
-}
-
-static int resolveSceneObjectClass(const RoomSetupState &state,
-		const ObjectRecord &object, const Entity *entity, Script *script) {
-	if (entity)
-		return isBackgroundSceneObject(state, object, *entity)
-			? kRuntimeEntityClassBackground
-			: kRuntimeEntityClassObject;
-
-	return isInteractiveSceneHotspot(object, script)
-		? kRuntimeEntityClassRectHotspot
-		: kRuntimeEntityClassDisabledHotspot;
 }
 
 static bool shouldQueueSceneObject(const ObjectRecord &object) {
@@ -813,8 +759,8 @@ static void queueSceneObject(const char *source, const ObjectRecord &object,
 	logSceneObjectSelection("queued", source, object);
 }
 
-bool loadRoomSceneResources(const RoomSetupState &state, ResourceManager &resources, RoomSceneResources &scene) {
-	scene = RoomSceneResources();
+bool loadRoomSceneResources(const RoomSetupState &state, ResourceManager &resources, SceneState &scene) {
+	scene = SceneState();
 	scene.state = state;
 	scene.targetPaletteBrightness = state.paletteBrightness;
 	if (!loadPaletteResource(resources, state.palettePath, scene.palette)) {
@@ -834,12 +780,11 @@ bool loadRoomSceneResources(const RoomSetupState &state, ResourceManager &resour
 	}
 	scene.sceneRegions = state.roomRegions;
 
-	debugC(1, kDebugRoom,
-		"Harvester: loadRoomSceneResources room='%s' palette='%s' background='%s' brightness=%.2f objects=%u activeObjects=%u sceneObjects=%u anims=%u visibleAnims=%u npcs=%u monsters=%u regions=%u",
-		state.roomName.c_str(), state.palettePath.c_str(), state.backgroundPath.c_str(), (double)state.paletteBrightness,
-		(uint)state.roomObjects.size(), (uint)state.activeObjects.size(), (uint)scene.sceneObjects.size(),
-		(uint)state.roomAnimations.size(), (uint)scene.sceneAnimations.size(),
-		(uint)state.roomNpcs.size(), (uint)state.roomMonsters.size(), (uint)scene.sceneRegions.size());
+	debugC(2, kDebugRoom,
+		"Harvester: room scene loaded room='%s' objects=%u anims=%u npcs=%u monsters=%u timers=%u regions=%u",
+		state.roomName.c_str(), (uint)scene.sceneObjects.size(), (uint)scene.sceneAnimations.size(),
+		(uint)state.roomNpcs.size(), (uint)state.roomMonsters.size(),
+		(uint)state.roomTimers.size(), (uint)scene.sceneRegions.size());
 
 	return true;
 }
@@ -849,7 +794,7 @@ bool shouldRunStartupRoomProbe() {
 		ConfMan.getBool("harvester_debug_probe_startup_room");
 }
 
-void drawRoomScene(HarvesterEngine &engine, Graphics::Screen &screen, const RoomSceneResources &scene,
+void drawRoomScene(HarvesterEngine &engine, Graphics::Screen &screen, const SceneState &scene,
 		float brightness) {
 	setScaledPalette(screen, scene.palette, brightness);
 	screen.fillRect(screen.getBounds(), 0);
@@ -926,9 +871,9 @@ static const ObjectRecord *findRoomObjectAtPoint(HarvesterEngine &engine,
 		const Entity *entity = entityManager->findSceneEntityByName(object.objectName);
 		if (!entity || !entity->hitTest(point))
 			continue;
-		if (entity->getClassId() == kRuntimeEntityClassBackground ||
-			entity->getClassId() == kRuntimeEntityClassPlayer ||
-			entity->getClassId() == kRuntimeEntityClassRectHotspot19) {
+		if (entity->getClassId() == kEntityClassBackground ||
+			entity->getClassId() == kEntityClassPlayer ||
+			entity->getClassId() == kEntityClassRectHotspot19) {
 			continue;
 		}
 		const int drawIndex = entityManager->findSceneEntityDrawIndexByName(entity->getName());
@@ -962,7 +907,7 @@ static const RegionRecord *findRoomRegionAtPoint(HarvesterEngine &engine,
 		const Entity *entity = entityManager->findSceneEntityByName(region.regionName);
 		if (!entity || !entity->hitTest(point))
 			continue;
-		if (entity->getClassId() != kRuntimeEntityClassRectHotspot19)
+		if (entity->getClassId() != kEntityClassRectHotspot19)
 			continue;
 		const int drawIndex = entityManager->findSceneEntityDrawIndexByName(entity->getName());
 		if (drawIndex < 0)
@@ -984,7 +929,7 @@ static const Entity *findRoomPlayerAtPoint(HarvesterEngine &engine, const Common
 		return nullptr;
 
 	const Entity *entity = entityManager->findTopSceneEntityAt(point);
-	if (!entity || entity->getClassId() != kRuntimeEntityClassPlayer)
+	if (!entity || entity->getClassId() != kEntityClassPlayer)
 		return nullptr;
 
 	return entity;
@@ -998,7 +943,7 @@ static const NpcRecord *findRoomNpcAtPoint(HarvesterEngine &engine,
 		return nullptr;
 
 	const Entity *entity = entityManager->findTopSceneEntityAt(point);
-	if (!entity || entity->getClassId() != kRuntimeEntityClassNpc)
+	if (!entity || entity->getClassId() != kEntityClassNpc)
 		return nullptr;
 
 	const NpcRecord *npc = findSceneNpcByName(sceneNpcs, entity->getName());
@@ -1148,8 +1093,8 @@ bool doesPlayerOverlapRegion(const Entity &playerEntity, const RegionRecord &reg
 		return false;
 	}
 
-	const float playerMaxZ = playerEntity.getZ() + playerEntity.getZExtent();
-	return playerMaxZ >= (float)region.minZ && (float)region.maxZ >= playerEntity.getZ();
+	const int playerMaxZ = (int)(playerEntity.getZ() + playerEntity.getZExtent());
+	return playerMaxZ >= region.minZ && region.maxZ >= (int)playerEntity.getZ();
 }
 
 RoomHoverState resolveRoomHoverState(HarvesterEngine &engine, const RoomSetupState &state,
@@ -1246,7 +1191,7 @@ static bool findRoomObjectProbePoint(HarvesterEngine &engine, const Common::Arra
 	return false;
 }
 
-void logStartupRoomProbe(HarvesterEngine &engine, const RoomSceneResources &scene,
+void logStartupRoomProbe(HarvesterEngine &engine, const SceneState &scene,
 		const Common::String &entranceName, Common::Point &mousePos,
 		const MenuTextConfig &menuTextConfig) {
 	EntityManager *entityManager = engine.getRuntimeEntities();
@@ -1374,7 +1319,7 @@ static Common::String trimAsciiLine(const Common::String &value) {
 	return value.substr(start, end - start);
 }
 
-static bool loadQuickTipsScene(HarvesterEngine &engine, RoomSceneResources &scene) {
+static bool loadQuickTipsScene(HarvesterEngine &engine, SceneState &scene) {
 	RoomSetupState state;
 	// The original startup path enters the START room first and overlays quick tips on top of it.
 	if (!engine.getScript()->resolveRoomSetupState("START", state, *engine.getResources()))
@@ -1383,7 +1328,7 @@ static bool loadQuickTipsScene(HarvesterEngine &engine, RoomSceneResources &scen
 	return loadRoomSceneResources(state, *engine.getResources(), scene);
 }
 
-static void renderQuickTipsScreen(HarvesterEngine &engine, const RoomSceneResources &scene,
+static void renderQuickTipsScreen(HarvesterEngine &engine, const SceneState &scene,
 		const MenuTextConfig &config, const QuickTipsLayout &layout,
 		const Common::String &tipText) {
 	Graphics::Screen *screen = engine.getScreen();
@@ -1402,7 +1347,7 @@ static void renderQuickTipsScreen(HarvesterEngine &engine, const RoomSceneResour
 Flow::Flow(HarvesterEngine &engine)
 	: _engine(engine), _mousePos(320, 200), _dialogue(engine, _mousePos), _inventory(engine),
 	  _menu(engine, _mousePos, _menuItems), _cheats(engine),
-	  _room(engine, _mousePos, _inventory, _cheats) {
+	  _room(engine, _inventory, _cheats) {
 }
 
 bool Flow::load() {
@@ -1477,7 +1422,7 @@ Common::Error Flow::run() {
 
 	_engine.stopMusic();
 	_engine.stopSound();
-	return runMainMenuStub();
+	return runMainMenu();
 }
 
 bool Flow::loadQuickTips() {
@@ -1555,7 +1500,7 @@ Common::Error Flow::runQuickTips() {
 	if (transitionError.getCode() != Common::kNoError)
 		return transitionError;
 
-	RoomSceneResources scene;
+	SceneState scene;
 	if (!loadQuickTipsScene(_engine, scene))
 		return Common::kReadingFailed;
 
@@ -1788,13 +1733,47 @@ Common::Error Flow::runDemoIntroduction() {
 	return Common::kNoError;
 }
 
-Common::Error Flow::runMainMenuStub() {
-	return _menu.runMainMenuStub(*this);
+Common::Error Flow::runMainMenu() {
+	return _menu.runMainMenu(*this);
 }
 
-Common::Error Flow::runRoomMenuStub(const IndexedBitmap &backdrop, const byte *palette,
+Common::Error Flow::showCdChangePrompt(int discNumber) {
+	if (discNumber <= 0)
+		return Common::kNoError;
+
+	ResourceManager *resources = _engine.getResources();
+	if (!resources)
+		return Common::kReadingFailed;
+	const int previousDisc = resources->getCurrentDisc();
+
+	if (_engine.shouldShowCdChangePrompts()) {
+		bool promptCompleted = false;
+		Common::Error promptError = _menu.showCdChangePrompt(discNumber, *resources, *this, promptCompleted);
+		// System-event exits can return kNoError without completing the prompt.
+		if (promptError.getCode() != Common::kNoError || !promptCompleted)
+			return promptError;
+	}
+
+	if (!_engine.activateDisc(discNumber)) {
+		warning("Harvester: unable to activate disc %d resources", discNumber);
+		return Common::kReadingFailed;
+	}
+	if ((discNumber == 1 || discNumber == 3) &&
+			previousDisc > 0 && previousDisc != resources->getCurrentDisc()) {
+		Script *script = _engine.getScript();
+		if (!script || !script->reloadTownWorld(*resources)) {
+			warning("Harvester: unable to reload town script after disc prompt %d -> %d",
+				previousDisc, discNumber);
+			return Common::kReadingFailed;
+		}
+	}
+
+	return Common::kNoError;
+}
+
+Common::Error Flow::runRoomMenu(const IndexedBitmap &backdrop, const byte *palette,
 		float paletteBrightness, bool canSaveGame) {
-	return _menu.runRoomMenuStub(backdrop, palette, paletteBrightness, *this, canSaveGame);
+	return _menu.runRoomMenu(backdrop, palette, paletteBrightness, *this, canSaveGame);
 }
 
 Common::Error Flow::runRoomNpcDialogue(const IndexedBitmap &backdrop, const byte *palette,
@@ -2153,38 +2132,13 @@ bool Flow::populateRoomSceneEntities(RoomSetupState &state,
 	if (!entityManager)
 		return false;
 
+	SceneEntities sceneRuntime(state, _engine.getScript(), _engine.getResources(), entityManager);
 	Entity *preservedPlayer = entityManager->detachSceneEntityByName(kPlayerActorEntityName);
 	entityManager->clearSceneEntities(true);
-	for (const RegionRecord &region : state.roomRegions) {
-		const Common::Rect regionBounds = getRegionBounds(region);
-		if (regionBounds.isEmpty())
-			continue;
-
-		Entity *entity = entityManager->spawnSceneHotspotEntity(
-			region.regionName, regionBounds, (float)region.minZ);
-		if (!entity) {
-			debugC(1, kDebugRoom,
-				"Harvester: scene region skipped room='%s' region='%s' bounds=(%d,%d)-(%d,%d) z=[%d,%d]",
-				state.roomName.c_str(), region.regionName.c_str(),
-				regionBounds.left, regionBounds.top, regionBounds.right, regionBounds.bottom,
-				region.minZ, region.maxZ);
-			continue;
-		}
-
-		entity->setClassId(kRuntimeEntityClassRectHotspot19);
-		entity->setAnchorMode(kRuntimeEntityAnchorTopLeft);
-		entity->setZExtent((float)MAX(0, region.maxZ - region.minZ));
-		if (!region.cursorEnabled)
-			entity->setHitTestMode(kRuntimeEntityHitTestNone);
-		debugC(1, kDebugRoom,
-			"Harvester: scene region spawned room='%s' region='%s' class=0x%x bounds=(%d,%d)-(%d,%d) z=[%d,%d] facing=%d cursor=%d action='%s'",
-			state.roomName.c_str(), region.regionName.c_str(), entity->getClassId(),
-			regionBounds.left, regionBounds.top, regionBounds.right, regionBounds.bottom,
-			region.minZ, region.maxZ, region.desiredFacing, region.cursorEnabled, region.actionTag.c_str());
-	}
+	sceneRuntime.populateRoomRegions();
 	for (const TimerRecord &timer : state.roomTimers) {
 		Entity *existingTimer = entityManager->findSceneEntityByName(timer.timerName);
-		if (existingTimer && existingTimer->getClassId() == kRuntimeEntityClassTimer) {
+		if (existingTimer && existingTimer->getClassId() == kEntityClassTimer) {
 			debugC(1, kDebugRoom,
 				"Harvester: scene timer reused room='%s' timer='%s' current=%d initial=%d enabled=%d loop=%d global=%d",
 				state.roomName.c_str(), timer.timerName.c_str(), existingTimer->getTimerCurrentValue(),
@@ -2205,44 +2159,7 @@ bool Flow::populateRoomSceneEntities(RoomSetupState &state,
 			state.roomName.c_str(), timer.timerName.c_str(), timer.currentValue, timer.initialValue,
 			timer.enabled, timer.looping, timer.global);
 	}
-	for (const ObjectRecord &object : drawableObjects) {
-		Entity *entity = nullptr;
-		const Common::String spritePath = resolveSceneObjectSpritePath(object);
-		const Common::Rect hotspotBounds = getRoomObjectHotspotBounds(object);
-		if (!spritePath.empty() && spritePath.hasSuffixIgnoreCase(".BM")) {
-			entity = entityManager->spawnSceneBitmapEntity(object.objectName, spritePath,
-				Common::Point(object.currentX, object.currentY), (float)object.currentZ);
-		} else {
-			if (!hotspotBounds.isEmpty())
-				entity = entityManager->spawnSceneHotspotEntity(object.objectName, hotspotBounds, (float)object.currentZ);
-		}
-
-		if (!entity) {
-			debugC(1, kDebugRoom,
-				"Harvester: scene entity skipped room='%s' object='%s' resolved='%s' bounds=(%d,%d)-(%d,%d) reason='%s'",
-				state.roomName.c_str(), object.objectName.c_str(), spritePath.c_str(),
-				hotspotBounds.left, hotspotBounds.top, hotspotBounds.right, hotspotBounds.bottom,
-				spritePath.empty() || !spritePath.hasSuffixIgnoreCase(".BM")
-					? "no_bitmap_and_no_hotspot_bounds"
-					: "spawn_failed");
-			debug(1, "Harvester: unable to spawn room object entity '%s' from '%s'",
-				object.objectName.c_str(), spritePath.c_str());
-			continue;
-		}
-
-		entity->setClassId(resolveSceneObjectClass(
-			state, object, entity->hasFrames() ? entity : nullptr, _engine.getScript()));
-		entity->setAnchorMode(kRuntimeEntityAnchorTopLeft);
-		entity->setZExtent((float)object.zExtent);
-		const Common::Rect entityRect = entity->getScreenRect();
-		debugC(1, kDebugRoom,
-			"Harvester: scene entity spawned room='%s' object='%s' type='%s' class=0x%x pos=(%d,%d,z=%.2f) rect=(%d,%d)-(%d,%d) sprite='%s' action='%s' operatable=%d ident='%s'",
-			state.roomName.c_str(), object.objectName.c_str(),
-			entity->hasFrames() ? "bitmap" : "hotspot", entity->getClassId(),
-			entity->getX(), entity->getY(), (double)entity->getZ(),
-			entityRect.left, entityRect.top, entityRect.right, entityRect.bottom,
-			spritePath.c_str(), object.actionTag.c_str(), object.operatable, object.identTextKey.c_str());
-	}
+	sceneRuntime.populateRoomObjects(drawableObjects);
 	for (const AnimRecord &anim : drawableAnimations) {
 		const bool displayVisible = shouldDisplaySceneAnimation(anim);
 		if (!entityManager->spawnSceneAnimationEntity(anim.animName, anim.resourcePath,
@@ -2252,76 +2169,8 @@ bool Flow::populateRoomSceneEntities(RoomSetupState &state,
 				anim.animName.c_str(), anim.resourcePath.c_str());
 		}
 	}
-	for (const NpcRecord &npc : state.roomNpcs) {
-		Entity *entity = entityManager->spawnSceneActorEntity(npc.npcName,
-			npc.modelPath, Common::Point(npc.posX, npc.posY), (float)npc.posZ, 0);
-		if (!entity) {
-			debug(1, "Harvester: unable to spawn room npc entity '%s' from '%s'",
-				npc.npcName.c_str(), npc.modelPath.c_str());
-			continue;
-		}
-
-		entity->setClassId(kRuntimeEntityClassNpc);
-		entity->setZExtent(kNativeNpcMonsterZExtent);
-		const bool isCorpse = !npc.active &&
-			npc.runtimeSpawned &&
-			npc.deathDamageType != 0 &&
-			npc.runtimeState >= 0;
-		entity->setHitTestMode(isCorpse ? kRuntimeEntityHitTestNone : kRuntimeEntityHitTestOpaquePixels);
-		// Native spawn positions frame 0 before selecting ambient or corpse frame banks.
-		if (!applyRoomActorPlacementInternal(state, *entity,
-				npc.posX, npc.posY, (float)npc.posZ, nullptr, false)) {
-			debug(1, "Harvester: unable to apply room npc placement for '%s'",
-				npc.npcName.c_str());
-		}
-		if (isCorpse) {
-			const int corpseFrame = MIN(entity->getLastFrame(), npc.runtimeState);
-			entity->setAnimationFrameRange(corpseFrame, corpseFrame, false);
-			entity->setAnimationRate(0);
-			entity->setCurrentFrame(corpseFrame);
-			entity->setAnimationEnabled(false);
-		} else {
-			// Native spawn_npc_entity_from_record seeds the passive room-NPC loop as frames 0..0x3b.
-			entity->setAnimationFrameRange(0, MIN(entity->getLastFrame(), kRoomNpcAmbientLastFrame), true);
-			if (npc.frameDelay > 0)
-				entity->setAnimationRate(npc.frameDelay);
-		}
-		entityManager->reinsertSceneEntity(entity);
-		debugC(1, kDebugRoom,
-			"Harvester: scene npc spawned room='%s' npc='%s' class=0x%x pos=(%d,%d,z=%.2f) frame_delay=%d model='%s' active=%d visible=%d",
-			state.roomName.c_str(), npc.npcName.c_str(), entity->getClassId(),
-			entity->getX(), entity->getY(), (double)entity->getZ(),
-			npc.frameDelay, npc.modelPath.c_str(), npc.active, npc.visible);
-	}
-	for (const MonsterRecord &monster : state.roomMonsters) {
-		Entity *entity = entityManager->spawnSceneActorEntity(monster.monsterName,
-			monster.modelPath, Common::Point(monster.posX, monster.posY), (float)monster.posZ,
-			Monster::resolveFacingFrame(monster.facing));
-		if (!entity) {
-			debug(1, "Harvester: unable to spawn room monster entity '%s' from '%s'",
-				monster.monsterName.c_str(), monster.modelPath.c_str());
-			continue;
-		}
-
-		entity->setClassId(kRuntimeEntityClassMonster);
-		entity->setZExtent(kNativeNpcMonsterZExtent);
-		entity->setHitTestMode(kRuntimeEntityHitTestNone);
-		entity->setVisible(monster.visible);
-		// Native restores a saved monster corpse frame before set_entity_screen_position().
-		Monster::applyAnimation(*entity, monster);
-		if (!applyRoomActorPlacement(state, *entity, monster.posX, monster.posY, (float)monster.posZ)) {
-			debug(1, "Harvester: unable to apply room monster placement for '%s'",
-				monster.monsterName.c_str());
-		}
-		entityManager->reinsertSceneEntity(entity);
-		debugC(1, kDebugRoom,
-			"Harvester: scene monster spawned room='%s' monster='%s' class=0x%x pos=(%d,%d,z=%.2f) facing=%d hp=%d/%d damage=%d engage=%d damage_type='%s' model='%s' active=%d visible=%d",
-			state.roomName.c_str(), monster.monsterName.c_str(), entity->getClassId(),
-			entity->getX(), entity->getY(), (double)entity->getZ(), monster.facing,
-			monster.currentHitPoints, monster.initialHitPoints,
-			monster.damageAmount, monster.engageDistance, Player::describeCombatDamageType(monster.damageType),
-			monster.modelPath.c_str(), monster.active, monster.visible);
-	}
+	sceneRuntime.populateRoomNpcs();
+	sceneRuntime.populateRoomMonsters();
 	if (state.hasEntrance) {
 		const int playerFrame = Player::resolveFacingFrame(state.playerFacing);
 		Script *script = _engine.getScript();
@@ -2338,9 +2187,9 @@ bool Flow::populateRoomSceneEntities(RoomSetupState &state,
 		if (!player) {
 			debug(1, "Harvester: unable to spawn startup player actor from '%s'", playerResourcePath.c_str());
 		} else {
-			player->setClassId(kRuntimeEntityClassPlayer);
-			player->setAnchorMode(kRuntimeEntityAnchorTopLeft);
-			player->setHitTestMode(kRuntimeEntityHitTestOpaquePixels);
+			player->setClassId(kEntityClassPlayer);
+			player->setAnchorMode(kEntityAnchorTopLeft);
+			player->setHitTestMode(kEntityHitTestOpaquePixels);
 			player->setVisible(true);
 			player->setAnimationRate(0);
 			player->setAnimationFrameRange(playerFrame, playerFrame, false);
