@@ -157,31 +157,74 @@ public:
 		g_system->getMixer()->playStream(Audio::Mixer::kSpeechSoundType, &_handle, makePCMStream(_clip.get()));
 	}
 };
+class CheckpointPicture : public GUI::Widget {
+	Bytes _picture;
+protected:
+	void drawWidget() override {
+		Graphics::ManagedSurface surface(_w, _h, g_system->getOverlayFormat());
+		for (int y = 0; y < _h; ++y) for (int x = 0; x < _w; ++x) {
+			const byte *pixel = _picture.data() + ((y * RoutePreview::kHeight / _h) * RoutePreview::kWidth + x * RoutePreview::kWidth / _w) * 3;
+			surface.setPixel(x, y, surface.format.RGBToColor(pixel[0], pixel[1], pixel[2]));
+		}
+		g_gui.theme()->drawManagedSurface(Common::Point(_x, _y), surface, Graphics::ALPHA_OPAQUE);
+	}
+public:
+	CheckpointPicture(GUI::Dialog *boss, const Bytes &picture) : GUI::Widget(boss, 8, 32, 128, 96), _picture(picture) { setFlags(GUI::WIDGET_CLEARBG); }
+};
+Common::U32String checkpointBody(const RoutePreview &preview) {
+	Common::U32String text = _("**Saved checkpoint**\n\nLocation: "); text += preview.location.empty() ? _("Unavailable") : literal(preview.location);
+	text += _("\n\nStory time: "); text += preview.clock.empty() ? _("Unavailable") : literal(preview.clock);
+	text += _("\n\nHeld item: "); text += preview.heldItem.empty() ? _("None") : literal(preview.heldItem);
+	text += _("\n\n**Saved inventory / key items**\n\n");
+	if (preview.inventory.empty()) text += _("No carried items recorded.");
+	for (const auto &item : preview.inventory) {
+		text += item.name == "realneck" ? _("Real necklace") : item.name == "rubaiyat" ? _("Rubaiyat") : item.name == "notebook" ? _("Notebook") : item.name == "painting" ? _("Painting") : literal(item.name);
+		text += U": "; text += item.owner == "frank" || item.owner == "stranger" ? _("Carried") : item.owner.empty() || item.owner == "none" ? _("Not carried") : literal(item.owner); text += U"\n\n";
+	}
+	text += _("These are the saved checkpoint's items, not your current inventory.\n\n"); return text;
+}
 class EntryDialog : public GUI::Dialog {
 	GUI::StaticTextWidget *_title;
 	GUI::RichTextWidget *_text;
 	GUI::ButtonWidget *_play, *_close, *_revisit = nullptr;
+	CheckpointPicture *_picture = nullptr;
+	bool _confirmRestore = false;
 	const JournalEntry &_entry;
 	Replay &_replay;
 public:
-	EntryDialog(const JournalEntry &entry, Replay &replay, const Common::U32String &body = Common::U32String(), bool route = false, bool canRevisit = false) : GUI::Dialog(0, 0, 320, 240), _entry(entry), _replay(replay) {
+	EntryDialog(const JournalEntry &entry, Replay &replay, const Common::U32String &body = Common::U32String(), bool route = false, bool canRevisit = false, const RoutePreview *preview = nullptr, bool confirmRestore = false) : GUI::Dialog(0, 0, 320, 240), _confirmRestore(confirmRestore), _entry(entry), _replay(replay) {
 		_backgroundType = GUI::ThemeEngine::kDialogBackgroundMain;
 		Common::U32String text = entryContext(entry);
 		text += U"\n\n";
 		text += entryBody(entry);
 		if (!body.empty()) text = body;
+		if (preview) {
+			text = checkpointBody(*preview) + text;
+			if (preview->picture.size() == RoutePreview::kWidth * RoutePreview::kHeight * 3) _picture = new CheckpointPicture(this, preview->picture);
+		} else if ((route || _confirmRestore) && canRevisit) text = _("A preview is unavailable for this checkpoint. Its original saved state can still be restored.\n\n") + text;
+		if (_confirmRestore) text = _("Unsaved progress will be replaced. Manual saves and route discoveries are kept.\n\n") + text;
 		_title = new GUI::StaticTextWidget(this, 8, 8, 300, 20, speakerText(entry), Graphics::kTextAlignLeft);
 		_text = new GUI::RichTextWidget(this, 8, 32, 300, 160, text);
 		_play = new GUI::ButtonWidget(this, 8, 208, 140, 24, _("Replay"), Common::U32String(), kReplay);
 		_play->setEnabled(!entry.ident.empty());
 		_close = new GUI::ButtonWidget(this, 164, 208, 140, 24, _("Back"), Common::U32String(), GUI::kCloseCmd);
 		if (route) { _revisit = new GUI::ButtonWidget(this, 100, 208, 100, 24, _("Revisit"), Common::U32String(), kRevisit); _revisit->setEnabled(canRevisit); }
+		if (_confirmRestore) { _title->setLabel(_("Restore this checkpoint?")); _play->setLabel(_("Restore checkpoint")); _play->setEnabled(true); _close->setLabel(_("Cancel")); setResult(GUI::kMessageAlt); }
+	}
+	void open() override {
+		GUI::Dialog::open();
+		if (_confirmRestore) setResult(GUI::kMessageAlt);
 	}
 	void reflowLayout() override {
 		fit(*this);
 		const int row = MAX(20, g_gui.getFont().getFontHeight() + 8);
 		place(_title, 8, 8, _w - 16, row);
 		place(_text, 8, row + 12, _w - 16, MAX(20, _h - row * 2 - 28));
+		if (_picture) {
+			const int width = _w >= 600 ? 192 : 128;
+			place(_picture, 8, row + 12, width, width * 3 / 4);
+			place(_text, width + 16, row + 12, _w - width - 24, MAX(20, _h - row * 2 - 28));
+		}
 		place(_play, 8, _h - row - 8, (_w - 24) / 2, row);
 		place(_close, _w / 2 + 4, _h - row - 8, (_w - 24) / 2, row);
 		if (_revisit) {
@@ -192,10 +235,11 @@ public:
 	}
 	void handleTickle() override {
 		GUI::Dialog::handleTickle();
-		_play->setLabel(_replay.playing(_entry) ? _("Stop") : _("Replay"));
+		if (!_confirmRestore) _play->setLabel(_replay.playing(_entry) ? _("Stop") : _("Replay"));
 	}
 	void handleOtherEvent(const Common::Event &event) override {
 		if (event.type == Common::EVENT_CUSTOM_ENGINE_ACTION_START) {
+			if (_confirmRestore && event.customType == kJournalReplay) { setResult(GUI::kMessageOK); close(); return; }
 			if (event.customType == kJournalReplay && !_entry.ident.empty()) { _replay.play(_entry); return; }
 			if (event.customType == kJournalClose) { close(); return; }
 			if (event.customType == kJournalStar && _revisit && _revisit->isEnabled()) { setResult(kRevisit); close(); return; }
@@ -204,7 +248,7 @@ public:
 		GUI::Dialog::handleOtherEvent(event);
 	}
 	void handleCommand(GUI::CommandSender *sender, uint32 cmd, uint32 data) override {
-		if (cmd == kReplay) _replay.play(_entry);
+		if (cmd == kReplay) { if (_confirmRestore) { setResult(GUI::kMessageOK); close(); } else _replay.play(_entry); }
 		else if (cmd == kRevisit && _revisit && _revisit->isEnabled()) { setResult(kRevisit); close(); }
 		else GUI::Dialog::handleCommand(sender, cmd, data);
 	}
@@ -532,15 +576,6 @@ public:
 		return false;
 	}
 };
-class SceneConfirmation : public GUI::MessageDialog {
-public:
-	SceneConfirmation() : MessageDialog(_("Restore this story return point? Unsaved progress will be replaced. Manual saves and route discoveries are kept."), _("Restore checkpoint"), _("Cancel")) { setResult(GUI::kMessageAlt); }
-	void handleOtherEvent(const Common::Event &event) override {
-		if (event.type == Common::EVENT_CUSTOM_ENGINE_ACTION_START && (event.customType == kJournalReplay || event.customType == kJournalClose)) {
-			setResult(event.customType == kJournalReplay ? GUI::kMessageOK : GUI::kMessageAlt); close();
-		} else GUI::MessageDialog::handleOtherEvent(event);
-	}
-};
 class JournalDialog : public GUI::Dialog {
 	Session &_session;
 	Replay _replay;
@@ -569,7 +604,9 @@ class JournalDialog : public GUI::Dialog {
 	}
 	void requestRevisit() {
 		if (!canRevisit()) return;
-		SceneConfirmation confirmation;
+		const RouteMapItem &item = *_mapWidget->selected(); const JournalEntry &entry = _session.routes.graph.node(item.node)->entry;
+		RoutePreview preview; const bool hasPreview = _session.routes.readPreview(item.node, preview);
+		EntryDialog confirmation(entry, _replay, routeBody(_session.routes.graph, item), false, true, hasPreview ? &preview : nullptr, true);
 		if (confirmation.runModal() == GUI::kMessageOK && !g_system->getEventManager()->shouldQuit() && !g_system->getEventManager()->shouldReturnToLauncher()) {
 			_revisitNode = _mapWidget->selected()->node; close();
 		}
@@ -766,7 +803,8 @@ public:
 			const JournalEntry *entry = selectedEntry();
 			if (cmd == kReplay) { if (entry && !entry->ident.empty()) _replay.play(*entry); return; }
 			JournalEntry empty; empty.speaker = item->locked ? "Undiscovered" : "Continuation";
-			EntryDialog detail(entry ? *entry : empty, _replay, routeBody(_session.routes.graph, *item), true, canRevisit());
+			RoutePreview preview; const bool hasPreview = item->node && _session.routes.readPreview(item->node, preview);
+			EntryDialog detail(entry ? *entry : empty, _replay, routeBody(_session.routes.graph, *item), true, canRevisit(), hasPreview ? &preview : nullptr);
 			if (detail.runModal() == kRevisit) requestRevisit();
 			return;
 		}

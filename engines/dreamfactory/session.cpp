@@ -104,8 +104,33 @@ uint32 Session::routeChapter() const {
 	}
 	return identifyRouteChapter(version, sound.isTitanicRetail(), value("tour").truth(), value("mission").number(), value("phase").number(), value("day").number());
 }
+RoutePreview Session::captureRoutePreview() const {
+	RoutePreview preview;
+	if (roomSystem.current) preview.location = roomSystem.current->data.name + " / " + roomSystem.sceneName() + " / " + roomSystem.viewName();
+	const auto global = [&](const char *name) { const auto found = runtime.globals.find(name); return found == runtime.globals.end() ? Value() : found->_value; };
+	if (runtime.globals.contains("hrs") && runtime.globals.contains("min")) preview.clock = Common::String::format("%02d:%02d", global("hrs").number(), global("min").number());
+	if (version == 1 && runtime.globals.contains("day")) preview.clock = Common::String::format("Day %d / %s", global("day").number(), global("clock").text().c_str());
+	if (runtime.globals.contains("handitem") && global("handitem").isString) preview.heldItem = global("handitem").text();
+	for (const auto &prop : propSystem.props) {
+		const Common::String owner = prop->owner.text();
+		if (owner != (version == 1 ? "stranger" : "frank") && prop->name != preview.heldItem) continue;
+		if (preview.inventory.size() >= 256) break;
+		RouteInventoryItem item; item.name = prop->name; item.owner = owner; preview.inventory.push_back(item);
+	}
+	const Bytes &picture = display.picture();
+	if (_system && picture.size() == 640 * 480 * 4) {
+		preview.picture.resize(RoutePreview::kWidth * RoutePreview::kHeight * 3);
+		for (uint32 y = 0; y < RoutePreview::kHeight; ++y) for (uint32 x = 0; x < RoutePreview::kWidth; ++x) for (uint32 c = 0; c < 3; ++c) {
+			uint32 sum = 0;
+			for (uint32 dy = 0; dy < 5; ++dy) for (uint32 dx = 0; dx < 5; ++dx) sum += picture[((y * 5 + dy) * 640 + x * 5 + dx) * 4 + c];
+			preview.picture[(y * RoutePreview::kWidth + x) * 3 + c] = byte(sum / 25);
+		}
+	}
+	return preview;
+}
 void Session::prepareRouteCheckpoint() {
 	_routePending.clear(); _routeOwner.reset();
+	_routePendingPreview = RoutePreview();
 	_routePendingChapter = routeChapter();
 	if (!_routeResumeScene) _routeRevisiting = false;
 	if (!routes.active() || (ConfMan.hasKey("dreamfactory_routes") && !ConfMan.getBool("dreamfactory_routes"))) return;
@@ -123,13 +148,14 @@ void Session::prepareRouteCheckpoint() {
 	const uint32 started = _system ? _system->getMillis() : 0;
 	Common::String error;
 	if (!saveState(_routePending, error)) warning("Route checkpoint: %s", error.c_str());
+	if (!_routePending.empty()) _routePendingPreview = captureRoutePreview();
 	if (_routePendingChapter && roomSystem.current && roomSystem.visible && !_routePending.empty() && !routes.graph.chapterPoint(routes.graph.cursor(), _routePendingChapter)) {
 		JournalEntry entry; entry.speaker = "Story return point"; entry.room = roomSystem.current->data.name; entry.time = elapsedMillis();
 		entry.text = "Return to this part of the story to explore different outcomes.";
 		const uint32 id = routes.graph.recordScene(entry);
 		if (id) {
 			routes.graph.setChapter(id, _routePendingChapter);
-			if (!routes.writeCheckpoint(id, _routePending, error)) { warning("Chapter checkpoint: %s", error.c_str()); routes.save(error); }
+			if (!routes.writeCheckpoint(id, _routePending, error, &_routePendingPreview)) { warning("Chapter checkpoint: %s", error.c_str()); routes.save(error); }
 		}
 		_routePending.clear();
 	}
@@ -152,7 +178,7 @@ void Session::recordRoute(const JournalEntry &entry, bool decision) {
 		const uint32 chapter = _routePending.empty() ? routeChapter() : _routePendingChapter;
 		routes.graph.setChapter(id, chapter);
 		const bool needsCheckpoint = !chapter || !routes.graph.chapterCheckpoint(routes.graph.node(id)->parent, chapter);
-		if (id && !sameScene && needsCheckpoint && !routes.graph.node(id)->checkpoint && !_routePending.empty() && !routes.writeCheckpoint(id, _routePending, error)) warning("Route checkpoint: %s", error.c_str());
+		if (id && !sameScene && needsCheckpoint && !routes.graph.node(id)->checkpoint && !_routePending.empty() && !routes.writeCheckpoint(id, _routePending, error, &_routePendingPreview)) warning("Route checkpoint: %s", error.c_str());
 		_routePending.clear();
 	}
 	if (decision) routes.graph.recordDecision(entry);
@@ -255,7 +281,7 @@ bool Session::invoke(Runtime &vm, const Expression &call, ScriptFrame &frame, Va
 				Common::String error;
 				if (!routes.graph.cursor() && !_routePending.empty()) {
 					const uint32 scene = routes.graph.recordScene(ending);
-					if (scene && !routes.writeCheckpoint(scene, _routePending, error)) warning("Route checkpoint: %s", error.c_str());
+					if (scene && !routes.writeCheckpoint(scene, _routePending, error, &_routePendingPreview)) warning("Route checkpoint: %s", error.c_str());
 					_routePending.clear();
 				}
 				const uint32 id = routes.graph.recordEnding(ending);

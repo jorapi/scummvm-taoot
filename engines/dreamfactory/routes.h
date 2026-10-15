@@ -4,6 +4,18 @@
 #include "dreamfactory/journal.h"
 #include "common/savefile.h"
 namespace DreamFactory {
+struct RouteInventoryItem { Common::String name, owner; };
+struct RoutePreview {
+	Common::String location, clock, heldItem;
+	Common::Array<RouteInventoryItem> inventory;
+	Bytes picture, snapshotDigest;
+	static const uint32 kWidth = 128, kHeight = 96;
+};
+class RoutePreviewCodec {
+public:
+	static bool encode(const RoutePreview &preview, const Common::String &identity, Bytes &bytes);
+	static bool decode(const Bytes &bytes, const Common::String &identity, RoutePreview &preview);
+};
 struct RouteNode {
 	enum Kind { kScene, kDecision, kEnding } kind = kScene;
 	uint32 parent = 0;
@@ -87,8 +99,9 @@ public:
 	bool open(Common::SaveFileManager *files, const Common::String &target, const Common::String &signature, Common::String &error);
 	void setBudget(uint64 bytes) { _budget = bytes; }
 	bool save(Common::String &error);
-	bool writeCheckpoint(uint32 scene, const Bytes &bytes, Common::String &error);
+	bool writeCheckpoint(uint32 scene, const Bytes &bytes, Common::String &error, const RoutePreview *preview = nullptr);
 	bool readCheckpoint(uint32 node, Bytes &bytes, Common::String &error) const;
+	bool readPreview(uint32 node, RoutePreview &preview) const;
 };
 }
 #endif

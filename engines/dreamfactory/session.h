@@ -111,6 +111,7 @@ private:
 	bool _dialogActive = false;
 	bool _journalRequested = false;
 	Bytes _routePending;
+	RoutePreview _routePendingPreview;
 	uint32 _routePendingChapter = 0;
 	Common::SharedPtr<LoadedPuppet> _routeOwner;
 	uint32 _savedRouteCursor = 0;
@@ -119,6 +120,7 @@ private:
 	uint32 _routeResumeScene = 0;
 	bool _routeRevisiting = false;
 	void prepareRouteCheckpoint();
+	RoutePreview captureRoutePreview() const;
 	void recordRoute(const JournalEntry &entry, bool decision);
 	uint64 _dialogGeneration = 0;
 	bool _pollingButton = false;

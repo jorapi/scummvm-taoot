@@ -521,3 +521,37 @@ layouts. Unlike VLR's authored fixed chart, this map grows from reached story se
 it cannot reveal the location or number of story branches not yet encountered.
 The conversation log remains a continuous speaker-labelled transcript with
 individual voice replay, rather than requiring a scene jump to hear a line.
+
+### Modernization roadmap
+
+The active development goal follows this order, extending existing engine and
+shared ScummVM facilities. Enhancements must remain optional where they alter
+presentation or assistance, preserve original mouse/keyboard actions and story
+rules, and remain usable with a controller at 480x272.
+
+1. **Implemented:** checkpoint previews with saved thumbnail, location, clock and inventory before restoring.
+2. Controller inventory: readable item previews/descriptions and authentic examine/use/give actions.
+3. Recovery: rotating recovery saves separate from route/manual saves and a Continue view.
+4. Replay: distinct line/full skips and fast-forward of previously heard dialogue only.
+5. Accessibility: subtitle size, background opacity, speaker labels and shared audio controls.
+6. Journal: discovered clues, promises and unresolved leads with optional progressive hints.
+7. Map: visited rooms, current location, encountered characters and optional next-direction guidance.
+8. Ending hints: optional progressively more specific guidance based on discovered information.
+
+Checkpoint preview companions use a bounded, checksummed format tied to the
+profile identity, checkpoint ID and native snapshot digest. A 128x96 RGB thumbnail
+is averaged from the backing game picture before the triggering action. Preview
+metadata records that same moment's location, clock, held item and carried/key
+item ownership. Route details and restore confirmation read only the companion
+and native save header; they do not load a second running game or change inventory.
+Missing, damaged or older previews fall back to normal checkpoint restoration.
+Native save and route-profile formats remain unchanged. Preview storage reserves
+128 KiB per companion within the existing route budget; insufficient preview
+space or an optional companion write failure leaves the native checkpoint usable.
+Native storage tests pass for all three editions. Desktop and 480x272 controller
+tests cover preview details, cancel, restore and damaged native checkpoints.
+`tools/verify-taoot-route-preview.ps1` checks a real earned Titanic sinking state:
+the saved view, clock, thumbnail and four ending-critical item owners agree before
+and after a normal turn and route rewind. A real Dust alternate-ending rewind
+also passes. Windows compilation and Android ARM64 package checks are separate
+from physical handheld testing, which remains outstanding.

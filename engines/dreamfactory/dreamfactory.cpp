@@ -557,6 +557,12 @@ Common::Error DreamFactoryEngine::run() {
 						const RouteNode &node = session.routes.graph.nodes()[n];
 						warning("BOOT ROUTE node=%u kind=%u parent=%u choice=%d seen=%u checkpoint=%u file=%s speaker=%s", n + 1, uint32(node.kind), node.parent, node.parentChoice, node.seenChoices, node.checkpoint, node.entry.file.c_str(), node.entry.speaker.c_str());
 					}
+				} else if (command == "dumppreview") {
+					RoutePreview preview; ok = session.routes.readPreview(session.routes.graph.cursor(), preview);
+					if (ok) {
+						warning("BOOT PREVIEW location=%s clock=%s picture=%u items=%u", preview.location.c_str(), preview.clock.c_str(), uint32(preview.picture.size()), uint32(preview.inventory.size()));
+						for (const auto &item : preview.inventory) warning("BOOT PREVIEW ITEM name=%s owner=%s", item.name.c_str(), item.owner.c_str());
+					}
 				} else if (command == "revisitscene") {
 					const Common::String target = words.nextToken();
 					const uint32 id = target == "latest" ? session.routes.graph.cursor() : atoi(target.c_str()); Common::String error;

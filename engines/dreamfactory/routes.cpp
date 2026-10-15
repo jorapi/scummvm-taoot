@@ -156,6 +156,13 @@ public:
 	uint32 version = 2;
 	RouteIO(Common::SeekableReadStream *input, Common::WriteStream *output) : _sync(input, output), _input(input) {}
 	bool loading() const { return _input != nullptr; }
+	void bytes(Bytes &value, uint32 limit) {
+		uint32 size = value.size(); u32(size);
+		if (!good || size > limit) { good = false; return; }
+		if (loading()) value.resize(size);
+		if (size) _sync.syncBytes(value.data(), size);
+		good = good && !_sync.err() && (!_input || !_input->eos());
+	}
 	void u32(uint32 &value) { _sync.syncAsUint32LE(value); good = good && !_sync.err() && (!_input || !_input->eos()); }
 	void i32(int32 &value) { _sync.syncAsSint32LE(value); good = good && !_sync.err() && (!_input || !_input->eos()); }
 	void text(Common::String &value) {
@@ -183,6 +190,35 @@ public:
 		if (version >= 2) u32(node.chapter);
 	}
 };
+}
+static const uint32 kMaxPreviewBytes = 128 * 1024;
+static bool syncPreview(RouteIO &io, RoutePreview &preview, Common::String &identity) {
+	io.text(identity); io.text(preview.location); io.text(preview.clock); io.text(preview.heldItem);
+	io.bytes(preview.snapshotDigest, 16); io.bytes(preview.picture, RoutePreview::kWidth * RoutePreview::kHeight * 3);
+	uint32 count = preview.inventory.size(); io.u32(count);
+	if (count > 256) return false;
+	if (io.loading()) preview.inventory.resize(count);
+	for (auto &item : preview.inventory) { io.text(item.name); io.text(item.owner); }
+	return io.good && preview.snapshotDigest.size() == 16 && (preview.picture.empty() || preview.picture.size() == RoutePreview::kWidth * RoutePreview::kHeight * 3);
+}
+bool RoutePreviewCodec::encode(const RoutePreview &preview, const Common::String &identity, Bytes &bytes) {
+	bytes.clear(); RoutePreview prepared = preview; Common::String key = identity;
+	Common::MemoryWriteStreamDynamic payload(DisposeAfterUse::YES); RouteIO io(nullptr, &payload);
+	if (!syncPreview(io, prepared, key) || payload.size() > kMaxPreviewBytes - 28) return false;
+	Common::MemoryReadStream content(payload.getData(), uint32(payload.size())); byte digest[16]; Common::computeStreamMD5(content, digest);
+	Common::MemoryWriteStreamDynamic output(DisposeAfterUse::YES);
+	output.writeUint32BE(MKTAG('D','F','R','P')); output.writeUint32LE(1); output.writeUint32LE(uint32(payload.size())); output.write(digest, 16); output.write(payload.getData(), uint32(payload.size()));
+	bytes.resize(uint32(output.size())); memcpy(bytes.data(), output.getData(), bytes.size()); return true;
+}
+bool RoutePreviewCodec::decode(const Bytes &bytes, const Common::String &identity, RoutePreview &preview) {
+	if (bytes.size() < 28 || bytes.size() > kMaxPreviewBytes) return false;
+	Common::MemoryReadStream input(bytes.data(), bytes.size());
+	if (input.readUint32BE() != MKTAG('D','F','R','P') || input.readUint32LE() != 1 || input.readUint32LE() != bytes.size() - 28) return false;
+	byte expected[16], digest[16]; input.read(expected, 16); Common::computeStreamMD5(input, digest); input.seek(28);
+	if (memcmp(expected, digest, 16)) return false;
+	RoutePreview prepared; Common::String key; RouteIO io(&input, nullptr);
+	if (!syncPreview(io, prepared, key) || key != identity || input.pos() != input.size()) return false;
+	preview = prepared; return true;
 }
 bool RouteCodec::encode(const RouteGraph &graph, const Common::String &signature, Bytes &bytes, Common::String &error) {
 	bytes.clear(); error.clear();
@@ -410,18 +446,41 @@ static bool validCheckpoint(const Bytes &bytes) {
 	byte expected[16], digest[16]; input.read(expected, 16); Common::computeStreamMD5(input, digest);
 	return !memcmp(expected, digest, 16);
 }
-bool RouteStore::writeCheckpoint(uint32 scene, const Bytes &bytes, Common::String &error) {
+bool RouteStore::writeCheckpoint(uint32 scene, const Bytes &bytes, Common::String &error, const RoutePreview *preview) {
 	error.clear(); const RouteNode *node = graph.node(scene);
 	if (!active() || !node || node->kind != RouteNode::kScene || !validCheckpoint(bytes)) { error = "Invalid scene checkpoint"; return false; }
 	if (node->checkpoint) { error = "Scene already has a checkpoint"; return false; }
 	uint64 used = 0;
-	for (const auto &entry : graph.nodes()) used += entry.checkpointBytes;
+	for (uint32 id = 1; id <= graph.nodes().size(); ++id) {
+		used += graph.node(id)->checkpointBytes;
+		if (graph.node(id)->checkpoint && _files->exists(checkpointName(id) + ".preview")) used += kMaxPreviewBytes;
+	}
 	if (bytes.size() > _budget || used > _budget - bytes.size()) { error = "Route checkpoint storage limit reached"; return false; }
 	const Common::String name = checkpointName(scene);
 	if (!write(name, bytes)) { _files->removeSavefile(name); error = "Cannot write scene checkpoint"; return false; }
 	graph.attachCheckpoint(scene, bytes.size());
-	if (save(error)) return true;
+	if (save(error)) {
+		if (preview && used + bytes.size() + kMaxPreviewBytes <= _budget) {
+			RoutePreview prepared = *preview; prepared.snapshotDigest.resize(16); memcpy(prepared.snapshotDigest.data(), bytes.data() + 12, 16);
+			Bytes encoded;
+			if (RoutePreviewCodec::encode(prepared, Common::String::format("%s:%u", _signature.c_str(), scene), encoded) && !write(name + ".preview", encoded)) _files->removeSavefile(name + ".preview");
+		}
+		return true;
+	}
 	graph.detachCheckpoint(scene); _files->removeSavefile(name); return false;
+}
+bool RouteStore::readPreview(uint32 id, RoutePreview &preview) const {
+	preview = RoutePreview();
+	const uint32 scene = graph.checkpointFor(id); const RouteNode *node = graph.node(scene);
+	if (!active() || !node || !node->checkpoint) return false;
+	Bytes bytes; RoutePreview prepared;
+	if (!read(checkpointName(scene) + ".preview", kMaxPreviewBytes, bytes) || !RoutePreviewCodec::decode(bytes, Common::String::format("%s:%u", _signature.c_str(), scene), prepared)) return false;
+	Common::InSaveFile *snapshot = _files->openForLoading(checkpointName(scene));
+	if (!snapshot) return false;
+	byte header[28]; const bool matches = snapshot->size() == node->checkpointBytes && snapshot->read(header, 28) == 28 && READ_BE_UINT32(header) == MKTAG('D','F','S','V') && READ_LE_UINT32(header + 8) == node->checkpointBytes - 28 && !memcmp(header + 12, prepared.snapshotDigest.data(), 16);
+	delete snapshot;
+	if (!matches) return false;
+	preview = prepared; return true;
 }
 bool RouteStore::readCheckpoint(uint32 id, Bytes &bytes, Common::String &error) const {
 	error.clear(); bytes.clear();

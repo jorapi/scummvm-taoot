@@ -2903,6 +2903,29 @@ static bool auditRouteStore() {
 	if (loaded.readCheckpoint(decision, replay, error) || !replay.empty()) return false;
 	for (const auto &name : files.listSavefiles("*.?")) files.files[name].resize(1);
 	if (loaded.open(&files, "test", "fixture", error) || loaded.active()) return false;
+	{
+		RouteTestFiles previewFiles; RouteStore previews;
+		if (!previews.open(&previewFiles, "preview-test", "fixture", error)) return false;
+		JournalEntry previewScene; const uint32 previewId = previews.graph.recordScene(previewScene);
+		RoutePreview expectedPreview; expectedPreview.location = "DECKBD2 / Scene51 / View250"; expectedPreview.clock = "01:20";
+		expectedPreview.heldItem = "notebook"; RouteInventoryItem item; item.name = "notebook"; item.owner = "frank"; expectedPreview.inventory.push_back(item);
+		expectedPreview.picture.resize(RoutePreview::kWidth * RoutePreview::kHeight * 3); memset(expectedPreview.picture.data(), 117, expectedPreview.picture.size());
+		if (!previews.writeCheckpoint(previewId, checkpoint, error, &expectedPreview)) return false;
+		RoutePreview actualPreview;
+		if (!previews.readPreview(previewId, actualPreview) || actualPreview.location != expectedPreview.location || actualPreview.clock != expectedPreview.clock || actualPreview.heldItem != "notebook" || actualPreview.inventory.size() != 1 || actualPreview.inventory[0].owner != "frank" || actualPreview.picture != expectedPreview.picture) return false;
+		const Common::String previewName = previewFiles.listSavefiles("*.preview")[0]; const Bytes intactPreview = previewFiles.files[previewName];
+		if (RoutePreviewCodec::decode(intactPreview, "foreign", actualPreview)) return false;
+		previewFiles.files[previewName].back() ^= 1;
+		if (previews.readPreview(previewId, actualPreview) || !previews.readCheckpoint(previewId, replay, error) || replay != checkpoint) return false;
+		previewFiles.files[previewName] = intactPreview;
+		const Common::String previewSnapshot = previewFiles.listSavefiles("*.checkpoint")[0]; previewFiles.files[previewSnapshot][12] ^= 1;
+		if (previews.readPreview(previewId, actualPreview)) return false;
+		previewFiles.files[previewSnapshot] = checkpoint;
+		previewFiles.failSuffix = ".preview";
+		const uint32 failedPreviewId = previews.graph.recordScene(previewScene);
+		if (!previews.writeCheckpoint(failedPreviewId, checkpoint, error, &expectedPreview) || previews.readPreview(failedPreviewId, actualPreview) || !previews.readCheckpoint(failedPreviewId, replay, error)) return false;
+		warning("ROUTE PREVIEW PASS saved thumbnail location story time inventory held item bounded checksummed codec profile isolation snapshot digest binding damaged or missing preview does not prevent native restore optional write failure preserves checkpoint");
+	}
 	warning("ROUTE STORE PASS restart identity isolation torn metadata recovery immutable snapshots failed commit rollback quota missing corrupt checkpoint rejection");
 	return true;
 }
