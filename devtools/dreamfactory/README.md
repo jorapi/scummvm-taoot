@@ -32,20 +32,32 @@ The local build commands below run from that ScummVM source directory.
 
 ## Build status
 
-| Host | Deliverable | Verification in this workspace |
+| Host | Deliverable | Verification |
 | --- | --- | --- |
 | Windows x64 | Portable executable, SDL2, embedded fonts and licenses | OpenGL display, held-movie cursor, walking arrival and control-panel font fixes; native OpenGL panel test passes |
-| macOS arm64 / x86_64 | Separate ad-hoc application ZIPs; no Developer ID | Recipe and Xcode options prepared; native compilation needs macOS |
-| iOS arm64 | Unsigned device IPA | Official dependency layout verified; compilation/signing needs Xcode |
+| macOS arm64 / x86_64 | Separate ad-hoc application ZIPs; no Developer ID | GitHub-hosted builds and package checks pass; device runtime untested |
+| iOS arm64 | Unsigned device IPA | GitHub-hosted build and package checks pass; signing and device testing need Xcode |
 | Android arm64-v8a | Unsigned release and debug-signed installable APKs | Built under WSL; signatures, contents and 16 KB alignment checked; device runtime untested |
-| Android armeabi-v7a / x86_64 | Unsigned APKs | CI recipe prepared; these ABIs have not been built here |
-| PSP | Experimental homebrew ZIP / EBOOT.PBP | PSPDEV CI recipe prepared; not compiled or hardware-tested here |
+| Android armeabi-v7a / x86_64 | Unsigned APKs | GitHub-hosted builds and package checks pass; device runtime untested |
+| PSP | Experimental homebrew ZIP / EBOOT.PBP | GitHub-hosted build and package checks pass; hardware runtime untested |
 
 The workflow is `.github/workflows/dreamfactory-builds.yml`, relative to this
 **ScummVM fork**, not the surrounding game workspace. The engine, platform tools
-and workflow are committed on the `dreamfactory` branch. Enable GitHub Actions
-in the fork to run the workflow. Artifacts upload separately;
+and workflow are committed on the `dreamfactory` branch. GitHub Actions is enabled
+in this fork: every push to `dreamfactory` builds all eight platform packages.
+Pull requests and manual workflow runs also build them. Download packages from
+the **Artifacts** section of a completed run on the repository's
+[Actions page](https://github.com/jorapi/scummvm-taoot/actions/workflows/dreamfactory-builds.yml).
+Artifacts upload separately;
 one failed platform does not cancel the others. They contain no game data.
+
+All eight packages passed compilation and package checks in the
+[October 15, 2026 push build](https://github.com/jorapi/scummvm-taoot/actions/runs/38695417452)
+at source commit `c4e46a79`. These checks do not establish device compatibility.
+Ordinary commit pushes produce downloadable artifacts. Pushing a
+`dreamfactory-v*` release tag runs the separate release workflow, which publishes
+an experimental prerelease only after every platform build and package check
+passes; a manual release run creates a draft unless publication is selected.
 
 The Windows build enables ScummVM's standard **OpenGL** graphics backend and
 embeds `fonts.dat`, so the original control panel and conversations can draw
