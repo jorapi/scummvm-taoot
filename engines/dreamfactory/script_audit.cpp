@@ -725,25 +725,36 @@ bool auditPuppetSession(const Common::FSNode &root, OSystem *backend) {
 	public:
 		uint32 phase = 0;
 		bool dragChanged = false;
+		bool zoomMapped = false, currentMapped = false;
 		RouteUISource(OSystem *backend, const Common::FSNode &root, bool compact, bool failure = false) : _backend(backend), _root(root), _start(backend->getMillis()), _compact(compact), _failure(failure) { backend->getEventManager()->getEventDispatcher()->registerSource(this, false); }
 		~RouteUISource() { _backend->getEventManager()->getEventDispatcher()->unregisterSource(this); }
 		bool allowMapping() const override { return false; }
 		bool pollEvent(Common::Event &event) override {
 			const uint32 elapsed = _backend->getMillis() - _start;
 			if (elapsed > 6000 && !_timedOut) { _timedOut = true; event.type = Common::EVENT_QUIT; return true; }
-			if (phase == 1 && _gesture < 3) {
+			if (phase == 1 && _gesture < 4) {
 				if (elapsed < (2 + _gesture) * 150) return false;
 				if (!_gesture) {
+					Graphics::Surface overlay; overlay.create(_backend->getOverlayWidth(), _backend->getOverlayHeight(), _backend->getOverlayFormat()); _backend->grabOverlay(overlay);
+					Common::DumpFile image; if (image.open(_root.getChild(_compact ? "compact-routes-overview.bmp" : "routes-overview.bmp"))) Image::writeBMP(image, overlay); overlay.free();
+					Common::Event physical; physical.type = Common::EVENT_JOYBUTTON_DOWN; physical.joystick.button = Common::JOYSTICK_BUTTON_RIGHT_STICK;
+					Common::List<Common::Event> actions; _backend->getEventManager()->getKeymapper()->mapEvent(physical, actions);
+					zoomMapped = actions.size() == 1 && actions.front().type == Common::EVENT_CUSTOM_ENGINE_ACTION_START && actions.front().customType == kJournalZoom;
+					physical.joystick.button = Common::JOYSTICK_BUTTON_LEFT_STICK; actions.clear(); _backend->getEventManager()->getKeymapper()->mapEvent(physical, actions);
+					currentMapped = actions.size() == 1 && actions.front().type == Common::EVENT_CUSTOM_ENGINE_ACTION_START && actions.front().customType == kJournalCurrent;
+					event.type = Common::EVENT_CUSTOM_ENGINE_ACTION_START; event.customType = kJournalZoom; ++_gesture; return true;
+				}
+				if (_gesture == 1) {
 					Graphics::Surface overlay; overlay.create(_backend->getOverlayWidth(), _backend->getOverlayHeight(), _backend->getOverlayFormat()); _backend->grabOverlay(overlay);
 					Common::MemoryReadStream pixels(static_cast<const byte *>(overlay.getPixels()), overlay.pitch * overlay.h); _beforeDrag = Common::computeStreamMD5AsString(pixels); overlay.free();
 				}
 				const int w = MIN<int>(760, _backend->getOverlayWidth() - 12), h = MIN<int>(560, _backend->getOverlayHeight() - 12), row = MAX(24, g_gui.getFont().getFontHeight() + 12);
-				event.type = _gesture == 0 ? Common::EVENT_LBUTTONDOWN : _gesture == 1 ? Common::EVENT_MOUSEMOVE : Common::EVENT_LBUTTONUP;
-				event.mouse = Common::Point((_backend->getOverlayWidth() - w) / 2 + 18, (_backend->getOverlayHeight() - h) / 2 + (_compact ? row + 16 : row * 3 + 24) + (_gesture ? 30 : 70));
+				event.type = _gesture == 1 ? Common::EVENT_LBUTTONDOWN : _gesture == 2 ? Common::EVENT_MOUSEMOVE : Common::EVENT_LBUTTONUP;
+				event.mouse = Common::Point((_backend->getOverlayWidth() - w) / 2 + 18, (_backend->getOverlayHeight() - h) / 2 + (_compact ? row + 16 : row * 3 + 24) + (_gesture > 1 ? 30 : 70));
 				++_gesture; return true;
 			}
 			const uint32 commands[] = {kJournalViewPrevious, kJournalDown, kJournalDown, kJournalRight, kJournalReplay, kJournalClose, kJournalStar, kJournalUp, kJournalStar, kJournalClose, kJournalRead, kJournalStar, kJournalClose, kJournalStar, kJournalReplay};
-			if (phase >= ARRAYSIZE(commands) + (_failure ? 1 : 0) || elapsed < (phase + 1 + (phase ? 3 : 0)) * 150) return false;
+			if (phase >= ARRAYSIZE(commands) + (_failure ? 1 : 0) || elapsed < (phase + 1 + (phase ? 4 : 0)) * 150) return false;
 			if (phase == 1 || phase == 2 || phase == 4 || phase == 5 || phase == 9 || phase == 11) {
 				const char *names[] = {"", "routes-map", "routes-decision", "", "routes-locked", "routes-locked-detail", "", "", "", "routes-confirm", "", "routes-detail"};
 				Graphics::Surface overlay; overlay.create(_backend->getOverlayWidth(), _backend->getOverlayHeight(), _backend->getOverlayFormat()); _backend->grabOverlay(overlay);
@@ -760,7 +771,7 @@ bool auditPuppetSession(const Common::FSNode &root, OSystem *backend) {
 		if (backend->endGFXTransaction() != OSystem::kTransactionSuccess || !routeSession.routes.graph.restoreCursor(1, -1)) return false;
 		ControllerInputs controller(backend); RouteUISource source(backend, root, compact);
 		Common::Event journalEvent; journalEvent.type = Common::EVENT_CUSTOM_ENGINE_ACTION_START; journalEvent.customType = kOpenJournal; routeSession.postEvent(journalEvent);
-		if (!routeSession.step() || source.phase != 15 || (compact && !source.dragChanged) || routeSession.runtime.globals["routecounter"].number() || routeSession.routes.graph.cursor() != 1 || routeSession.routes.graph.nodes().size() != 3) {
+		if (!routeSession.step() || source.phase != 15 || !source.zoomMapped || !source.currentMapped || (compact && !source.dragChanged) || routeSession.runtime.globals["routecounter"].number() || routeSession.routes.graph.cursor() != 1 || routeSession.routes.graph.nodes().size() != 3) {
 			warning("ROUTE UI FAIL compact=%u phase=%u counter=%d cursor=%u nodes=%u error=%s", compact, source.phase, routeSession.runtime.globals["routecounter"].number(), routeSession.routes.graph.cursor(), routeSession.routes.graph.nodes().size(), routeSession.runtime.error.c_str()); return false;
 		}
 	}
@@ -804,6 +815,56 @@ bool auditPuppetSession(const Common::FSNode &root, OSystem *backend) {
 		NoticeSource source(backend); openJournal(missingVoice);
 		if (source.phase != 3 || backend->getEventManager()->shouldQuit() || missingVoice.journal.entries.size() != 1) return false;
 	}
+	Session chartPreview(backend);
+	struct ChartFixture {
+		static void branch(RouteGraph &graph, uint32 depth) {
+			JournalEntry entry; entry.speaker = depth & 1 ? "Passenger" : "Officer"; entry.room = "Layout fixture"; entry.text = "Recorded conversation for the flowchart layout fixture.";
+			const uint32 scene = graph.recordScene(entry);
+			if (depth == 3) { entry.text = "Discovered ending."; graph.recordEnding(entry); return; }
+			entry.choices.push_back("Ask about the passenger"); entry.choices.push_back("Ask about the ship"); entry.choices.push_back("An unexplored reply");
+			for (uint32 choice = 0; choice < 2; ++choice) { graph.restoreCursor(scene, -1); entry.selected = choice; graph.recordDecision(entry); branch(graph, depth + 1); }
+		}
+	};
+	ChartFixture::branch(chartPreview.routes.graph, 0);
+	const uint32 chartCursor = chartPreview.routes.graph.cursor();
+	class ChartSource : public Common::EventSource {
+		OSystem *_backend; Common::FSNode _root; uint32 _start; bool _compact, _timedOut = false;
+		Common::String _selection, _overview;
+	public:
+		uint32 phase = 0;
+		bool currentPreserved = false, zoomPreserved = false;
+		ChartSource(OSystem *backend, const Common::FSNode &root, bool compact) : _backend(backend), _root(root), _start(backend->getMillis()), _compact(compact) { backend->getEventManager()->getEventDispatcher()->registerSource(this, false); }
+		~ChartSource() { _backend->getEventManager()->getEventDispatcher()->unregisterSource(this); }
+		bool allowMapping() const override { return false; }
+		bool pollEvent(Common::Event &event) override {
+			const uint32 elapsed = _backend->getMillis() - _start;
+			if (elapsed > 6000 && !_timedOut) { _timedOut = true; event.type = Common::EVENT_QUIT; return true; }
+			const uint32 commands[] = {kJournalViewPrevious, kJournalUp, kJournalUp, kJournalCurrent, kJournalUp, kJournalUp, kJournalZoom, kJournalZoom, kJournalReplay, kJournalClose, kJournalClose};
+			if (phase >= ARRAYSIZE(commands) || elapsed < (phase + 1) * 150) return false;
+			if (phase == 1 || phase == 3 || phase == 6 || phase == 7 || phase == 8 || phase == 9) {
+				Graphics::Surface overlay; overlay.create(_backend->getOverlayWidth(), _backend->getOverlayHeight(), _backend->getOverlayFormat()); _backend->grabOverlay(overlay);
+				Common::MemoryReadStream pixels(static_cast<const byte *>(overlay.getPixels()), overlay.pitch * overlay.h); const Common::String digest = Common::computeStreamMD5AsString(pixels);
+				if (phase == 3) _selection = digest;
+				if (phase == 6) { currentPreserved = digest == _selection; _overview = digest; }
+				if (phase == 8) zoomPreserved = digest == _overview;
+				const char *name = phase == 1 ? "vlr-chart-overview" : phase == 7 ? "vlr-chart-cards" : phase == 9 ? "vlr-chart-details" : "vlr-chart-selection";
+				Common::DumpFile image; if (image.open(_root.getChild(Common::String(_compact ? "compact-" : "") + name + ".bmp"))) Image::writeBMP(image, overlay);
+				overlay.free();
+			}
+			event.type = Common::EVENT_CUSTOM_ENGINE_ACTION_START; event.customType = commands[phase++]; return true;
+		}
+	};
+	for (uint32 compact = 0; compact < 2; ++compact) {
+		backend->beginGFXTransaction(); backend->initSize(compact ? 480 : oldWidth, compact ? 272 : oldHeight, &oldFormat);
+		if (backend->endGFXTransaction() != OSystem::kTransactionSuccess) return false;
+		ChartSource source(backend, root, compact);
+		if (openJournal(chartPreview) || source.phase != 11 || !source.currentPreserved || !source.zoomPreserved || chartPreview.routes.graph.nodes().size() != 30 || chartPreview.routes.graph.cursor() != chartCursor) {
+			warning("VLR CHART FAIL compact=%u phase=%u current=%u zoom=%u", compact, source.phase, source.currentPreserved, source.zoomPreserved); return false;
+		}
+	}
+	backend->beginGFXTransaction(); backend->initSize(oldWidth, oldHeight, &oldFormat);
+	if (backend->endGFXTransaction() != OSystem::kTransactionSuccess) return false;
+	warning("VLR CHART PASS thirty discovered nodes hidden replies current path overview desktop handheld current focus zoom selection persistence details read-only discovery");
 	const auto *journalMap = backend->getEventManager()->getKeymapper()->getKeymap("dreamfactory-journal-ui");
 	const auto *standardMap = backend->getEventManager()->getKeymapper()->getKeymap(Common::kGuiKeymapName);
 	if (!journalMap || journalMap->isEnabled() || !standardMap || !standardMap->isEnabled()) return false;

@@ -329,6 +329,10 @@ Each entry shows its speaker, location, elapsed game time and complete wrapped
 text. Its Play/Stop button replays the original voice recording. Scroll with a
 mouse wheel, scrollbar, Page Up/Down or a touch drag. Up/Down selects adjacent
 entries; Space replays the selected line and Enter opens its full-page details.
+The transcript uses ivory text, brass speaker headings and a navy background.
+Location and time share the heading row where space permits; full context remains
+available in Read. An untitled speaker is displayed as "Conversation", preserving
+the stored identity and avoiding guesses from internal resource filenames.
 
 The Decisions view lists encountered reply sets, with a reading pane on larger
 overlays that emphasizes the chosen reply. Smaller overlays use Read for details.
@@ -356,6 +360,13 @@ format v10 (v11 when a route position is recorded) and require a compatible buil
 The Decisions view is a record of choices in the loaded save. **Routes** shows
 the connected discovery graph across playthroughs. Its navy, ivory and brass
 cards distinguish scenes, decisions, the current position and unexplored replies.
+Routes opens in an adaptive overview of compact S/D/E/? tiles. Blue scene tiles,
+brass decisions and muted red endings distinguish discovered node types; the
+current playthrough's connecting path is teal and the selected tile has an ivory
+border. Unknown replies remain grey. Switch to Cards for readable node labels
+and a details pane on larger screens. Very large charts remain pannable when
+their minimum readable tiles cannot fit on one screen. Small overlays use
+ScummVM's existing compact font for tile symbols.
 Only encountered dialogue and offered choices are shown; undiscovered outcomes
 remain anonymous. A visited reply with no subsequent discovery is labelled
 "To be continued", rather than being presented as an ending.
@@ -366,7 +377,10 @@ the mouse wheel and Page Up/Down scroll vertically. Home returns to the current
 route position. A or Y opens details, X requests a scene revisit, B/Back closes,
 and LB/RB switches views. Keyboard Enter opens details, Space replays an available
 voice line and R requests a revisit. The footer buttons provide the same actions
-for mouse and touch. Handheld overlays give the map more room and open details
+for mouse and touch. R3 or Z switches Overview/Cards; L3 or the Current button
+returns to the active route position. In Routes the footer's second button
+switches Overview/Cards; voice replay remains available in Read or with Space.
+Handheld overlays give the map more room and open details
 on a separate page.
 
 **Revisit** restores the checkpoint before the selected conversation began,
@@ -395,7 +409,7 @@ backlog](https://news.capcomusa.com/lets/browse/phoenix-wright-ace-attorney-dual
 and [Ren'Py's speaker/text/voice history model](https://www.renpy.org/doc/html/history.html).
 The interface uses ScummVM theme widgets and fonts, without borrowing game art.
 
-### VLR-inspired route work (active)
+### Route discovery and scene revisiting
 
 Route discovery is now recorded during gameplay, independently of the loaded
 save's dialogue history. The shared game options include **Record branching
@@ -449,8 +463,26 @@ and `tools/verify-demo-route-ending.ps1` in the prepared workspace to repeat the
 The route-planning helper uses the final motion-frame facing on arrival, matching
 the engine's current walking behavior.
 
-The final comparison against VLR's presentation remains in progress. An original
-flowchart screenshot appears in [Kotaro Uchikoshi's GDC presentation](https://media.gdcvault.com/gdc2013/slides/824343Uchikoshi_Kotaro_VisualNovelsNarrative.pdf).
+The overview was compared visually against the original flowchart screenshot in
+[Kotaro Uchikoshi's GDC presentation](https://media.gdcvault.com/gdc2013/slides/824343Uchikoshi_Kotaro_VisualNovelsNarrative.pdf),
+page 25. The shared patterns are compact state tiles, orthogonal branch lines,
+muted unknown nodes, selected-node inspection and returning to a discovered
+scene. The original's fixed story graph is adapted to discoveries made in these
+open-world games; scene jumps restore complete encounter checkpoints. The
+period palette and text controls are drawn by the engine with ScummVM fonts,
+without using VLR artwork.
+
+Additional screenshot references: [VLR's dialogue presentation](https://www.rpgfan.com/gallery/zero-escape-virtues-last-reward-screenshots/)
+and [the conversation-log screenshot page](https://www.mobygames.com/game/59163/zero-escape-volume-2-virtues-last-reward/screenshots/ps-vita/650026/).
+The latter page was located through its indexed caption; its image download is
+not available in this environment, so no pixel-level log comparison is claimed.
+
+The native UI audit renders a 30-node chart with explored and unknown branches
+and endings at desktop and handheld sizes. Pixel comparisons verify that Current
+returns to the active position and switching Overview/Cards preserves selection.
+The log audit covers wrapped text, scrolling, bookmarks, search, voice replay and
+controller navigation. Device runtime validation remains separate from these
+native GUI and Android package checks.
 
 After route functionality is complete, compare the interface against actual
 Virtue's Last Reward screenshots and match its log/flowchart interaction as

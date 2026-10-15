@@ -17,6 +17,7 @@
 #include "gui/widgets/richtext.h"
 #include "gui/widgets/scrollbar.h"
 #include "graphics/font.h"
+#include "graphics/fontman.h"
 #include "graphics/managed_surface.h"
 
 namespace DreamFactory {
@@ -34,16 +35,21 @@ bool Session::journalAudio(const JournalEntry &entry, Common::SharedPtr<AudioCli
 	return true;
 }
 namespace {
-enum { kRead = 'JRed', kReplay = 'JPly', kStar = 'JStr', kSearch = 'JSrc', kLines = 'JLin', kPaths = 'JPth', kStarred = 'JFvt', kRoutes = 'JRte', kRouteSelect = 'JRSl', kRevisit = 'JRev' };
+enum { kRead = 'JRed', kReplay = 'JPly', kStar = 'JStr', kSearch = 'JSrc', kLines = 'JLin', kPaths = 'JPth', kStarred = 'JFvt', kRoutes = 'JRte', kRouteSelect = 'JRSl', kRevisit = 'JRev', kRouteZoom = 'JRZm', kRouteCurrent = 'JRCr' };
 Common::U32String gameText(const Common::String &text) { return Common::U32String(text, Common::kWindows1252); }
-Common::U32String literal(const Common::String &text) {
+Common::U32String speakerText(const JournalEntry &entry) {
+	Common::String name = entry.speaker; name.trim();
+	return name.empty() || name.equalsIgnoreCase("untitled") ? _("Conversation") : gameText(name);
+}
+Common::U32String literal(const Common::U32String &text) {
 	Common::U32String result;
-	for (auto c : gameText(text)) {
+	for (auto c : text) {
 		if (c == '\\' || c == '*' || c == '_' || c == '[' || c == ']' || c == '#' || c == '<' || c == '>' || c == '`') result += '\\';
 		result += c;
 	}
 	return result;
 }
+Common::U32String literal(const Common::String &text) { return literal(gameText(text)); }
 void fit(GUI::Dialog &dialog) {
 	const int w = MIN<int>(760, g_system->getOverlayWidth() - 12);
 	const int h = MIN<int>(560, g_system->getOverlayHeight() - 12);
@@ -80,10 +86,10 @@ public:
 		_journal = mapper->getKeymap("dreamfactory-journal-ui");
 		if (!_journal) {
 			_journal = new Common::Keymap(Common::Keymap::kKeymapTypeGui, "dreamfactory-journal-ui", _("DreamFactory journal"));
-			const char *ids[] = {"JNPLAY", "JNSTAR", "JNPREV", "JNNEXT", "JNREAD", "JNCLOSE", "JNBACK"};
-			const char *labels[] = {_s("Replay line / open route details"), _s("Bookmark line / revisit scene"), _s("Previous journal view"), _s("Next journal view"), _s("Read entry details"), _s("Close journal"), _s("Close journal")};
-			const char *inputs[] = {"JOY_A", "JOY_X", "JOY_LEFT_SHOULDER", "JOY_RIGHT_SHOULDER", "JOY_Y", "JOY_B", "JOY_BACK"};
-			const uint32 commands[] = {kJournalReplay, kJournalStar, kJournalViewPrevious, kJournalViewNext, kJournalRead, kJournalClose, kJournalClose};
+			const char *ids[] = {"JNPLAY", "JNSTAR", "JNPREV", "JNNEXT", "JNREAD", "JNCLOSE", "JNBACK", "JNZOOM", "JNCURRENT"};
+			const char *labels[] = {_s("Replay line / open route details"), _s("Bookmark line / revisit scene"), _s("Previous journal view"), _s("Next journal view"), _s("Read entry details"), _s("Close journal"), _s("Close journal"), _s("Switch route overview and cards"), _s("Focus current route position")};
+			const char *inputs[] = {"JOY_A", "JOY_X", "JOY_LEFT_SHOULDER", "JOY_RIGHT_SHOULDER", "JOY_Y", "JOY_B", "JOY_BACK", "JOY_RIGHT_STICK", "JOY_LEFT_STICK"};
+			const uint32 commands[] = {kJournalReplay, kJournalStar, kJournalViewPrevious, kJournalViewNext, kJournalRead, kJournalClose, kJournalClose, kJournalZoom, kJournalCurrent};
 			for (uint32 i = 0; i < ARRAYSIZE(ids); ++i) {
 				Common::Action *action = new Common::Action(ids[i], _(labels[i]));
 				action->setCustomEngineActionEvent(commands[i]); action->addDefaultInputMapping(inputs[i]); _journal->addAction(action);
@@ -159,7 +165,7 @@ public:
 		text += U"\n\n";
 		text += entryBody(entry);
 		if (!body.empty()) text = body;
-		_title = new GUI::StaticTextWidget(this, 8, 8, 300, 20, gameText(entry.speaker), Graphics::kTextAlignLeft);
+		_title = new GUI::StaticTextWidget(this, 8, 8, 300, 20, speakerText(entry), Graphics::kTextAlignLeft);
 		_text = new GUI::RichTextWidget(this, 8, 32, 300, 160, text);
 		_play = new GUI::ButtonWidget(this, 8, 208, 140, 24, _("Replay"), Common::U32String(), kReplay);
 		_play->setEnabled(!entry.ident.empty());
@@ -199,7 +205,7 @@ public:
 	}
 };
 // A variable-height transcript: each entry keeps its speaker and wrapped text
-// together, while drawing with the active ScummVM theme's fonts and colours.
+// together, with ScummVM fonts, a period palette and independent scrolling.
 class TranscriptWidget : public GUI::Widget, public GUI::CommandSender {
 	struct Row { int top = 0, height = 0; };
 	Session &_session;
@@ -231,7 +237,7 @@ class TranscriptWidget : public GUI::Widget, public GUI::CommandSender {
 		for (uint32 index : _indices) {
 			Row row; row.top = _total;
 			const auto lines = wrappedText(_session.journal.entries[index]);
-			row.height = lineHeight() * (MAX<uint32>(1, lines.size()) + 2) + 24;
+			row.height = lineHeight() * (MAX<uint32>(1, lines.size()) + 1) + 20;
 			_total += row.height; _rows.push_back(row);
 		}
 		_scroll->setPos(_w - 16, 0); _scroll->setSize(16, _h);
@@ -242,28 +248,39 @@ protected:
 	GUI::Widget *findWidget(int x, int y) override { if (x >= _w - 16 && _scroll->isVisible()) return _scroll; return this; }
 	void drawWidget() override {
 		using T = GUI::ThemeEngine;
-		const Common::Rect viewport(_x, _y, _x + _w - 18, _y + _h);
-		g_gui.theme()->drawWidgetBackground(Common::Rect(_x, _y, _x + _w, _y + _h), T::kWidgetBackgroundBorder);
-		const Common::Rect oldClip = g_gui.theme()->swapClipRect(viewport.findIntersectingRect(g_gui.theme()->getClipRect()));
-		if (_rows.empty()) g_gui.theme()->drawText(Common::Rect(_x + 12, _y + 12, _x + _w - 24, _y + 40), _("No recorded dialogue in this view."), T::kStateEnabled, Graphics::kTextAlignLeft);
+		Graphics::ManagedSurface surface(MAX<int>(1, _w - 18), _h, g_system->getOverlayFormat());
+		const uint32 background = surface.format.RGBToColor(17, 26, 34), ivory = surface.format.RGBToColor(240, 232, 211), brass = surface.format.RGBToColor(191, 161, 101), muted = surface.format.RGBToColor(146, 157, 166);
+		surface.fillRect(Common::Rect(surface.w, surface.h), background);
+		const auto rect = [&](int l, int t, int r, int b, uint32 ink) {
+			l = MAX(0, l); t = MAX(0, t); r = MIN<int>(surface.w, r); b = MIN<int>(surface.h, b);
+			if (r > l && b > t) surface.fillRect(Common::Rect(l, t, r, b), ink);
+		};
+		const Graphics::Font &font = g_gui.getFont(T::kFontStyleNormal), &bold = g_gui.getFont(T::kFontStyleBold);
+		if (_rows.empty()) font.drawString(&surface, _("No recorded dialogue in this view."), 12, 12, surface.w - 24, ivory, Graphics::kTextAlignLeft, 0, true);
 		for (uint32 i = 0; i < _rows.size(); ++i) {
-			const Row &row = _rows[i]; const int top = _y + row.top - _position;
-			if (top >= _y + _h) break;
-			if (top + row.height <= _y) continue;
+			const Row &row = _rows[i]; const int top = row.top - _position;
+			if (top >= _h) break;
+			if (top + row.height <= 0) continue;
 			const JournalEntry &entry = _session.journal.entries[_indices[i]];
-			Common::U32String name(entry.bookmarked ? "* " : ""); name += gameText(entry.speaker);
-			const auto inversion = int(i) == _selected ? T::kTextInversionFocus : T::kTextInversionNone;
-			g_gui.theme()->drawText(Common::Rect(_x + 8, top + 8, _x + _w - 94, top + 8 + lineHeight()), name, T::kStateEnabled, Graphics::kTextAlignLeft, inversion, 0, true, T::kFontStyleBold, T::kFontColorNormal, false, viewport);
-			if (!entry.ident.empty()) g_gui.theme()->drawButton(Common::Rect(_x + _w - 88, top + 4, _x + _w - 24, top + lineHeight() + 12), _replay.playing(entry) ? _("Stop") : _("Play"));
-			g_gui.theme()->drawText(Common::Rect(_x + 12, top + lineHeight() + 10, _x + _w - 24, top + lineHeight() * 2 + 10), entryContext(entry), T::kStateEnabled, Graphics::kTextAlignLeft, T::kTextInversionNone, 0, true, T::kFontStyleNormal, T::kFontColorAlternate, false, viewport);
+			Common::U32String name(entry.bookmarked ? "* " : ""); name += speakerText(entry);
+			if (int(i) == _selected) { rect(4, top + 3, surface.w - 6, top + lineHeight() + 14, surface.format.RGBToColor(42, 56, 68)); rect(4, top + 3, 7, top + row.height - 6, brass); }
+			const int nameWidth = MIN<int>(160, MAX(40, surface.w / 3));
+			bold.drawString(&surface, name, 12, top + 8, nameWidth, brass, Graphics::kTextAlignLeft, 0, true);
+			const int contextWidth = surface.w - nameWidth - 108;
+			if (contextWidth >= 70) font.drawString(&surface, entryContext(entry), nameWidth + 24, top + 8, contextWidth, muted, Graphics::kTextAlignRight, 0, true);
+			if (!entry.ident.empty()) {
+				const int x = _w - 88, right = _w - 24, bottom = top + lineHeight() + 12;
+				rect(x, top + 4, right, bottom, brass); rect(x + 1, top + 5, right - 1, bottom - 1, background);
+				font.drawString(&surface, _replay.playing(entry) ? _("Stop") : _("Play"), x + 2, top + 8, right - x - 4, ivory, Graphics::kTextAlignCenter);
+			}
 			const auto lines = wrappedText(entry);
 			for (uint32 j = 0; j < lines.size(); ++j) {
-				const int y = top + 16 + (j + 2) * lineHeight();
-				g_gui.theme()->drawText(Common::Rect(_x + 12, y, _x + _w - 24, y + lineHeight()), lines[j], T::kStateEnabled, Graphics::kTextAlignLeft, T::kTextInversionNone, 0, false, T::kFontStyleNormal, T::kFontColorNormal, false, viewport);
+				const int y = top + 14 + (j + 1) * lineHeight();
+				font.drawString(&surface, lines[j], 12, y, surface.w - 24, ivory);
 			}
-			g_gui.theme()->drawLineSeparator(Common::Rect(_x + 12, top + row.height - 3, _x + _w - 24, top + row.height - 1));
+			rect(12, top + row.height - 3, surface.w - 12, top + row.height - 2, surface.format.RGBToColor(55, 66, 76));
 		}
-		g_gui.theme()->swapClipRect(oldClip);
+		g_gui.theme()->drawManagedSurface(Common::Point(_x, _y), surface, Graphics::ALPHA_OPAQUE);
 	}
 public:
 	TranscriptWidget(GUI::Dialog *boss, Session &session, Replay &replay) : GUI::Widget(boss, 8, 80, 300, 120), GUI::CommandSender(boss), _session(session), _replay(replay) {
@@ -319,7 +336,7 @@ Common::U32String routeTitle(const RouteGraph &graph, const RouteMapItem &item) 
 	if (!item.node) return item.locked ? _("Undiscovered") : _("To be continued");
 	const RouteNode &node = *graph.node(item.node);
 	Common::U32String text = node.kind == RouteNode::kScene ? _("Scene") : node.kind == RouteNode::kDecision ? _("Decision") : _("Ending");
-	if (!node.entry.speaker.empty()) { text += U" - "; text += gameText(node.entry.speaker); }
+	text += U" - "; text += speakerText(node.entry);
 	return text;
 }
 Common::U32String routeBody(const RouteGraph &graph, const RouteMapItem &item) {
@@ -340,22 +357,26 @@ Common::U32String routeBody(const RouteGraph &graph, const RouteMapItem &item) {
 	} else { text += literal(node.entry.text); text += U"\n\n"; }
 	const RouteNode *scene = graph.node(graph.checkpointFor(item.node));
 	if (scene && graph.checkpointFor(item.node) != graph.sceneFor(item.node)) {
-		text += _("This part of the route uses an earlier encounter checkpoint. Revisit begins with "); text += literal(scene->entry.speaker); text += _(". Replay the encounter to explore another branch.");
+		text += _("This part of the route uses an earlier encounter checkpoint. Revisit begins with "); text += literal(speakerText(scene->entry)); text += _(". Replay the encounter to explore another branch.");
 	} else text += scene && scene->checkpoint ? _("Revisit restores the state before this conversation began. Start the conversation again to explore a different reply.") : _("No safe checkpoint was captured for this scene. You can still read its discovered dialogue and choices.");
 	return text;
 }
 class RouteMapWidget : public GUI::Widget, public GUI::CommandSender {
 	const RouteGraph &_graph;
 	RouteMap _map;
+	Common::Array<bool> _currentPath;
+	bool _overview = true;
+	int _maxColumn = 0, _maxRow = 0;
 	int32 _selected = -1, _scrollX = 0, _scrollY = 0;
 	int32 _extentX = 0, _extentY = 0;
 	int _downX = 0, _downY = 0, _lastX = 0, _lastY = 0, _pressed = -1;
 	bool _dragging = false, _held = false;
-	int cardWidth() const { return MAX(148, g_gui.getFont().getFontHeight() * 10); }
-	int cardHeight() const { return g_gui.getFont().getFontHeight() * (_h < 180 ? 2 : 3) + (_h < 180 ? 14 : 24); }
-	int columnStep() const { return (cardWidth() + 36) / 2; }
-	int rowStep() const { return cardHeight() + (_h < 180 ? 24 : 48); }
-	int left(const RouteMapItem &item) const { return 20 + item.column * columnStep() - _scrollX; }
+	int tileSize() const { return CLIP(MIN(((_w - 40 - _maxColumn * 8) * 2) / (_maxColumn + 2), (_h - 40) / (_maxRow + 1) - 12), 12, 32); }
+	int cardWidth() const { return _overview ? tileSize() : MAX(148, g_gui.getFont().getFontHeight() * 10); }
+	int cardHeight() const { return _overview ? tileSize() : g_gui.getFont().getFontHeight() * (_h < 180 ? 2 : 3) + (_h < 180 ? 14 : 24); }
+	int columnStep() const { return (cardWidth() + (_overview ? 16 : 36)) / 2; }
+	int rowStep() const { return cardHeight() + (_overview ? 12 : _h < 180 ? 24 : 48); }
+	int left(const RouteMapItem &item) const { return 20 + MAX(0, (_w - _extentX) / 2) + item.column * columnStep() - _scrollX; }
 	int top(const RouteMapItem &item) const { return 20 + item.row * rowStep() - _scrollY; }
 	void scroll(int x, int y) {
 		_scrollX = CLIP(x, 0, MAX(0, _extentX - _w)); _scrollY = CLIP(y, 0, MAX(0, _extentY - _h)); markAsDirty();
@@ -379,13 +400,15 @@ protected:
 		};
 		const Graphics::Font &font = g_gui.getFont(GUI::ThemeEngine::kFontStyleNormal);
 		if (_map.items().empty()) font.drawString(&surface, _("Conversations and choices will appear here as you play."), 12, 12, _w - 24, ivory, Graphics::kTextAlignLeft, 0, true);
-		for (const auto &item : _map.items()) if (item.parent >= 0) {
+		for (uint32 pass = 0; pass < 3; ++pass) for (const auto &item : _map.items()) if (item.parent >= 0) {
 			const auto &parent = _map.items()[item.parent];
+			const bool current = item.node ? _currentPath[item.node] : !item.locked && parent.node == _graph.cursor() && item.choice == _graph.choice();
+			if (pass != (current ? 2u : item.locked ? 0u : 1u)) continue;
 			const int x1 = left(parent) + cardWidth() / 2, y1 = top(parent) + cardHeight();
 			const int x2 = left(item) + cardWidth() / 2, y2 = top(item), middle = y1 + (rowStep() - cardHeight()) / 2;
-			const uint32 ink = item.locked ? color(72, 84, 95) : brass;
+			const uint32 ink = current ? color(109, 193, 184) : item.locked ? color(72, 84, 95) : brass;
 			rect(x1, y1, x1 + 2, middle + 2, ink); rect(MIN(x1, x2), middle, MAX(x1, x2) + 2, middle + 2, ink); rect(x2, middle, x2 + 2, y2, ink);
-			if (item.choice >= 0 && x2 >= 0 && x2 < _w && middle >= -font.getFontHeight() && middle < _h)
+			if (!_overview && item.choice >= 0 && x2 >= 0 && x2 < _w && middle >= -font.getFontHeight() && middle < _h)
 				font.drawString(&surface, Common::String::format("%u", uint32(item.choice + 1)), x2 + 5, middle + 3, 32, ink);
 		}
 		for (uint32 i = 0; i < _map.items().size(); ++i) {
@@ -393,15 +416,22 @@ protected:
 			if (x + w <= 0 || y + h <= 0 || x >= _w || y >= _h) continue;
 			const RouteNode *node = _graph.node(item.node);
 			const bool selected = int32(i) == _selected, current = item.node && item.node == _graph.cursor();
-			const uint32 border = selected ? ivory : current ? color(109, 193, 184) : item.locked ? color(72, 84, 95) : brass;
+			const uint32 category = !node ? color(110, 123, 135) : node->kind == RouteNode::kScene ? color(143, 167, 190) : node->kind == RouteNode::kDecision ? brass : color(198, 132, 112);
+			const uint32 border = selected ? ivory : current ? color(109, 193, 184) : _overview ? category : item.locked ? color(72, 84, 95) : brass;
 			rect(x, y, x + w, y + h, selected ? color(49, 62, 74) : color(29, 41, 52));
-			const int thickness = selected ? 3 : 1;
+			const int thickness = selected ? (_overview ? 2 : 3) : 1;
 			rect(x, y, x + w, y + thickness, border); rect(x, y + h - thickness, x + w, y + h, border);
 			rect(x, y, x + thickness, y + h, border); rect(x + w - thickness, y, x + w, y + h, border);
+			if (_overview) {
+				const Common::U32String symbol = !node ? item.locked ? _("?") : _(".") : node->kind == RouteNode::kScene ? _("S") : node->kind == RouteNode::kDecision ? _("D") : _("E");
+				const Graphics::Font &tileFont = h >= font.getFontHeight() + 4 ? font : *FontMan.getFontByUsage(Graphics::FontManager::kConsoleFont);
+				tileFont.drawString(&surface, symbol, x + 2, y + (h - tileFont.getFontHeight()) / 2, w - 4, border, Graphics::kTextAlignCenter);
+				continue;
+			}
 			Common::U32String kind = !node ? item.locked ? _("?") : _("...") : node->kind == RouteNode::kScene ? _("SCENE") : node->kind == RouteNode::kDecision ? _("DECISION") : _("ENDING");
 			if (current) kind += _("  |  Current");
 			font.drawString(&surface, kind, x + 9, y + (_h < 180 ? 4 : 7), w - 18, border, Graphics::kTextAlignLeft, 0, true);
-			font.drawString(&surface, node ? gameText(node->entry.speaker) : routeTitle(_graph, item), x + 9, y + font.getFontHeight() + (_h < 180 ? 7 : 11), w - 18, item.locked ? muted : ivory, Graphics::kTextAlignLeft, 0, true);
+			font.drawString(&surface, node ? speakerText(node->entry) : routeTitle(_graph, item), x + 9, y + font.getFontHeight() + (_h < 180 ? 7 : 11), w - 18, item.locked ? muted : ivory, Graphics::kTextAlignLeft, 0, true);
 			Common::U32String context = node ? gameText(node->entry.room) : _("Outcome hidden");
 			if (node && node->kind == RouteNode::kScene && node->checkpoint) context = _("Checkpoint available");
 			if (!node && !item.locked) context = _("Continue this route");
@@ -413,11 +443,17 @@ public:
 	RouteMapWidget(GUI::Dialog *boss, const RouteGraph &graph) : GUI::Widget(boss, 8, 80, 300, 120), GUI::CommandSender(boss), _graph(graph) {
 		setFlags(GUI::WIDGET_ENABLED | GUI::WIDGET_CLEARBG | GUI::WIDGET_TRACK_MOUSE | GUI::WIDGET_HOOK_DRAG);
 		_map.build(graph);
+		for (const auto &item : _map.items()) { _maxColumn = MAX<int>(_maxColumn, item.column); _maxRow = MAX<int>(_maxRow, item.row); }
+		_currentPath.resize(graph.nodes().size() + 1);
+		for (uint32 id = graph.cursor(); id; id = graph.node(id)->parent) _currentPath[id] = true;
 		_selected = _map.itemFor(graph.cursor()); if (_selected < 0 && !_map.items().empty()) _selected = 0;
 	}
 	bool wantsFocus() override { return true; }
 	const RouteMapItem *selected() const { return _selected >= 0 ? &_map.items()[_selected] : nullptr; }
 	int32 selectedIndex() const { return _selected; }
+	bool overview() const { return _overview; }
+	void toggleOverview() { _overview = !_overview; }
+	void focusCurrent() { const int32 index = _map.itemFor(_graph.cursor()); select(index >= 0 ? index : 0); }
 	void select(int32 index, bool notify = true) {
 		if (index < 0 || uint32(index) >= _map.items().size()) return;
 		_selected = index; const auto &item = _map.items()[index];
@@ -449,7 +485,8 @@ public:
 		if (key.keycode == Common::KEYCODE_RETURN) { sendCommand(kRead, 0); return true; }
 		if (key.keycode == Common::KEYCODE_SPACE) { sendCommand(kReplay, 0); return true; }
 		if (key.keycode == Common::KEYCODE_r) { sendCommand(kRevisit, 0); return true; }
-		if (key.keycode == Common::KEYCODE_HOME) { select(_map.itemFor(_graph.cursor())); return true; }
+		if (key.keycode == Common::KEYCODE_z) { sendCommand(kRouteZoom, 0); return true; }
+		if (key.keycode == Common::KEYCODE_HOME) { focusCurrent(); return true; }
 		if (key.keycode == Common::KEYCODE_PAGEUP || key.keycode == Common::KEYCODE_PAGEDOWN) { scroll(_scrollX, _scrollY + (key.keycode == Common::KEYCODE_PAGEUP ? -_h : _h)); return true; }
 		return false;
 	}
@@ -473,7 +510,7 @@ class JournalDialog : public GUI::Dialog {
 	GUI::EditTextWidget *_search;
 	TranscriptWidget *_list;
 	RouteMapWidget *_mapWidget;
-	GUI::ButtonWidget *_tabs[4], *_buttons[4];
+	GUI::ButtonWidget *_tabs[4], *_buttons[5];
 	Common::Array<uint32> _indices;
 	uint32 _mode = kLines;
 	uint32 _revisitNode = 0;
@@ -505,6 +542,7 @@ class JournalDialog : public GUI::Dialog {
 			if ((_mode == kPaths && entry.choices.empty()) || (_mode == kStarred && !entry.bookmarked) ||
 				(_mode == kLines && !entry.choices.empty() && entry.selected < 0)) continue;
 			Common::U32String searchable = gameText(entry.speaker + " " + entry.room + " " + entry.text);
+			searchable += U" "; searchable += speakerText(entry);
 			for (const auto &choice : entry.choices) { searchable += ' '; searchable += gameText(choice); }
 			searchable.toLowercase();
 			Common::U32String query = _search->getEditString(); query.toLowercase();
@@ -532,11 +570,11 @@ class JournalDialog : public GUI::Dialog {
 		const int32 previewIndex = routes ? -10 - index : index;
 		const JournalEntry *entry = selectedEntry();
 		const RouteMapItem *item = routes ? _mapWidget->selected() : nullptr;
-		_buttons[1]->setLabel(entry && _replay.playing(*entry) ? _("Stop") : _("Replay"));
+		_buttons[1]->setLabel(routes ? _mapWidget->overview() ? _("Cards") : _("Overview") : entry && _replay.playing(*entry) ? _("Stop") : _("Replay"));
 		_buttons[2]->setLabel(routes ? _("Revisit") : entry && entry->bookmarked ? _("Unstar") : _("Star"));
 		if (previewIndex != _previewIndex) {
 			_previewIndex = previewIndex;
-			_speaker->setLabel(item ? routeTitle(_session.routes.graph, *item) : entry ? gameText(entry->speaker) : _("Nothing to display"));
+			_speaker->setLabel(item ? routeTitle(_session.routes.graph, *item) : entry ? speakerText(*entry) : _("Nothing to display"));
 			_context->setLabel(entry ? entryContext(*entry) : Common::U32String());
 			Common::U32String body = entry ? entryBody(*entry) : !_search->getEditString().empty() ? _("No matching entries. Try another search.") :
 				_mode == kStarred ? _("Star a line to keep it here for later.") : _mode == kPaths ? _("Your encountered dialogue choices will appear here.") : _("Heard dialogue will appear here as you play.");
@@ -550,11 +588,15 @@ class JournalDialog : public GUI::Dialog {
 		}
 		Common::U32String status = Common::U32String::format(_("%u entries  |  Oldest to newest"), uint32(_indices.size()));
 		if (index >= 0) status += _("  |  Activate to read");
-		if (routes) status = Common::U32String::format(_("%u discovered nodes  |  A: Details  X: Revisit  Y: Read"), uint32(_session.routes.graph.nodes().size()));
+		if (routes) {
+			status = item ? routeTitle(_session.routes.graph, *item) : _("No route discoveries yet");
+			status += Common::U32String::format(_("  |  %u known nodes"), uint32(_session.routes.graph.nodes().size()));
+		}
 		_status->setLabel(status);
 		_buttons[0]->setEnabled(index >= 0);
-		_buttons[1]->setEnabled(entry && !entry->ident.empty());
+		_buttons[1]->setEnabled(routes || (entry && !entry->ident.empty()));
 		_buttons[2]->setEnabled(routes ? canRevisit() : index >= 0);
+		_buttons[4]->setVisible(routes); _buttons[4]->setEnabled(_session.routes.graph.cursor() != 0);
 	}
 	void layoutPreview() {
 		const int row = MAX(24, g_gui.getFont().getFontHeight() + 12);
@@ -576,13 +618,14 @@ public:
 		_tabs[1] = new GUI::ButtonWidget(this, 108, 32, 95, 20, _("Decisions"), Common::U32String(), kPaths);
 		_tabs[2] = new GUI::ButtonWidget(this, 208, 32, 95, 20, _("Starred"), Common::U32String(), kStarred);
 		_tabs[3] = new GUI::ButtonWidget(this, 208, 32, 95, 20, _("Routes"), Common::U32String(), kRoutes);
-		_routeLegend = new GUI::StaticTextWidget(this, 12, 56, 300, 20, _("D-pad: Follow branches  |  Drag: Pan  |  LB/RB: Views"), Graphics::kTextAlignLeft, Common::U32String(), GUI::ThemeEngine::kFontStyleNormal);
+		_routeLegend = new GUI::StaticTextWidget(this, 12, 56, 300, 20, _("S: Scene  D: Decision  E: Ending  ?: Unexplored  |  R3/Z: Zoom"), Graphics::kTextAlignLeft, Common::U32String(), GUI::ThemeEngine::kFontStyleNormal);
 		_search = new GUI::EditTextWidget(this, 8, 56, 300, 20, Common::U32String(), _("Search recorded dialogue"), kSearch);
 		_list = new TranscriptWidget(this, session, _replay);
 		_mapWidget = new RouteMapWidget(this, session.routes.graph); _mapWidget->setVisible(false); _routeLegend->setVisible(false);
 		const Common::U32String labels[] = {_("Read"), _("Replay"), _("Star"), _("Close")};
 		const uint32 commands[] = {kRead, kReplay, kStar, GUI::kCloseCmd};
 		for (uint32 i = 0; i < 4; ++i) _buttons[i] = new GUI::ButtonWidget(this, 8 + i * 76, 208, 70, 24, labels[i], Common::U32String(), commands[i]);
+		_buttons[4] = new GUI::ButtonWidget(this, 8, 208, 70, 24, _("Current"), Common::U32String(), kRouteCurrent); _buttons[4]->setVisible(false);
 		refresh();
 	}
 	uint32 revisitNode() const { return _revisitNode; }
@@ -590,7 +633,7 @@ public:
 	void reflowLayout() override {
 		fit(*this);
 		const int row = MAX(24, g_gui.getFont().getFontHeight() + 12);
-		_wide = (_mode == kPaths || _mode == kRoutes) && _w >= 600 && _h >= 360;
+		_wide = (_mode == kPaths || (_mode == kRoutes && !_mapWidget->overview())) && _w >= 600 && _h >= 360;
 		const bool compactRoutes = _mode == kRoutes && _h < 360;
 		place(_title, 12, 8, _w - 24, row);
 		_title->setVisible(!compactRoutes);
@@ -607,7 +650,11 @@ public:
 		_speaker->setVisible(_wide); _context->setVisible(_wide);
 		if (_preview) _preview->setVisible(_wide);
 		place(_status, 12, _h - row * 2 - 12, _w - 24, row);
-		for (uint32 i = 0; i < 4; ++i) place(_buttons[i], 12 + i * (_w - 20) / 4, _h - row - 8, (_w - 36) / 4, row);
+		const int count = _mode == kRoutes ? 5 : 4;
+		for (int i = 0; i < count; ++i) {
+			const int button = count == 5 && i >= 3 ? i == 3 ? 4 : 3 : i;
+			place(_buttons[button], 12 + i * (_w - 20) / count, _h - row - 8, (_w - 16 - count * 5) / count, row);
+		}
 		GUI::Dialog::reflowLayout();
 	}
 	void handleTickle() override {
@@ -615,7 +662,7 @@ public:
 		const JournalEntry *entry = selectedEntry();
 		const bool playing = _replay.active();
 		if (playing != _wasPlaying) { _wasPlaying = playing; _list->markAsDirty(); }
-		_buttons[1]->setLabel(entry && _replay.playing(*entry) ? _("Stop") : _("Replay"));
+		if (_mode != kRoutes) _buttons[1]->setLabel(entry && _replay.playing(*entry) ? _("Stop") : _("Replay"));
 	}
 
 	void switchView(int direction) {
@@ -630,6 +677,7 @@ public:
 	}
 	void handleOtherEvent(const Common::Event &event) override {
 		if (event.type == Common::EVENT_CUSTOM_ENGINE_ACTION_START) {
+			if (_mode == kRoutes && (event.customType == kJournalZoom || event.customType == kJournalCurrent)) { handleCommand(nullptr, event.customType == kJournalZoom ? kRouteZoom : kRouteCurrent, 0); return; }
 			if (_mode == kRoutes && event.customType >= kJournalUp && event.customType <= kJournalRight) {
 				const Common::KeyCode keys[] = {Common::KEYCODE_UP, Common::KEYCODE_DOWN, Common::KEYCODE_LEFT, Common::KEYCODE_RIGHT};
 				setFocusWidget(_mapWidget); _mapWidget->handleKeyDown(Common::KeyState(keys[event.customType - kJournalUp])); return;
@@ -648,6 +696,10 @@ public:
 
 	void handleCommand(GUI::CommandSender *sender, uint32 cmd, uint32 data) override {
 		const int32 index = selected();
+		if (_mode == kRoutes && (cmd == kRouteZoom || (cmd == kReplay && sender == _buttons[1]))) {
+			_mapWidget->toggleOverview(); _previewIndex = -2; updateButtons(); reflowLayout(); g_gui.scheduleTopDialogRedraw(); setFocusWidget(_mapWidget); return;
+		}
+		if (_mode == kRoutes && cmd == kRouteCurrent) { _mapWidget->focusCurrent(); setFocusWidget(_mapWidget); return; }
 		if (_mode == kRoutes && (cmd == kStar || cmd == kRevisit)) { requestRevisit(); return; }
 		if (_mode == kRoutes && (cmd == kRead || cmd == kReplay)) {
 			const RouteMapItem *item = _mapWidget->selected(); if (!item) return;
