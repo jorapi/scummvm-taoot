@@ -25,6 +25,8 @@
 #include "graphics/surface.h"
 #include "graphics/font.h"
 #include "gui/gui-manager.h"
+#include "backends/keymapper/keymapper.h"
+#include "backends/keymapper/hardware-input.h"
 #include "graphics/paletteman.h"
 #include "graphics/cursorman.h"
 #include "graphics/fonts/ttf.h"
@@ -548,6 +550,7 @@ bool auditPuppetSession(const Common::FSNode &root, OSystem *backend) {
 	else ConfMan.removeKey("dreamfactory_journal", Common::ConfigManager::kTransientDomain);
 	// Exercise the reader with wrapped text, a decision, bookmarks and an empty search.
 	Session journalLayout(backend);
+	if (!journalLayout.init(root)) return false;
 	for (uint32 i = 0; i < 6; ++i) {
 		JournalEntry entry;
 		entry.speaker = i % 2 ? "Passenger" : "Officer";
@@ -558,11 +561,13 @@ bool auditPuppetSession(const Common::FSNode &root, OSystem *backend) {
 	JournalEntry fork; fork.speaker = "Passenger"; fork.room = "Journal layout fixture"; fork.time = 510000;
 	fork.choices.push_back("Ask about the ship and the people aboard.");
 	fork.choices.push_back("Ask for directions to the grand staircase.");
-	fork.selected = 1; fork.text = fork.choices[1]; journalLayout.journal.add(fork);
+	fork.selected = 1; fork.text = fork.choices[1];
+	fork.file = journalSession.journal.entries[0].file; fork.ident = journalSession.journal.entries[0].ident;
+	journalLayout.journal.add(fork);
 	class LayoutSource : public Common::EventSource {
 		OSystem *_backend; Common::FSNode _root; uint32 _start; bool _timedOut = false;
 	public:
-		uint32 phase = 0;
+		uint32 phase = 0; bool mapped = false, replayMapped = false, closeMapped = false;
 		LayoutSource(OSystem *backend, const Common::FSNode &root) : _backend(backend), _root(root), _start(backend->getMillis()) { backend->getEventManager()->getEventDispatcher()->registerSource(this, false); }
 		~LayoutSource() { _backend->getEventManager()->getEventDispatcher()->unregisterSource(this); }
 		bool allowMapping() const override { return false; }
@@ -573,13 +578,34 @@ bool auditPuppetSession(const Common::FSNode &root, OSystem *backend) {
 			const int w = MIN<int>(760, _backend->getOverlayWidth() - 12), h = MIN<int>(560, _backend->getOverlayHeight() - 12);
 			const int x = (_backend->getOverlayWidth() - w) / 2, y = (_backend->getOverlayHeight() - h) / 2;
 			const int row = MAX(24, g_gui.getFont().getFontHeight() + 12);
-			if (phase == 0 || phase == 5 || phase == 6 || phase == 10) {
+			if (phase == 0 || phase == 5 || phase == 4 || phase == 10) {
 				Graphics::Surface overlay; overlay.create(_backend->getOverlayWidth(), _backend->getOverlayHeight(), _backend->getOverlayFormat()); _backend->grabOverlay(overlay);
 				Common::DumpFile image;
-				if (image.open(_root.getChild(phase == 0 ? "journal-layout.bmp" : phase == 5 ? "journal-starred.bmp" : phase == 6 ? "journal-decisions.bmp" : "journal-search-empty.bmp"))) Image::writeBMP(image, overlay);
+				Common::String name = phase == 0 ? "journal-layout.bmp" : phase == 5 ? "journal-starred.bmp" : phase == 4 ? "journal-decisions.bmp" : "journal-search-empty.bmp";
+				if (_backend->getOverlayWidth() < 600) name = "compact-" + name;
+				if (image.open(_root.getChild(name))) Image::writeBMP(image, overlay);
 				overlay.free();
 			}
-			if (phase >= 11) { event.type = phase == 11 ? Common::EVENT_LBUTTONDOWN : Common::EVENT_LBUTTONUP; event.mouse = Common::Point(x + w - 40, y + h - row / 2 - 8); }
+			if (phase == 0) {
+				Common::Event physical; physical.type = Common::EVENT_JOYBUTTON_DOWN; physical.joystick.button = Common::JOYSTICK_BUTTON_X;
+				Common::List<Common::Event> actions;
+				_backend->getEventManager()->getKeymapper()->mapEvent(physical, actions);
+				mapped = actions.size() == 1 && actions.front().type == Common::EVENT_CUSTOM_ENGINE_ACTION_START && actions.front().customType == kJournalStar;
+				event.type = Common::EVENT_CUSTOM_ENGINE_ACTION_START; event.customType = kJournalStar;
+			} else if (phase == 1) {
+				Common::Event physical; physical.type = Common::EVENT_JOYBUTTON_DOWN; physical.joystick.button = Common::JOYSTICK_BUTTON_A;
+				Common::List<Common::Event> actions;
+				_backend->getEventManager()->getKeymapper()->mapEvent(physical, actions);
+				replayMapped = actions.size() == 1 && actions.front().type == Common::EVENT_CUSTOM_ENGINE_ACTION_START && actions.front().customType == kJournalReplay;
+				event.type = Common::EVENT_CUSTOM_ENGINE_ACTION_START; event.customType = kJournalReplay;
+			} else if (phase == 2 || phase == 4) { event.type = Common::EVENT_CUSTOM_ENGINE_ACTION_START; event.customType = kJournalViewNext; }
+			else if (phase == 12) {
+				Common::Event physical; physical.type = Common::EVENT_JOYBUTTON_DOWN; physical.joystick.button = Common::JOYSTICK_BUTTON_B;
+				Common::List<Common::Event> actions;
+				_backend->getEventManager()->getKeymapper()->mapEvent(physical, actions);
+				closeMapped = actions.size() == 1 && actions.front().type == Common::EVENT_CUSTOM_ENGINE_ACTION_START && actions.front().customType == kJournalClose;
+				event.type = Common::EVENT_CUSTOM_ENGINE_ACTION_START; event.customType = kJournalClose;
+			} else if (phase == 11) { event.type = Common::EVENT_MOUSEMOVE; event.mouse = Common::Point(x + 100, y + row * 2 + 16 + row / 2); }
 			else if (phase == 8 || phase == 9) { event.type = phase == 8 ? Common::EVENT_KEYDOWN : Common::EVENT_KEYUP; event.kbd.keycode = Common::KEYCODE_z; event.kbd.ascii = 'z'; }
 			else {
 				event.type = phase == 10 ? Common::EVENT_MOUSEMOVE : phase % 2 ? Common::EVENT_LBUTTONUP : Common::EVENT_LBUTTONDOWN;
@@ -591,12 +617,65 @@ bool auditPuppetSession(const Common::FSNode &root, OSystem *backend) {
 			++phase; return true;
 		}
 	};
+	class ControllerInputs {
+		OSystem *_backend;
+	public:
+		explicit ControllerInputs(OSystem *backend) : _backend(backend) {
+			auto *inputs = new Common::CompositeHardwareInputSet();
+			if (auto *native = backend->getHardwareInputSet()) inputs->addHardwareInputSet(native);
+			inputs->addHardwareInputSet(new Common::JoystickHardwareInputSet(Common::defaultJoystickButtons, Common::defaultJoystickAxes));
+			backend->getEventManager()->getKeymapper()->registerHardwareInputSet(inputs, backend->getKeymapperDefaultBindings());
+		}
+		~ControllerInputs() { _backend->getEventManager()->getKeymapper()->registerHardwareInputSet(_backend->getHardwareInputSet(), _backend->getKeymapperDefaultBindings()); }
+	};
 	{
+		ControllerInputs controller(backend);
 		LayoutSource source(backend, root);
 		openJournal(journalLayout);
-		if (source.phase != 13 || !journalLayout.journal.entries.back().bookmarked || journalLayout.journal.entries.size() != 7) return false;
+		if (source.phase != 13 || !source.mapped || !source.replayMapped || !source.closeMapped || !journalLayout.journal.entries.back().bookmarked || journalLayout.journal.entries.size() != 7) {
+			warning("JOURNAL LAYOUT FAIL phase=%u mapped=%d bookmarked=%d", source.phase, source.mapped, journalLayout.journal.entries.back().bookmarked); return false;
+		}
 	}
-	warning("JOURNAL PASS heard lines independent replay pause modal reading recording toggle");
+	// Run the same interaction path at a handheld-sized game surface.
+	const uint oldWidth = backend->getWidth(), oldHeight = backend->getHeight();
+	const Graphics::PixelFormat oldFormat = backend->getScreenFormat();
+	backend->beginGFXTransaction(); backend->initSize(480, 272, &oldFormat);
+	if (backend->endGFXTransaction() != OSystem::kTransactionSuccess) return false;
+	journalLayout.journal.entries.back().bookmarked = false;
+	bool compactOK = false;
+	{
+		ControllerInputs controller(backend);
+		LayoutSource source(backend, root);
+		openJournal(journalLayout);
+		compactOK = source.phase == 13 && source.mapped && source.replayMapped && source.closeMapped && journalLayout.journal.entries.back().bookmarked;
+	}
+	backend->beginGFXTransaction(); backend->initSize(oldWidth, oldHeight, &oldFormat);
+	if (backend->endGFXTransaction() != OSystem::kTransactionSuccess || !compactOK) return false;
+	Session missingVoice(backend);
+	JournalEntry unavailable; unavailable.speaker = "Fixture"; unavailable.text = "Unavailable voice"; unavailable.file = "missing.pup"; unavailable.ident = "line";
+	missingVoice.journal.add(unavailable);
+	class NoticeSource : public Common::EventSource {
+		OSystem *_backend; uint32 _start; bool _timedOut = false;
+	public:
+		uint32 phase = 0;
+		explicit NoticeSource(OSystem *backend) : _backend(backend), _start(backend->getMillis()) { backend->getEventManager()->getEventDispatcher()->registerSource(this, false); }
+		~NoticeSource() { _backend->getEventManager()->getEventDispatcher()->unregisterSource(this); }
+		bool allowMapping() const override { return false; }
+		bool pollEvent(Common::Event &event) override {
+			const uint32 elapsed = _backend->getMillis() - _start;
+			if (elapsed > 3000 && !_timedOut) { _timedOut = true; event.type = Common::EVENT_QUIT; return true; }
+			if (phase >= 3 || elapsed < (phase + 1) * 150) return false;
+			event.type = Common::EVENT_CUSTOM_ENGINE_ACTION_START; event.customType = phase++ ? kJournalClose : kJournalReplay; return true;
+		}
+	};
+	{
+		NoticeSource source(backend); openJournal(missingVoice);
+		if (source.phase != 3 || backend->getEventManager()->shouldQuit() || missingVoice.journal.entries.size() != 1) return false;
+	}
+	const auto *journalMap = backend->getEventManager()->getKeymapper()->getKeymap("dreamfactory-journal-ui");
+	const auto *standardMap = backend->getEventManager()->getKeymapper()->getKeymap(Common::kGuiKeymapName);
+	if (!journalMap || journalMap->isEnabled() || !standardMap || !standardMap->isEnabled()) return false;
+	warning("JOURNAL PASS heard lines independent replay pause modal reading recording toggle wrapped transcript scoped controller keymap");
 	return true;
 }
 bool auditPuppets(const Common::FSNode &root) {

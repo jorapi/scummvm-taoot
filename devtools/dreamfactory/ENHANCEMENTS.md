@@ -316,17 +316,26 @@ Recording is enabled by default and can be disabled with **Record dialogue
 journal** in ScummVM's game options. Open the journal with **J** or controller
 **Back/Select**; the binding is configurable in ScummVM's keymapper.
 
-The Journal view contains conversation lines that started playing and replies
-you selected. A reading pane on larger overlays shows the complete selected
-entry, speaker, room and elapsed game time. Smaller overlays use the full-page
-Read view. Search matches character names, locations, text and offered replies,
-with all search words required. The active view is marked by a disabled tab;
-entries are shown newest first. Use Read for the full-page reader,
-Replay (or double-click a line) for its original voice recording, and Star
-to bookmark an entry. Replay changes to Stop while that entry is playing;
-Star changes to Unstar for bookmarked entries. The Decisions view shows
-encountered reply sets and emphasizes the choice you made, without revealing later branches. Some replies have no voice
-recording. Movie/radio audio without conversation text is not transcribed.
+The Log view presents heard conversation lines and selected replies as a
+continuous transcript, ordered oldest to newest and opened at the latest entry.
+Each entry shows its speaker, location, elapsed game time and complete wrapped
+text. Its Play/Stop button replays the original voice recording. Scroll with a
+mouse wheel, scrollbar, Page Up/Down or a touch drag. Up/Down selects adjacent
+entries; Space replays the selected line and Enter opens its full-page details.
+
+The Decisions view lists encountered reply sets, with a reading pane on larger
+overlays that emphasizes the chosen reply. Smaller overlays use Read for details.
+Search matches character names, locations, text and offered replies, with all
+search words required. Star/Unstar bookmarks an entry for the Starred view.
+Some replies have no voice recording. Movie/radio audio without conversation
+text is not transcribed.
+
+Journal controller controls use a dedicated, configurable ScummVM GUI keymap:
+D-pad or left stick selects entries; A replays/stops the selected line, X toggles
+its bookmark, Y opens details, B or Back closes, and the shoulders switch views.
+Left/Right also switches views when the search field is not focused. Keyboard
+editing shortcuts and mouse input remain available. The normal ScummVM GUI
+keymap is restored on exit; these bindings do not replace gameplay controls.
 
 Browsing pauses gameplay and existing audio. Replays use a separate speech
 channel and never rerun dialogue scripts. Closing the journal resumes the game.
@@ -345,3 +354,21 @@ Journal presentation references: [Ace Attorney: Dual Destinies' conversation
 backlog](https://news.capcomusa.com/lets/browse/phoenix-wright-ace-attorney-dual-destinies-localization-the-trials-and-tribulations-of-the-gameplay-mechanics-team)
 and [Ren'Py's speaker/text/voice history model](https://www.renpy.org/doc/html/history.html).
 The interface uses ScummVM theme widgets and fonts, without borrowing game art.
+
+### VLR-inspired route work (active)
+
+The continuous log is the first milestone. The planned route map will expose
+connected scenes and encountered decisions, conceal undiscovered outcomes, and
+support controller traversal. Its scene-revisit action must restore a validated
+complete checkpoint, including story variables, inventory, RNG and game clock.
+
+Current native saves intentionally exclude active conversations and running
+script frames. A journal entry is not a resumable script checkpoint. Scene
+checkpoints must therefore be captured at a stable point before an interaction;
+revisiting restores that scene rather than fabricating a suspended call stack.
+Keep route discovery separate from the loaded playthrough, preserve manual save
+slots, bound checkpoint storage, and validate a checkpoint before replacing the
+live session. Tests must cover alternate paths, corrupt/missing checkpoints,
+loading old saves, controller input, and all three supported games. The branch
+map, discovery persistence, scene checkpoints and period styling remain work in
+progress; this milestone does not enable rewinding.

@@ -13,7 +13,8 @@ enum ControlAction { kOpenJournal = 2,
 					 kPadNext,
 					 kPadInteract,
 					 kPadRepeat,
-					 kPadClick };
+					 kPadClick,
+					 kJournalReplay = 300, kJournalStar, kJournalViewPrevious, kJournalViewNext, kJournalRead, kJournalClose, kJournalUp, kJournalDown, kJournalLeft, kJournalRight };
 inline Common::KeyCode controlKey(uint32 action) {
 	const Common::KeyCode keys[] = {Common::KEYCODE_UP, Common::KEYCODE_DOWN, Common::KEYCODE_LEFT, Common::KEYCODE_RIGHT};
 	return action >= kPadUp && action <= kPadRight ? keys[action - kPadUp] : Common::KEYCODE_RETURN;
