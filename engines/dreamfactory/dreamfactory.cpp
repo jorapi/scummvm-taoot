@@ -17,8 +17,10 @@
 #include "graphics/font.h"
 #include "graphics/surface.h"
 #include "backends/keymapper/keymapper.h"
+#include "backends/keymapper/hardware-input.h"
 #include "gui/gui-manager.h"
 #include "gui/ThemeEval.h"
+#include "image/bmp.h"
 #include <math.h>
 
 namespace DreamFactory {
@@ -240,6 +242,7 @@ Common::Error DreamFactoryEngine::run() {
 			Common::Array<Common::String> guiKeys; uint32 guiKeyIndex = 0, guiKeyDue = 0;
 			bool guiKeyRelease = false; Common::KeyState guiKey;
 			uint32 guiMouseReleaseAt = 0; Common::Point guiMousePoint;
+			uint32 guiMouseMoveAt = 0; Common::Point guiDragPoint;
 			bool menuPending = false, menuSeen = false, menuEscapeSent = false, menuKeyRelease = false;
 			uint32 menuEscapeAt = 0;
 			Common::Array<Common::String> movieClicks; uint32 movieClickIndex = 0, nextMovieClick = 0;
@@ -252,8 +255,16 @@ Common::Error DreamFactoryEngine::run() {
 			Common::String holdGlobal; int32 holdMinimum = 0;
 			Common::String holdProp, holdOwner;
 			uint32 nextClickAt = 0, nextMoveAt = 0; Common::Point nextClickPoint;
-			BootInput(Session &s, OSystem *b, bool on, const Common::String &movies, const Common::String &skips) : session(s), backend(b), enabled(on), clickMovies(movies), skipMovies(skips) { backend->getEventManager()->getEventDispatcher()->registerSource(this, false); }
-			~BootInput() { backend->getEventManager()->getEventDispatcher()->unregisterSource(this); }
+			bool testController = false;
+			BootInput(Session &s, OSystem *b, bool on, const Common::String &movies, const Common::String &skips) : session(s), backend(b), enabled(on), clickMovies(movies), skipMovies(skips) {
+				if (ConfMan.hasKey("dreamfactory_boot_gui_keys") && ConfMan.get("dreamfactory_boot_gui_keys").contains("pad:")) {
+					auto *inputs = new Common::CompositeHardwareInputSet(); if (auto *native = backend->getHardwareInputSet()) inputs->addHardwareInputSet(native);
+					inputs->addHardwareInputSet(new Common::JoystickHardwareInputSet(Common::defaultJoystickButtons, Common::defaultJoystickAxes));
+					backend->getEventManager()->getKeymapper()->registerHardwareInputSet(inputs, backend->getKeymapperDefaultBindings()); testController = true;
+				}
+				backend->getEventManager()->getEventDispatcher()->registerSource(this, false);
+			}
+			~BootInput() { backend->getEventManager()->getEventDispatcher()->unregisterSource(this); if (testController) backend->getEventManager()->getKeymapper()->registerHardwareInputSet(backend->getHardwareInputSet(), backend->getKeymapperDefaultBindings()); }
 			void clickAt(int32 x, int32 y) {
 				Common::Event event; event.type = Common::EVENT_LBUTTONDOWN;
 				event.mouse = Common::Point(int16((x * 640 + 511) / 512), int16((y * 480 + 383) / 384));
@@ -280,6 +291,9 @@ Common::Error DreamFactoryEngine::run() {
 			}
 			bool allowMapping() const override { return false; }
 			bool pollEvent(Common::Event &event) override {
+				if (guiMouseMoveAt && int32(backend->getMillis() - guiMouseMoveAt) >= 0) {
+					guiMouseMoveAt = 0; guiMousePoint = guiDragPoint; event.type = Common::EVENT_MOUSEMOVE; event.mouse = guiMousePoint; return true;
+				}
 				if (guiMouseReleaseAt) {
 					if (int32(backend->getMillis() - guiMouseReleaseAt) < 0) return false;
 					guiMouseReleaseAt = 0; event.type = Common::EVENT_LBUTTONUP; event.mouse = guiMousePoint; return true;
@@ -289,6 +303,32 @@ Common::Error DreamFactoryEngine::run() {
 					if (!guiKeyDue) guiKeyDue = backend->getMillis() + 200;
 					if (int32(backend->getMillis() - guiKeyDue) < 0) return false;
 					const Common::String key = guiKeys[guiKeyIndex++]; guiKeyDue = backend->getMillis() + 200;
+					if (key.hasPrefix("pad:")) {
+						const char *names[] = {"a", "b", "y", "up", "down", "lb", "rb"};
+						const byte buttons[] = {Common::JOYSTICK_BUTTON_A, Common::JOYSTICK_BUTTON_B, Common::JOYSTICK_BUTTON_Y, Common::JOYSTICK_BUTTON_DPAD_UP, Common::JOYSTICK_BUTTON_DPAD_DOWN, Common::JOYSTICK_BUTTON_LEFT_SHOULDER, Common::JOYSTICK_BUTTON_RIGHT_SHOULDER};
+						for (uint32 i = 0; i < ARRAYSIZE(names); ++i) if (key.substr(4) == names[i]) {
+							Common::Event physical; physical.type = Common::EVENT_JOYBUTTON_DOWN; physical.joystick.button = buttons[i];
+							Common::List<Common::Event> mapped; backend->getEventManager()->getKeymapper()->mapEvent(physical, mapped);
+							if (mapped.size() != 1) { session.runtime.fail("Diagnostic pad input has no unique GUI mapping"); event.type = Common::EVENT_KEYDOWN; event.kbd.keycode = Common::KEYCODE_ESCAPE; return true; }
+							event = mapped.front(); warning("BOOT GUI PAD input=%s action=%u", names[i], event.customType); return true;
+						}
+						session.runtime.fail("Unknown diagnostic pad input"); return false;
+					}
+					if (key == "snapshot") {
+						Graphics::Surface overlay; overlay.create(backend->getOverlayWidth(), backend->getOverlayHeight(), backend->getOverlayFormat()); backend->grabOverlay(overlay);
+						const Common::String path = ConfMan.get("dreamfactory_boot_checkpoint") + Common::String::format(".gui-%u.bmp", guiKeyIndex); Common::DumpFile file;
+						if (!file.open(Common::Path(path)) || !Image::writeBMP(file, overlay)) session.runtime.fail("Cannot capture diagnostic GUI");
+						overlay.free(); return false;
+					}
+					if (key.hasPrefix("point:") || key.hasPrefix("drag:")) {
+						Common::StringTokenizer coordinates(key, ":"); coordinates.nextToken(); const int x = atoi(coordinates.nextToken().c_str()), y = atoi(coordinates.nextToken().c_str());
+						guiMousePoint = Common::Point(x, y); guiMouseReleaseAt = backend->getMillis() + 100;
+						if (key.hasPrefix("drag:")) { guiDragPoint = Common::Point(x, atoi(coordinates.nextToken().c_str())); guiMouseMoveAt = backend->getMillis() + 40; }
+						event.type = Common::EVENT_LBUTTONDOWN; event.mouse = guiMousePoint; warning("BOOT GUI POINTER %s", key.c_str()); return true;
+					}
+					if (key.hasPrefix("wheel:")) {
+						event.type = atoi(key.substr(6).c_str()) > 0 ? Common::EVENT_WHEELDOWN : Common::EVENT_WHEELUP; event.mouse = guiMousePoint; warning("BOOT GUI POINTER %s", key.c_str()); return true;
+					}
 					if (key == "gridfirst" || key.hasPrefix("click:")) {
 						const Common::String widget = key == "gridfirst" ? "SaveLoadChooser.List" : key.substr(6);
 						const Common::String dialog = widget.substr(0, widget.find('.'));
@@ -301,6 +341,7 @@ Common::Error DreamFactoryEngine::run() {
 					if (key == "escape") guiKey = Common::KeyState(Common::KEYCODE_ESCAPE, Common::ASCII_ESCAPE);
 					else if (key == "enter") guiKey = Common::KeyState(Common::KEYCODE_RETURN, Common::ASCII_RETURN);
 					else if (key == "home") guiKey = Common::KeyState(Common::KEYCODE_HOME);
+					else if (key == "end") guiKey = Common::KeyState(Common::KEYCODE_END);
 					else if (key == "down") guiKey = Common::KeyState(Common::KEYCODE_DOWN);
 					else if (key.size() == 1 && key[0] >= 'a' && key[0] <= 'z') guiKey = Common::KeyState(Common::KeyCode(Common::KEYCODE_a + key[0] - 'a'), byte(key[0]));
 					else { session.runtime.fail("Invalid diagnostic GUI key: " + key); return false; }
@@ -558,6 +599,13 @@ Common::Error DreamFactoryEngine::run() {
 						const RouteNode &node = session.routes.graph.nodes()[n];
 						warning("BOOT ROUTE node=%u kind=%u parent=%u choice=%d seen=%u checkpoint=%u file=%s speaker=%s", n + 1, uint32(node.kind), node.parent, node.parentChoice, node.seenChoices, node.checkpoint, node.entry.file.c_str(), node.entry.speaker.c_str());
 					}
+				} else if (command == "openinventory") {
+					Common::Event event; event.type = Common::EVENT_CUSTOM_ENGINE_ACTION_START; event.customType = kOpenInventory; session.postEvent(event);
+					for (uint32 tries = 0; tries < 120; ++tries) { if (!session.step()) { ok = false; break; } if (!session.inventoryPending()) break; }
+					ok = ok && !session.inventoryPending();
+				} else if (command == "inventoryaction") {
+					InventoryResult result; result.item = words.nextToken(); const Common::String inventoryCommand = words.nextToken(); result.action = inventoryCommand == "examine" ? kInventoryExamine : inventoryCommand == "use" ? kInventoryUse : kInventoryBack;
+					ok = inventoryAction(session, result);
 				} else if (command == "dumpinventory") {
 					Common::Array<InventoryItem> items; const Variables globals = session.runtime.globals;
 					ok = inventoryItems(session, items);
@@ -698,7 +746,7 @@ Common::Error DreamFactoryEngine::run() {
 						ok = !ok && session.scriptQuitRequested() && session.runtime.error.empty();
 						if (ok) { input.releaseAt = 0; warning("BOOT SCRIPT QUIT PASS"); }
 					}
-				} else if (command == "clickon" || command == "dragto" || command == "dragarc" || command == "dragarcuntil" || command == "dragpoint" || command == "holduntil" || command == "clickthen" || command == "clickifempty") {
+				} else if (command == "clickon" || command == "padon" || command == "dragto" || command == "dragarc" || command == "dragarcuntil" || command == "dragpoint" || command == "holduntil" || command == "clickthen" || command == "clickifempty") {
 					const bool gesture = command == "dragto" || command == "dragarc" || command == "dragarcuntil" || command == "dragpoint" || command == "holduntil" || command == "clickthen";
 					const Common::String guard = command == "clickifempty" ? words.nextToken() : Common::String();
 					const Common::String type = words.nextToken(), name = gesture ? words.nextToken() : action.substr(command.size() + type.size() + 2 + (command == "clickifempty" ? guard.size() + 1 : 0));
@@ -737,7 +785,14 @@ Common::Error DreamFactoryEngine::run() {
 					}
 					if (skip) warning("BOOT CLICK SKIP global=%s", guard.c_str());
 					else if (ok) {
-						input.clickAt(start.x, start.y);
+						if (command == "padon") {
+							Common::Event motion; motion.type = Common::EVENT_MOUSEMOVE; motion.mouse = Common::Point((start.x * 640 + 511) / 512, (start.y * 480 + 383) / 384); session.postEvent(motion);
+							Common::Event physical; physical.type = Common::EVENT_JOYBUTTON_DOWN; physical.joystick.button = Common::JOYSTICK_BUTTON_A;
+							Common::List<Common::Event> mapped; _eventMan->getKeymapper()->mapEvent(physical, mapped); ok = mapped.size() == 1 && mapped.front().type == Common::EVENT_CUSTOM_ENGINE_ACTION_START && mapped.front().customType == kPadInteract;
+							for (const auto &event : mapped) session.postEvent(event);
+							physical.type = Common::EVENT_JOYBUTTON_UP; mapped.clear(); _eventMan->getKeymapper()->mapEvent(physical, mapped); for (const auto &event : mapped) session.postEvent(event);
+							warning("BOOT GAMEPAD TARGET mapped=%u type=%s name=%s", ok, type.c_str(), name.c_str());
+						} else input.clickAt(start.x, start.y);
 						if (command == "dragto") input.dragTo(end.x, end.y);
 						else if (command == "dragpoint" || command == "dragarc" || command == "dragarcuntil" || command == "clickthen") {
 							const int32 x = atoi(words.nextToken().c_str()), y = atoi(words.nextToken().c_str());

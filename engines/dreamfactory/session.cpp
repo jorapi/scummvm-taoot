@@ -5,6 +5,7 @@
 #include "dreamfactory/puppet_view.h"
 #include "dreamfactory/checkers.h"
 #include "dreamfactory/controls.h"
+#include "dreamfactory/inventory.h"
 #include "common/events.h"
 #include "common/config-manager.h"
 #include "common/archive.h"
@@ -53,6 +54,8 @@ bool Session::init(const Common::FSNode &root) {
 	runtime.abandon(); runtime.globals.clear(); runtime.fallbacks.clear(); runtime.error.clear(); bootScripts.clear();
 	puppetParams.clear(); playerHitbox = Common::Point(); cameraHi = 0; memset(displayPalette, 0, sizeof(displayPalette)); lastResult = Value();
 	journal.entries.clear(); _journalRequested = false;
+	_inventoryRequested = _inventoryShown = false; _inventoryOfferItem.clear();
+	_inventoryClicks.clear(); _inventoryClickDown = _inventoryReopen = false; _inventoryClickDue = 0;
 	routes = RouteStore(); _routePending.clear(); _routeOwner.reset(); _savedRouteCursor = 0; _savedRouteChoice = -1; _savedRouteToken.clear(); _routeResumeScene = 0;
 	_routeRevisiting = false;
 	pointer = Common::Point(); _pointerButtons = 0; pointerDown = _stopped = _scriptQuit = _dialogActive = false;
@@ -1461,6 +1464,17 @@ void Session::updateHoverCursor() {
 void Session::compositeControls(Bytes &rgba) {
 	if (touchControlsVisible())
 		drawTouchPad(rgba);
+	if (!_inventoryOfferItem.empty() && !puppetSystem.current && !movies.active() && rgba.size() == 512 * 384 * 4 && loadFonts()) {
+		Graphics::Surface surface; surface.init(512, 384, 512 * 4, rgba.data(), Graphics::PixelFormat::createFormatRGBA32());
+		const Graphics::Font *font = _puppetFonts.font(14);
+		if (font) {
+			surface.fillRect(Common::Rect(0, 264, 512, 286), surface.format.RGBToColor(0, 0, 0));
+			Common::U32String text = _("Use/Give: "); text += Common::U32String(_inventoryOfferLabel, Common::kWindows1252); text += _("  A/Click: target  B/Esc: cancel");
+			font->drawString(&surface, text, 6, 266, 428, surface.format.RGBToColor(255, 255, 255));
+			surface.fillRect(Common::Rect(440, 264, 512, 286), surface.format.RGBToColor(49, 62, 74));
+			font->drawString(&surface, _("Cancel"), 442, 266, 68, surface.format.RGBToColor(255, 255, 255), Graphics::kTextAlignCenter);
+		}
+	}
 	if (_controlFocused && !roomSystem.moving) {
 		const Hit hit = hitTest(_controlPoint.x, _controlPoint.y);
 		if (hit.type != _controlHit.type || hit.name != _controlHit.name)
@@ -1604,11 +1618,19 @@ bool Session::controlEvent(const Common::Event &event) {
 	Common::Event mouse;
 	mouse.type = Common::EVENT_LBUTTONDOWN;
 	mouse.mouse = _controlPress;
+	mouse.customType = action;
 	postEvent(mouse);
 	return true;
 }
 void Session::postEvent(const Common::Event &event) {
     if (controlEvent(event)) return;
+	if (event.type == Common::EVENT_CUSTOM_ENGINE_ACTION_START && event.customType == kOpenInventory) {
+		if (!movies.active() && (!puppetSystem.current || inventoryActive(*this))) _inventoryRequested = true;
+		return;
+	}
+	if (!_inventoryOfferItem.empty() && !puppetSystem.current && event.type == Common::EVENT_KEYDOWN && (event.kbd.keycode == Common::KEYCODE_ESCAPE || event.kbd.keycode == Common::KEYCODE_PERIOD)) {
+		_inventoryOfferItem.clear(); return;
+	}
 	if (event.type == Common::EVENT_CUSTOM_ENGINE_ACTION_START && event.customType == kOpenJournal) {
 		if (!movies.active()) _journalRequested = true;
 		return;
@@ -1647,6 +1669,8 @@ void Session::postEvent(const Common::Event &event) {
 void Session::pollInput() {
 	if (!_system) return;
 	Common::Event event; while (_system->getEventManager()->pollEvent(event)) postEvent(event);
+	serviceInventoryClicks();
+	if (runtime.isRunning("handleselect")) serviceInventory();
 	if (_journalRequested && !_dialogActive && !_stopped) {
 		_journalRequested = false;
 		pendingEvents.clear();
@@ -1764,15 +1788,100 @@ void Session::mouseInput(const Common::Event &event) {
 	Values args; args.push_back(Value(int32(uint32(uint16(x)) << 16 | uint16(y))));
 	for (uint32 i = 0; i < bootScripts.size(); ++i) if (bootScripts[i]->script.handlers.contains("mousedown")) { runtime.run(*bootScripts[i], "mousedown", args); return; }
 }
+void Session::serviceInventoryClicks() {
+	if (!_system || _dialogActive) return;
+	const uint32 now = _system->getMillis();
+	if (_inventoryClickDown && int32(now - _inventoryClickDue) >= 0) {
+		Common::Event event; event.type = Common::EVENT_LBUTTONUP; event.mouse = _inventoryClickPoint; postEvent(event);
+		_inventoryClickDown = false; _inventoryClickDue = now + 100; return;
+	}
+	if (_inventoryClickDown) return;
+	if (!runtime.isRunning("handleselect") && !runtime.isRunning("infoyoself") && !runtime.isRunning("invenmovie")) { _inventoryClicks.clear(); _inventoryReopen = false; }
+	if (!_inventoryClicks.empty() && inventoryActive(*this) && runtime.isRunning("handleselect") && int32(now - _inventoryClickDue) >= 0) {
+		_inventoryClickPoint = _inventoryClicks[0]; _inventoryClicks.remove_at(0);
+		Common::Event event; event.type = Common::EVENT_LBUTTONDOWN; event.mouse = _inventoryClickPoint; postEvent(event);
+		_inventoryClickDown = true; _inventoryClickDue = now + 80; return;
+	}
+	if (_inventoryReopen && _inventoryClicks.empty() && inventoryActive(*this) && runtime.isRunning("handleselect") && !runtime.isRunning("infoyoself") && !runtime.isRunning("invenmovie")) {
+		const auto stage = stageSystem.current; bool examining = false;
+		for (const auto &button : stage->buttons[stageSystem.flat]) if (runtime.isRunning(*button, "mousedown")) examining = true;
+		if (!examining) { _inventoryReopen = false; _inventoryRequested = true; }
+	}
+}
+void Session::serviceInventory() {
+	const bool selecting = runtime.isRunning("handleselect") && inventoryActive(*this);
+	if (!_system || _dialogActive || (runtime.busy() && !selecting) || movies.active() || (puppetSystem.current && !selecting) || roomSystem.moving || roomSystem.turning || pointerDown || _paletteBlack || screenBlack || !_inventoryClicks.empty() || _inventoryClickDown) return;
+	if (!inventoryActive(*this)) {
+		_inventoryShown = false;
+		if (!_inventoryRequested) return;
+		const bool main = stageSystem.current && (version == 1 ? stageSystem.currentFlat() == "mainpanel" : stageSystem.current->name == "main.stg");
+		const auto bag = propSystem.get(version == 1 ? "avatar" : "bag");
+		if (!main || !bag || !bag->visible || (version != 1 && bag->owner.text() != "frank")) { _inventoryRequested = false; return; }
+		if (version == 1 || bag->view == "darkclosed" || bag->view == "lightclosed" || (!sound.isTitanicRetail() && (bag->view == "darkopened" || bag->view == "lightopened"))) {
+			prepareRouteCheckpoint();
+			const Common::String previousView = bag->view; const auto previousStage = stageSystem.current; const int32 previousFlat = stageSystem.flat;
+			ScriptFrame event = runtime.eventFrame(bag->name, "mousedown"); Values args; args.push_back(Value(int32(uint32(uint16(bag->anchorX)) << 16 | uint16(bag->anchorY))));
+			propSystem.send(true, bag->name, "mousedown", args, event, true);
+			if (bag->view == previousView && stageSystem.current == previousStage && stageSystem.flat == previousFlat) _inventoryRequested = false;
+		}
+		return;
+	}
+	const bool enabled = ConfMan.hasKey("dreamfactory_modern_inventory") && ConfMan.getBool("dreamfactory_modern_inventory");
+	if (!_inventoryRequested && (!enabled || _inventoryShown)) return;
+	_inventoryRequested = false; _inventoryShown = true; _inventoryOfferItem.clear(); pendingEvents.clear();
+	const uint32 started = _system->getMillis(); InventoryResult result;
+	{
+		PauseToken pause = g_engine ? g_engine->pauseEngine() : PauseToken(); _dialogActive = true;
+		result = openInventory(*this); _dialogActive = false;
+	}
+	pointerDown = false; _pointerButtons = 0; _controlHeld = _touchHeld = false; excludeWallTime(started);
+	_system->warpMouse((pointer.x * 640 + 511) / 512, (pointer.y * 480 + 383) / 384);
+	if (_system->getEventManager()->shouldQuit() || _system->getEventManager()->shouldReturnToLauncher()) { _stopped = true; runtime.abandon(); return; }
+	if (selecting) {
+		const auto addClick = [&](int16 x, int16 y) { _inventoryClicks.push_back(Common::Point((x * 640 + 511) / 512, (y * 480 + 383) / 384)); };
+		if (result.action != kInventoryBack) {
+			const auto prop = propSystem.get(result.item); if (!prop) return;
+			Common::Point point(prop->anchorX, prop->anchorY); bool found = false;
+			for (int y = 0; y < 384 && !found; ++y) for (int x = 0; x < 512; ++x) if (prop->contains(x, y)) {
+				const Hit hit = hitTest(x, y); if (hit.type == "prop" && hit.name.equalsIgnoreCase(result.item)) { point = Common::Point(x, y); found = true; break; }
+			}
+			if (!found) return;
+			addClick(point.x, point.y);
+		}
+		const Common::String button = result.action == kInventoryExamine ? version == 1 ? "info" : "examine" : "ok";
+		for (const auto &region : stageSystem.current->data.flats[stageSystem.flat].regions) if (region.name.equalsIgnoreCase(button)) addClick((region.rect.left + region.rect.right) / 2, (region.rect.top + region.rect.bottom) / 2);
+		_inventoryReopen = result.action == kInventoryExamine; _inventoryClickDue = _system->getMillis();
+		return;
+	}
+	if (!inventoryAction(*this, result)) return;
+	if (result.action == kInventoryExamine && inventoryActive(*this)) _inventoryRequested = true;
+	if (result.action == kInventoryUse) {
+		const auto prop = propSystem.get(result.item); const auto held = runtime.globals.find("handitem");
+		if (prop && prop->view == "large" && held != runtime.globals.end() && held->_value.text() == result.item) { _inventoryOfferItem = result.item; _inventoryOfferLabel = result.title; }
+	}
+	presentWorld();
+}
 bool Session::step() {
 	if (_stopped || !runtime.error.empty()) return false;
 	pollInput(); if (_stopped) return false;
+	if (!_inventoryOfferItem.empty()) {
+		const auto held = runtime.globals.find("handitem"); const auto prop = propSystem.get(_inventoryOfferItem);
+		if (!prop || prop->view != "large" || held == runtime.globals.end() || held->_value.text() != _inventoryOfferItem || puppetSystem.current || movies.active()) _inventoryOfferItem.clear();
+	}
+	serviceInventory(); if (_stopped || !runtime.error.empty()) return false;
 	while (!pendingEvents.empty()) {
 		const Common::Event event = pendingEvents[0]; pendingEvents.remove_at(0);
 		if (event.type == Common::EVENT_QUIT || event.type == Common::EVENT_RETURN_TO_LAUNCHER) { postEvent(event); return false; }
 		if ((event.type == Common::EVENT_KEYDOWN && !event.kbdRepeat) || event.type == Common::EVENT_LBUTTONDOWN || event.type == Common::EVENT_RBUTTONDOWN) prepareRouteCheckpoint();
 		if (event.type == Common::EVENT_KEYDOWN) { keyInput(event); presentPuppet(); return !_stopped && runtime.error.empty(); }
-		if (event.type == Common::EVENT_LBUTTONDOWN || event.type == Common::EVENT_RBUTTONDOWN) { mouseInput(event); presentPuppet(); return !_stopped && runtime.error.empty(); }
+		if (event.type == Common::EVENT_LBUTTONDOWN || event.type == Common::EVENT_RBUTTONDOWN) {
+			if (!_inventoryOfferItem.empty() && event.type == Common::EVENT_LBUTTONDOWN && (event.customType == kPadInteract || !event.customType)) {
+				const Common::String item = _inventoryOfferItem; _inventoryOfferItem.clear(); pointerDown = false; _pointerButtons = 0;
+				const int16 x = event.mouse.x * 512 / 640, y = event.mouse.y * 384 / 480;
+				if (!(x >= 440 && y >= 264 && y < 286)) inventoryOffer(*this, item, x, y);
+			} else mouseInput(event);
+			presentPuppet(); return !_stopped && runtime.error.empty();
+		}
 	}
 	// idle owns the shipped timing, cursor routing and calctime call. It yields
 	// through forceupdate, so queued input waits until this handler finishes.

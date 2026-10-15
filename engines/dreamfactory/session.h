@@ -78,6 +78,7 @@ public:
 	uint64 elapsedMillis() const { return _time; }
 	bool scriptQuitRequested() const { return _scriptQuit; }
 	bool dialogActive() const { return _dialogActive; }
+	bool inventoryPending() const { return _inventoryRequested; }
 	uint64 dialogGeneration() const { return _dialogGeneration; }
 	bool pollingButton() const { return _pollingButton; }
 	uint64 buttonQuerySequence() const { return _buttonQuerySequence; }
@@ -110,6 +111,14 @@ private:
 	bool _scriptQuit = false;
 	bool _dialogActive = false;
 	bool _journalRequested = false;
+	bool _inventoryRequested = false, _inventoryShown = false;
+	Common::String _inventoryOfferItem, _inventoryOfferLabel;
+	void serviceInventory();
+	void serviceInventoryClicks();
+	Common::Array<Common::Point> _inventoryClicks;
+	Common::Point _inventoryClickPoint;
+	uint32 _inventoryClickDue = 0;
+	bool _inventoryClickDown = false, _inventoryReopen = false;
 	Bytes _routePending;
 	RoutePreview _routePendingPreview;
 	uint32 _routePendingChapter = 0;

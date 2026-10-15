@@ -4,7 +4,7 @@
 #include "common/events.h"
 #include "dreamfactory/archive.h"
 namespace DreamFactory {
-enum ControlAction { kOpenJournal = 2,
+enum ControlAction { kOpenJournal = 2, kOpenInventory = 3,
 					 kPadUp = 100,
 					 kPadDown,
 					 kPadLeft,
@@ -14,7 +14,8 @@ enum ControlAction { kOpenJournal = 2,
 					 kPadInteract,
 					 kPadRepeat,
 					 kPadClick,
-					 kJournalReplay = 300, kJournalStar, kJournalViewPrevious, kJournalViewNext, kJournalRead, kJournalClose, kJournalUp, kJournalDown, kJournalLeft, kJournalRight, kJournalZoom, kJournalCurrent };
+					 kJournalReplay = 300, kJournalStar, kJournalViewPrevious, kJournalViewNext, kJournalRead, kJournalClose, kJournalUp, kJournalDown, kJournalLeft, kJournalRight, kJournalZoom, kJournalCurrent,
+					 kInventoryUIUse = 400, kInventoryUIExamine, kInventoryUIClose, kInventoryUIUp, kInventoryUIDown };
 inline Common::KeyCode controlKey(uint32 action) {
 	const Common::KeyCode keys[] = {Common::KEYCODE_UP, Common::KEYCODE_DOWN, Common::KEYCODE_LEFT, Common::KEYCODE_RIGHT};
 	return action >= kPadUp && action <= kPadRight ? keys[action - kPadUp] : Common::KEYCODE_RETURN;

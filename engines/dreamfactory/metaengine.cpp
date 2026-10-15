@@ -17,6 +17,7 @@ static const ADExtraGuiOptionsMap optionsList[] = {
 	{GUIO_GAMEOPTIONS6, {_s("Touch direction pad"), _s("Show walking and turning buttons in navigable world views"), "dreamfactory_touch_controls", false, 0, 0}},
 	{GUIO_GAMEOPTIONS7, {_s("Record dialogue journal"), _s("Keep heard lines and encountered decisions in your saves; open with J or controller Back"), "dreamfactory_journal", true, 0, 0}},
 	{GUIO_GAMEOPTIONS8, {_s("Record branching routes"), _s("Keep discovered conversations across saves and record scene checkpoints for revisiting branches"), "dreamfactory_routes", true, 0, 0}},
+	{GUIO_GAMEOPTIONS9, {_s("Modern inventory"), _s("Show a controller-friendly inventory with larger item pictures when opening the original bag"), "dreamfactory_modern_inventory", false, 0, 0}},
 	AD_EXTRA_GUI_OPTIONS_TERMINATOR};
 class DreamFactoryMetaEngine : public AdvancedMetaEngine<ADGameDescription> {
 public:
@@ -73,6 +74,9 @@ public:
 		journal->addDefaultInputMapping("j");
 		journal->addDefaultInputMapping("JOY_BACK");
 		extras->addAction(journal);
+		Common::Action *inventory = new Common::Action("DFINVENTORY", _("Open inventory"));
+		inventory->setCustomEngineActionEvent(DreamFactory::kOpenInventory);
+		inventory->addDefaultInputMapping("F8"); inventory->addDefaultInputMapping("JOY_RIGHT_TRIGGER"); extras->addAction(inventory);
 		Common::Action *repeat = new Common::Action("DFREPEAT", _("Repeat last dialogue"));
 		repeat->setKeyEvent(Common::KEYCODE_F7);
 		repeat->addDefaultInputMapping("F7");

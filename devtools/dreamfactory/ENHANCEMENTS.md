@@ -530,7 +530,7 @@ presentation or assistance, preserve original mouse/keyboard actions and story
 rules, and remain usable with a controller at 480x272.
 
 1. **Implemented:** checkpoint previews with saved thumbnail, location, clock and inventory before restoring.
-2. **In progress:** controller inventory: readable item previews/descriptions and authentic examine/use/give actions. Native catalog and read-only artwork adapter are implemented; the controller interface and action dispatch remain to be completed.
+2. **Implemented:** optional controller inventory: larger original item previews, readable descriptions and authentic examine/use/give actions, including conversation inventory.
 3. Recovery: rotating recovery saves separate from route/manual saves and a Continue view.
 4. Replay: distinct line/full skips and fast-forward of previously heard dialogue only.
 5. Accessibility: subtitle size, background opacity, speaker labels and shared audio controls.
@@ -563,4 +563,21 @@ owned from an earlier day is not necessarily available in the current inventory.
 Original large item sprites are decoded from a copy of the prop, without changing
 its view, animation, ownership or story globals. `tools/verify-inventory-model.ps1`
 checks earned retail, demo and Dust saves, including the day-five chest-only list.
-This is adapter verification, not a claim that the new inventory UI is finished.
+Enable **Modern inventory** in the game's ScummVM engine settings to replace the
+original inventory panel automatically. F8 or the right controller trigger opens
+the new inventory explicitly. The original panel remains the default. Within the
+new panel, D-pad/left stick or LB/RB selects an item, Y invokes its original
+inspection, A chooses Use/Give and B closes the panel. After Use/Give, aim at a
+world target and press A or click; B/Escape or the on-screen Cancel button cancels.
+Pointer selection, wheel scrolling, touch dragging and a scrollbar are supported.
+Item previews use the supplied artwork with bilinear scaling, without replacement
+art or generated detail. Labels do not reveal authentic versus counterfeit items.
+
+Native inventory selection and original button scripts handle every action.
+Conversation inventory feeds normal paired clicks back to the waiting script,
+preserving its return flow. Giving an item uses the original held-item target
+handler; the interface never assigns ownership or quest variables itself.
+`tools/verify-inventory-ui.ps1` exercises desktop and 480x272 layouts, mapped
+gamepad actions, scrolling and earned object/NPC/conversation exchanges. Native
+save formats are unchanged. Physical Android/controller and PSP testing remains
+outstanding; compiling an APK does not establish device behavior.
