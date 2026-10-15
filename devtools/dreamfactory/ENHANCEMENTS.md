@@ -105,6 +105,8 @@ are customizable through ScummVM's per-game Keymaps settings.
   Up/Down selects dialogue replies. Navigation advances once per press.
 * Left/right shoulder: previous/next visible hotspot, including original interface
   buttons and authored interactive movie regions. A yellow outline marks selection.
+  In interactive close-ups the cursor moves to that region; moving the pointer
+  takes over from the previous selection.
 * A: interact with the selected hotspot (or current pointer), confirm dialogue,
   or skip the current speech. B: Escape/full skip to the next reply decision. Y: repeat dialogue.
 * Left stick: ScummVM's existing virtual pointer. X: skip the current speech line, or the original left mouse button outside speech;
@@ -120,6 +122,10 @@ The launch helper accepts `-TouchControls`.
 
 Hotspot selection uses actual occlusion-aware hit tests. Very small targets can
 fall between samples; use the pointer for those and for drag/hold puzzles.
+Interactive close-ups activate the region under the cursor when no hotspot is
+selected. An empty-space click is consumed rather than activating region zero
+(often the OK/exit control). The native movie audit covers this behavior,
+shoulder selection, pointer takeover and mouse/touch parity in v1 and v4 movies.
 Physical controller and Android touch usability still require device playtesting.
 
 ## Artwork research (retired)

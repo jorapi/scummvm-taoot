@@ -53,7 +53,32 @@ for(const edition of ['demo','full','dust']) {
  for(let i=0;i<3;++i){const p=2242+i*80;u32(d,p+2,3);u16(d,p+22,i===2?1:2);u16(d,p+24,i+1);u16(d,p+26,i===1?1:0);u16(d,p+28,i+3);if(i===0)u32(d,p+32,1);}
  // Unreferenced trailing audio must not become part of the authored bed.
  fs.writeFileSync(dir+'/DUST.MOV',envelope([d,audio(300),audio(100),image(41),image(42),image(43),audio(700)]));
- const script=`code auto()
+ // Close-up controller fixture: region zero exits; a different region visits frame 1.
+ const controlHead=head4(2);pstr(controlHead,64,'f1');pstr(controlHead,80,'');
+ const controlLogic=new Uint8Array(1094+2*64);u16(controlLogic,0,1);u32(controlLogic,2,3);u32(controlLogic,1090,2);
+ for(let i=0;i<2;++i){const at=1094+i*64;u16(controlLogic,at,i?2:1);u16(controlLogic,at+8,i?20:300);u16(controlLogic,at+10,i?20:400);u16(controlLogic,at+12,i?100:350);u16(controlLogic,at+14,i?100:480);if(i)pstr(controlLogic,at+48,'f1');}
+ fs.writeFileSync(dir+'/CONTROL.MOV',envelope([controlHead,image(51),image(52),controlLogic,logic(1)]));
+ const controlV1=new Uint8Array(2242+2*80+30);u32(controlV1,2,1);u16(controlV1,24,2);u16(controlV1,34,2);u16(controlV1,36,4);u16(controlV1,38,3);u16(controlV1,46,1);u16(controlV1,48,65535);palette(controlV1,62);
+ const regionAt=2242+2*80;
+ for(let i=0;i<2;++i){const at=2242+i*80;u16(controlV1,at,i?0:2);u32(controlV1,at+2,3);u16(controlV1,at+22,1);u16(controlV1,at+28,i+1);if(!i)u16(controlV1,at+36,regionAt);}
+ u16(controlV1,regionAt,1);u16(controlV1,regionAt+2,300);u16(controlV1,regionAt+4,400);u16(controlV1,regionAt+6,350);u16(controlV1,regionAt+8,480);
+ u16(controlV1,regionAt+14,2);u16(controlV1,regionAt+16,20);u16(controlV1,regionAt+18,20);u16(controlV1,regionAt+20,100);u16(controlV1,regionAt+22,100);u16(controlV1,regionAt+28,1);
+ fs.writeFileSync(dir+'/CONTROL1.MOV',envelope([controlV1,image(51),image(52)]));
+ const script=`code control()
+playmovie("control.mov")
+if not actionframe(1)
+return 11
+endif
+return 12345
+endcode
+code control1()
+playmovie("control1.mov")
+if not actionframe(1)
+return 12
+endif
+return 12345
+endcode
+code auto()
 before = tick()
 playmovie("auto.mov")
 if tick() - before < 24 | not actionframe(1) | not actionframe(2) | actionframe(0) | actionframe(3)

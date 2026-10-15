@@ -100,6 +100,7 @@ dreamfactory_stage_fixtures=$root/build/stage-session-$edition
         if ($Casts -and $text -notmatch 'TIMING PASS') { throw "$edition real-clock pacing smoke failed; inspect $log" }
         if ($Movies -and ($text -notmatch 'MOVIE STATE PASS' -or $text -notmatch 'MOVIE READER PASS')) { throw "$edition movie state/reader checks failed; inspect $log" }
         if ($Movies -and ($text -notmatch 'MOVIE HINTS PASS' -or $text -notmatch 'MOVIE HINT HOST PASS')) { throw "$edition movie hotspot hint checks failed; inspect $log" }
+        if ($Movies -and $text -notmatch 'GAMEPAD MOVIE POINTER PASS') { throw "$edition close-up controller pointer checks failed; inspect $log" }
         if ($Movies -and $text -notmatch 'GAMEPAD MOVIE PASS') { throw "$edition gamepad movie checks failed; inspect $log" }
         if ($Movies -and $text -notmatch 'MOVIE HOST PASS') { throw "$edition modal movie host checks failed; inspect $log" }
         if ($Movies -and $text -notmatch 'MOVIE VOICE PASS') { throw "$edition shared movie voice checks failed; inspect $log" }

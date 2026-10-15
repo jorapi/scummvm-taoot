@@ -1218,6 +1218,21 @@ bool auditMoviePlayback(const Common::FSNode &fixtures, OSystem *system, bool re
 				else { event.type = Common::EVENT_LBUTTONDOWN; event.mouse = Common::Point(15, 16); }
 				return true;
 			}
+			if (mode >= 7 && mode <= 10 && elapsed >= 50 + stage * 50) {
+				const uint32 count = mode == 7 ? 4 : mode == 10 ? 1 : 3;
+				if (stage >= count) return false;
+				const MovieSegment *segment = session.movies.currentSegment();
+				if (!segment) return false;
+				const int width = session.movies.canvasWidth(), height = width == 640 ? 480 : 384;
+				const auto point = [&](int x, int y) { return Common::Point(((segment->x + x) * 640 + width - 1) / width, ((segment->y + y) * 480 + height - 1) / height); };
+				event.type = Common::EVENT_CUSTOM_ENGINE_ACTION_START; event.customType = kPadInteract;
+				if (mode == 7 && (stage == 0 || stage == 2)) { event.type = Common::EVENT_MOUSEMOVE; event.mouse = stage == 0 ? point(200, 200) : point(60, 60); }
+				if (mode == 8 && stage == 0) event.customType = kPadNext;
+				if (mode == 8 && stage == 1) { event.type = Common::EVENT_MOUSEMOVE; event.mouse = point(60, 60); }
+				if (mode == 9 && stage < 2) event.customType = kPadNext;
+				if (mode == 10) { event.type = Common::EVENT_LBUTTONDOWN; event.mouse = point(60, 60); }
+				++stage; return true;
+			}
 			if (mode == 6 && elapsed >= 50 + stage * 50 && stage < 2) {
                 event.type=Common::EVENT_CUSTOM_ENGINE_ACTION_START; event.customType=stage++?kPadInteract:kPadNext; return true;
             }
@@ -1292,6 +1307,14 @@ bool auditMoviePlayback(const Common::FSNode &fixtures, OSystem *system, bool re
     source.arm(6);
     if(!run("click") || source.stage!=2 || session.movies.active()) { warning("GAMEPAD MOVIE FAIL hotspot selection/confirm"); return false; }
     debug("GAMEPAD MOVIE PASS authored region focus confirm modal close");
+	for (const char *handler : {"control", "control1"}) for (int mode = 7; mode <= 10; ++mode) {
+		source.arm(mode);
+		if (!run(handler) || source.stage != uint32(mode == 7 ? 4 : mode == 10 ? 1 : 3) || session.movies.active()) {
+			warning("GAMEPAD MOVIE POINTER FAIL movie=%s mode=%d stage=%u", handler, mode, source.stage); return false;
+		}
+	}
+	debug("GAMEPAD MOVIE POINTER PASS v1/v4 cursor target outside miss focus-to-pointer shoulder warp touch parity segment offsets");
+
 	session.movies.reset(); if (session.movies.actions()) { warning("MOVIE HOST FAIL reset action flags"); return false; }
 	source.arm(3); session.runtime.run(test, "quitmovie");
 	if (source.stage != 1 || !session.runtime.error.empty() || session.runtime.globals["afterquit"].truth() || session.movies.bedActive() || !session.movies.eventDone() || session.pendingEvents.empty()) { warning("MOVIE HOST FAIL quit/abandoned script"); return false; }

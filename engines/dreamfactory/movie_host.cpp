@@ -93,6 +93,11 @@ bool MovieSystem::compositeHotspotHints(Bytes &rgba, const MovieSegment &seg, ui
 	}
 	return marked;
 }
+static Common::Point movieRegionPoint(const MovieSegment &segment, const MovieRegion &region, int width, int height) {
+	// Round up so converting the cursor back to movie pixels retains its target.
+	return Common::Point(((segment.x + (region.left + region.right) / 2) * 640 + width - 1) / width,
+		((segment.y + (region.top + region.bottom) / 2) * 480 + height - 1) / height);
+}
 void MovieSystem::movieFrame(uint32 frame) {
 	if (!_movie || frame >= _images.size()) return;
 	if (frame != _controlFrame) { _controlRegion = -1; _controlFrame = frame; }
@@ -111,7 +116,8 @@ void MovieSystem::movieFrame(uint32 frame) {
 		bool marked = _showHints && compositeHotspotHints(rgba, seg, frame, width, height);
 		if (_controlRegion >= 0 && uint32(_controlRegion) < seg.frames[frame].regions.size()) {
 			const MovieRegion &r = seg.frames[frame].regions[_controlRegion];
-			controlMarker(rgba, 640, 480, (seg.x + (r.left + r.right) / 2) * 640 / width, (seg.y + (r.top + r.bottom) / 2) * 480 / height); marked = true;
+			const Common::Point point = movieRegionPoint(seg, r, width, height);
+			controlMarker(rgba, 640, 480, point.x, point.y); marked = true;
 		}
 		if (marked && _display.rgba(rgba, 640, 480, false, false)) return;
 	}
@@ -155,16 +161,29 @@ bool MovieSystem::play(const Common::String &name, Runtime &runtime, ScriptFrame
 				const MovieSegment &seg = _movie->segments[_segment];
 				const auto &regions = seg.frames[_player.frame()].regions;
 				if (event.customType == kPadInteract) {
-					if (!regions.empty()) {
-						const MovieRegion &r = regions[_controlRegion >= 0 ? _controlRegion : 0];
-						_player.click(seg.x + (r.left + r.right) / 2, seg.y + (r.top + r.bottom) / 2, now);
-					} else _player.click(0, 0, now);
+					const int width = canvasWidth(), height = width == 640 ? 480 : 384;
+					Common::Point point = _system->getEventManager()->getMousePos();
+					// Shoulder selection moves the visible cursor; retain its position
+					// until the backend delivers the corresponding mouse-move event.
+					if (_controlRegion >= 0 && uint32(_controlRegion) < regions.size()) point = movieRegionPoint(seg, regions[_controlRegion], width, height);
+					_player.click(point.x * width / 640, point.y * height / 480, now);
 				} else if (!regions.empty() && !seg.frames[_player.frame()].playThrough) {
 					const int32 direction = event.customType == kPadPrevious || event.customType == kPadUp || event.customType == kPadLeft ? -1 : 1;
 					_controlRegion = _controlRegion < 0 ? (direction < 0 ? regions.size() - 1 : 0) : (_controlRegion + direction + int32(regions.size())) % regions.size();
+					const int width = canvasWidth(), height = width == 640 ? 480 : 384;
+					const Common::Point point = movieRegionPoint(seg, regions[_controlRegion], width, height);
+					_system->warpMouse(point.x, point.y);
 					movieFrame(_player.frame());
 				}
 				continue;
+			}
+			if (event.type == Common::EVENT_MOUSEMOVE && _controlRegion >= 0 && _movie) {
+				const MovieSegment &seg = _movie->segments[_segment];
+				const auto &regions = seg.frames[_player.frame()].regions;
+				const int width = canvasWidth(), height = width == 640 ? 480 : 384;
+				if (uint32(_controlRegion) >= regions.size() || event.mouse != movieRegionPoint(seg, regions[_controlRegion], width, height)) {
+					_controlRegion = -1; movieFrame(_player.frame());
+				}
 			}
 			if (event.type == Common::EVENT_CUSTOM_ENGINE_ACTION_START && event.customType == 1) {
 				if (ConfMan.hasKey("dreamfactory_hotspot_hints") && ConfMan.getBool("dreamfactory_hotspot_hints")) {
