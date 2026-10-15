@@ -382,8 +382,11 @@ loading an old mid-game save cannot reconstruct earlier return points.
 
 The chart keeps these chapter checkpoints and reached endings, plus safe return
 points shared by paths that actually produced different outcomes. Ordinary
-conversation chains are folded away. A different history cannot be inferred from
-every offered reply, so unseen endings and their number are not advertised.
+conversation chains are folded away. A fixed ending catalog adds spoiler-hidden
+`?` tiles for unreached outcomes and a reached/total count: eight Titanic history
+combinations, five Dust finales and one supplied-demo conclusion. Tour mode has
+no ending catalog. Unreached tiles have no invented connecting path or checkpoint;
+they are readable with the same pointer/controller controls as reached outcomes.
 Copies of a chapter with materially different recorded ancestry retain their own
 checkpoint; revisiting never fabricates inventory or combines story states.
 
@@ -406,6 +409,16 @@ A section without a safe snapshot cannot be revisited. Missing/damaged snapshots
 leave the live game intact and show a controller-dismissable notice. Restoration
 happens after the journal and its replay player close; it never resumes a
 fabricated suspended conversation stack.
+
+Inventory, item ownership, object values/poses, story flags and the clock are
+restored from the same snapshot. Titanic outcomes are determined by the authored
+game scripts, including what you kept, used, lost or gave away; the chart never
+assigns an ending from a selected reply or alters inventory to force a result.
+A later chapter preserves earlier decisions, so changing an earlier object choice
+requires an earlier recorded return point. Missing earlier snapshots cannot be
+reconstructed from an old save. Native tests mutate ownership, held item, object
+value/pose, history flag and clock, then verify that a route rewind restores them
+together without erasing cumulative discoveries.
 
 Completed finale movies add ending tiles. Titanic's authored narration flags
 distinguish eight history combinations, including combinations sharing a movie.
@@ -468,7 +481,8 @@ live session. Tests must cover alternate paths, corrupt/missing checkpoints,
 loading old saves, controller input, and all three supported games. The branch
 map has native real-data verification from earned checkpoints: Dust's Yunni
 ending, chapter rewind and Marie ending retain both outcomes while displaying
-only three tiles (one day-five return point and two endings); Titanic's best outcome survives through credits and
+one day-five return point, two reached endings and three unreached ending slots;
+Titanic's best outcome survives through credits and
 scripted quit; the supplied demo's developed-photograph route records its
 conclusion. These checks use normal player input and checkpoint restoration,
 with dialogue/movie skips where stated, without injecting story variables.

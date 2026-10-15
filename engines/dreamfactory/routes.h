@@ -49,6 +49,7 @@ struct RouteEndingContext {
 	bool firstWar = false, secondWar = false, revolution = false;
 };
 bool identifyRouteEnding(const RouteEndingContext &context, JournalEntry &entry);
+Common::Array<JournalEntry> routeEndingCatalog(uint32 version, bool retail, bool tour);
 uint32 identifyRouteChapter(uint32 version, bool retail, bool tour, int32 mission, int32 phase, int32 day);
 class RouteCodec {
 public:
@@ -58,6 +59,7 @@ public:
 };
 struct RouteMapItem {
 	uint32 node = 0;
+	uint32 ending = 0;
 	int32 parent = -1, choice = -1;
 	int32 column = 0, row = 0;
 	bool locked = false;
@@ -66,7 +68,7 @@ class RouteMap {
 	Common::Array<RouteMapItem> _items;
 	Common::Array<int32> _nodeItems;
 public:
-	void build(const RouteGraph &graph);
+	void build(const RouteGraph &graph, uint32 version = 0, bool retail = false, bool tour = false);
 	const Common::Array<RouteMapItem> &items() const { return _items; }
 	int32 itemFor(uint32 node) const;
 	int32 navigate(int32 selected, int32 dx, int32 dy) const;

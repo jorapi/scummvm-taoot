@@ -850,9 +850,21 @@ bool auditPuppetSession(const Common::FSNode &root, OSystem *backend) {
 			warning("VLR CHART FAIL compact=%u phase=%u current=%u zoom=%u", compact, source.phase, source.currentPreserved, source.zoomPreserved); return false;
 		}
 	}
+	// A mostly unread ending catalog must remain usable at handheld resolution.
+	Session endingPreview(backend); endingPreview.version = 4; endingPreview.sound.setTitanicRetail(true);
+	JournalEntry returnPoint; returnPoint.speaker = "Story return point";
+	const uint32 catalogStart = endingPreview.routes.graph.recordScene(returnPoint);
+	endingPreview.routes.graph.setChapter(catalogStart, 5); endingPreview.routes.graph.attachCheckpoint(catalogStart, 28);
+	endingPreview.routes.graph.recordEnding(routeEndingCatalog(4, true, false)[0]);
+	backend->beginGFXTransaction(); backend->initSize(480, 272, &oldFormat);
+	if (backend->endGFXTransaction() != OSystem::kTransactionSuccess) return false;
+	{
+		ChartSource source(backend, root, true);
+		if (openJournal(endingPreview) || source.phase != 11 || !source.currentPreserved || !source.zoomPreserved || endingPreview.routes.graph.nodes().size() != 2) return false;
+	}
 	backend->beginGFXTransaction(); backend->initSize(oldWidth, oldHeight, &oldFormat);
 	if (backend->endGFXTransaction() != OSystem::kTransactionSuccess) return false;
-	warning("VLR CHART PASS thirty dialogue records reduced to thirteen chapter return points and outcomes ordinary reply nodes omitted desktop handheld current focus zoom selection persistence details read-only discovery");
+	warning("VLR CHART PASS thirty dialogue records reduced to thirteen chapter return points and outcomes ordinary reply nodes omitted desktop handheld current focus zoom selection persistence details read-only discovery eight-slot ending catalog at 480x272");
 	const auto *journalMap = backend->getEventManager()->getKeymapper()->getKeymap("dreamfactory-journal-ui");
 	const auto *standardMap = backend->getEventManager()->getKeymapper()->getKeymap(Common::kGuiKeymapName);
 	if (!journalMap || journalMap->isEnabled() || !standardMap || !standardMap->isEnabled()) return false;
@@ -2959,6 +2971,27 @@ static bool auditRouteGraph() {
 		warning("ROUTE MAP PASS story chapter projection two thousand routine dialogue records become two visible nodes distinct outcomes sibling navigation duplicate endings merged suppressed cursor mapping legacy v1 metadata compatible");
 	}
 	RouteEndingContext outcome; outcome.version = 4; outcome.retail = true; outcome.stage = "disc1/narend/NAREND.STG"; outcome.clock = "endgame";
+	{
+		const auto catalog = routeEndingCatalog(4, true, false);
+		if (catalog.size() != 8 || routeEndingCatalog(1, false, false).size() != 5 || routeEndingCatalog(4, false, false).size() != 1 || !routeEndingCatalog(4, true, true).empty()) return false;
+		RouteGraph discovered; RouteMap endings;
+		endings.build(discovered, 4, true);
+		if (endings.items().size() != 8) return false;
+		for (const auto &item : endings.items()) if (!item.locked || item.node || !item.ending || item.parent != -1) return false;
+		JournalEntry chapter; const uint32 start = discovered.recordScene(chapter); discovered.attachCheckpoint(start, 28);
+		for (uint32 i = 0; i < 8; ++i) {
+			discovered.restoreCursor(start, -1); JournalEntry ending = catalog[i]; ending.file = "disc1/endings/" + ending.file;
+			discovered.recordEnding(ending); endings.build(discovered, 4, true);
+			uint32 reached = 0, unreached = 0;
+			for (const auto &item : endings.items()) if (item.ending) { if (item.locked) ++unreached; else ++reached; }
+			if (reached != i + 1 || unreached != 7 - i || endings.items().size() != 9) return false;
+			if (i == 0) {
+				const int32 hidden = endings.navigate(endings.itemFor(discovered.cursor()), 0, 1);
+				if (hidden < 0 || !endings.items()[hidden].locked || endings.navigate(hidden, 0, -1) != endings.itemFor(discovered.cursor())) return false;
+			}
+		}
+		warning("ROUTE CATALOG PASS eight distinct Titanic histories including shared finale movies five Dust endings demo conclusion tour excluded reached and unreached slots no fabricated paths controller navigation");
+	}
 	const char *movies[] = {"prozac.mov", "rushend.mov", "germend.mov", "germend.mov", "rushend.mov", "rushend.mov", "nuke.mov", "boom.mov"};
 	JournalEntry identified; identified.text = "Retained";
 	for (uint32 history = 0; history < 8; ++history) {
@@ -3240,6 +3273,11 @@ bool auditStageSession(const Common::FSNode &root, OSystem *system) {
     warning("INPUT CONTROLS PASS gamepad hotspot focus paired click authored movement touch bounds pad pixels original click fallback during movement");
 	Session journalSave;
 	if (!journalSave.init(root) || !journalSave.stageSystem.open("display", nullptr, false)) return false;
+	if (!journalSave.propSystem.open("route-items.shp", nullptr, false)) return false;
+	auto artifact = journalSave.propSystem.get("artifact"); if (!artifact) return false;
+	artifact->owner = Value(Common::String("frank")); artifact->value = Value(17); artifact->view = "intact";
+	journalSave.runtime.globals["handitem"] = Value(Common::String("artifact"));
+	journalSave.runtime.globals["onehappens"] = Value(0); journalSave.runtime.globals["clock"] = Value(930);
 	Bytes withoutJournal, withJournal; Common::String journalError;
 	if (!journalSave.saveState(withoutJournal, journalError)) { warning("JOURNAL SAVE FAIL baseline %s", journalError.c_str()); return false; }
 	JournalEntry entry; entry.speaker = "Speaker"; entry.file = "speech.pup"; entry.ident = "line.0";
@@ -3267,7 +3305,14 @@ bool auditStageSession(const Common::FSNode &root, OSystem *system) {
 	const uint32 newScene = journalSave.routes.graph.recordScene(sceneEntry);
 	if (!journalSave.loadState(routeSave, journalError) || journalSave.routes.graph.nodes().size() != 3 || journalSave.routes.graph.cursor() != decisionId || journalSave.routes.graph.choice() != 1) return false;
 	if (!journalSave.loadState(withoutJournal, journalError) || journalSave.routes.graph.cursor() || journalSave.routes.graph.nodes().size() != 3) return false;
+	artifact = journalSave.propSystem.get("artifact"); if (!artifact) return false;
+	artifact->owner = Value(Common::String("vlad")); artifact->value = Value(99); artifact->view = "used";
+	journalSave.runtime.globals["handitem"] = Value(Common::String());
+	journalSave.runtime.globals["onehappens"] = Value(1); journalSave.runtime.globals["clock"] = Value(Common::String("endgame"));
 	if (!journalSave.restoreRouteScene(decisionId, journalError) || journalSave.routes.graph.cursor() != sceneId || journalSave.routes.graph.nodes().size() != 3 || !journalSave.stageSystem.current) return false;
+	artifact = journalSave.propSystem.get("artifact");
+	if (!artifact || artifact->owner.text() != "frank" || artifact->value.number() != 17 || artifact->view != "intact" || journalSave.runtime.globals["handitem"].text() != "artifact" || journalSave.runtime.globals["onehappens"].number() || journalSave.runtime.globals["clock"].number() != 930) return false;
+	warning("ROUTE INVENTORY PASS checkpoint restores item ownership held item object value object state history flag and clock together later object decisions do not leak across a rewind");
 	const Common::String savedSnapshot = routeFiles.listSavefiles("*.checkpoint")[0]; routeFiles.files[savedSnapshot].back() ^= 1;
 	journalSave.runtime.globals["routeRetained"] = Value(72);
 	if (journalSave.restoreRouteScene(decisionId, journalError) || journalSave.runtime.globals["routeRetained"].number() != 72 || journalSave.routes.graph.cursor() != sceneId) return false;

@@ -364,7 +364,7 @@ Common::U32String chapterTitle(uint32 chapter) {
 	}
 }
 Common::U32String routeTitle(const RouteGraph &graph, const RouteMapItem &item) {
-	if (!item.node) return item.locked ? _("Undiscovered") : _("To be continued");
+	if (!item.node) return item.ending ? Common::U32String::format(_("Ending %u - Unreached"), item.ending) : _("Undiscovered");
 	const RouteNode &node = *graph.node(item.node);
 	if (node.kind == RouteNode::kScene && node.chapter) return chapterTitle(node.chapter);
 	Common::U32String text = node.kind == RouteNode::kScene ? _("Return point") : _("Ending");
@@ -373,7 +373,7 @@ Common::U32String routeTitle(const RouteGraph &graph, const RouteMapItem &item) 
 }
 Common::U32String routeBody(const RouteGraph &graph, const RouteMapItem &item) {
 	if (!item.node) {
-		return _("No story return point is available.");
+		return _("This ending has not been reached. Its details stay hidden until you discover it.\n\nUse a recorded story return point to try another outcome. Inventory, item ownership, object state, story flags and the clock return to that checkpoint together. Earlier decisions are not undone by a later checkpoint: choose an earlier chapter if an item has already been lost, used or given away.\n\nAn unreached ending has no recorded path or checkpoint of its own.");
 	}
 	const RouteNode &node = *graph.node(item.node);
 	Common::U32String text;
@@ -388,7 +388,7 @@ Common::U32String routeBody(const RouteGraph &graph, const RouteMapItem &item) {
 	const RouteNode *scene = graph.node(graph.checkpointFor(item.node));
 	if (scene && scene->chapter && scene->entry.file.empty()) {
 		text += _("Revisit returns to the earliest recorded checkpoint in "); text += chapterTitle(scene->chapter);
-		text += _(". Your inventory, story state and clock are restored together. Play from there to explore another outcome.");
+		text += _(". Your inventory, item ownership, object state, story flags and clock are restored together. Play from there to explore another outcome. A later checkpoint retains earlier decisions; choose an earlier chapter to change them.");
 	} else if (scene && graph.checkpointFor(item.node) != graph.sceneFor(item.node)) {
 		text += _("This part of the route uses an earlier encounter checkpoint. Revisit begins with "); text += literal(speakerText(scene->entry)); text += _(". Replay the encounter to explore another branch.");
 	} else text += scene && scene->checkpoint ? _("Revisit restores the state before this conversation began. Start the conversation again to explore a different reply.") : _("No safe checkpoint was captured for this scene. You can still read its discovered dialogue and choices.");
@@ -456,12 +456,12 @@ protected:
 			rect(x, y, x + w, y + thickness, border); rect(x, y + h - thickness, x + w, y + h, border);
 			rect(x, y, x + thickness, y + h, border); rect(x + w - thickness, y, x + w, y + h, border);
 			if (_overview) {
-				const Common::U32String symbol = node && node->kind == RouteNode::kEnding ? _("E") : _("C");
+				const Common::U32String symbol = item.locked ? _("?") : node && node->kind == RouteNode::kEnding ? _("E") : _("C");
 				const Graphics::Font &tileFont = h >= font.getFontHeight() + 4 ? font : *FontMan.getFontByUsage(Graphics::FontManager::kConsoleFont);
 				tileFont.drawString(&surface, symbol, x + 2, y + (h - tileFont.getFontHeight()) / 2, w - 4, border, Graphics::kTextAlignCenter);
 				continue;
 			}
-			Common::U32String kind = node && node->kind == RouteNode::kEnding ? _("ENDING") : _("RETURN POINT");
+			Common::U32String kind = item.locked ? _("UNREACHED ENDING") : node && node->kind == RouteNode::kEnding ? _("REACHED ENDING") : _("RETURN POINT");
 			if (current) kind += _("  |  Current");
 			font.drawString(&surface, kind, x + 9, y + (_h < 180 ? 4 : 7), w - 18, border, Graphics::kTextAlignLeft, 0, true);
 			font.drawString(&surface, routeTitle(_graph, item), x + 9, y + font.getFontHeight() + (_h < 180 ? 7 : 11), w - 18, item.locked ? muted : ivory, Graphics::kTextAlignLeft, 0, true);
@@ -473,9 +473,11 @@ protected:
 		g_gui.theme()->drawManagedSurface(Common::Point(_x, _y), surface, Graphics::ALPHA_OPAQUE);
 	}
 public:
-	RouteMapWidget(GUI::Dialog *boss, const RouteGraph &graph) : GUI::Widget(boss, 8, 80, 300, 120), GUI::CommandSender(boss), _graph(graph) {
+	RouteMapWidget(GUI::Dialog *boss, const Session &session) : GUI::Widget(boss, 8, 80, 300, 120), GUI::CommandSender(boss), _graph(session.routes.graph) {
 		setFlags(GUI::WIDGET_ENABLED | GUI::WIDGET_CLEARBG | GUI::WIDGET_TRACK_MOUSE | GUI::WIDGET_HOOK_DRAG);
-		_map.build(graph);
+		const RouteGraph &graph = _graph;
+		const auto tour = session.runtime.globals.find("tour");
+		_map.build(graph, session.version, session.sound.isTitanicRetail(), tour != session.runtime.globals.end() && tour->_value.truth());
 		for (const auto &item : _map.items()) { _maxColumn = MAX<int>(_maxColumn, item.column); _maxRow = MAX<int>(_maxRow, item.row); }
 		_currentPath.resize(graph.nodes().size() + 1);
 		for (uint32 id = graph.cursor(); id; id = graph.node(id)->parent) { const int32 index = _map.itemFor(id); if (index >= 0) _currentPath[_map.items()[index].node] = true; }
@@ -485,6 +487,11 @@ public:
 	const RouteMapItem *selected() const { return _selected >= 0 ? &_map.items()[_selected] : nullptr; }
 	int32 selectedIndex() const { return _selected; }
 	uint32 visibleCount() const { return _map.items().size(); }
+	uint32 endingCount(bool reachedOnly) const {
+		uint32 count = 0, seen = 0;
+		for (const auto &item : _map.items()) if (item.ending && (!reachedOnly || !item.locked) && !(seen & (1u << item.ending))) { seen |= 1u << item.ending; ++count; }
+		return count;
+	}
 	bool overview() const { return _overview; }
 	void toggleOverview() { _overview = !_overview; }
 	void focusCurrent() { const int32 index = _map.itemFor(_graph.cursor()); select(index >= 0 ? index : 0); }
@@ -626,7 +633,8 @@ class JournalDialog : public GUI::Dialog {
 		if (index >= 0) status = Common::U32String::format(_("%u / %u  |  Up/Down: Select"), uint32(_list->getSelected() + 1), uint32(_indices.size()));
 		if (routes) {
 			status = item ? routeTitle(_session.routes.graph, *item) : _("No route discoveries yet");
-			status += Common::U32String::format(_("  |  %u return points / outcomes"), _mapWidget->visibleCount());
+			if (_mapWidget->endingCount(false)) status = Common::U32String::format(_("Endings: %u / %u  |  "), _mapWidget->endingCount(true), _mapWidget->endingCount(false)) + status;
+			else status += Common::U32String::format(_("  |  %u return points / outcomes"), _mapWidget->visibleCount());
 		}
 		_status->setLabel(status);
 		_buttons[0]->setEnabled(index >= 0);
@@ -671,10 +679,10 @@ public:
 		_tabs[0] = new GUI::ButtonWidget(this, 8, 32, 95, 20, _("Log"), Common::U32String(), kLines);
 		_tabs[1] = new GUI::ButtonWidget(this, 108, 32, 95, 20, _("Choices"), Common::U32String(), kPaths);
 		_tabs[2] = new GUI::ButtonWidget(this, 208, 32, 95, 20, _("Flow"), Common::U32String(), kRoutes);
-		_routeLegend = new GUI::StaticTextWidget(this, 12, 56, 300, 20, _("C: Return point  E: Reached ending  |  Ordinary replies are in Choices"), Graphics::kTextAlignLeft, Common::U32String(), GUI::ThemeEngine::kFontStyleNormal);
+		_routeLegend = new GUI::StaticTextWidget(this, 12, 56, 300, 20, _("C: Return point  E: Reached ending  ?: Unreached ending"), Graphics::kTextAlignLeft, Common::U32String(), GUI::ThemeEngine::kFontStyleNormal);
 		_search = new GUI::EditTextWidget(this, 8, 56, 300, 20, Common::U32String(), _("Search recorded dialogue"), kSearch);
 		_list = new TranscriptWidget(this, session, _replay);
-		_mapWidget = new RouteMapWidget(this, session.routes.graph); showPanel(_mapWidget, false); showPanel(_routeLegend, false);
+		_mapWidget = new RouteMapWidget(this, session); showPanel(_mapWidget, false); showPanel(_routeLegend, false);
 		const Common::U32String labels[] = {_("Read"), _("Replay"), _("Revisit"), _("Back")};
 		const uint32 commands[] = {kRead, kReplay, kStar, GUI::kCloseCmd};
 		for (uint32 i = 0; i < 4; ++i) _buttons[i] = new GUI::ButtonWidget(this, 8 + i * 76, 208, 70, 24, labels[i], Common::U32String(), commands[i]);

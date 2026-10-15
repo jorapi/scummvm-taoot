@@ -547,9 +547,12 @@ Common::Error DreamFactoryEngine::run() {
 					const int32 slot = atoi(words.nextToken().c_str()); ok = slot >= 0 && slot <= 99;
 					if (ok) ok = (command == "saveslot" ? saveGameState(slot, "DreamFactory checkpoint test") : loadGameState(slot)).getCode() == Common::kNoError;
 				} else if (command == "dumproutes") {
-					RouteMap flow; flow.build(session.routes.graph);
-					warning("BOOT FLOW visible=%u", uint32(flow.items().size()));
-					for (const auto &item : flow.items()) warning("BOOT FLOW node=%u parent=%d chapter=%u", item.node, item.parent, session.routes.graph.node(item.node)->chapter);
+					const auto tour = session.runtime.globals.find("tour");
+					RouteMap flow; flow.build(session.routes.graph, session.version, session.sound.isTitanicRetail(), tour != session.runtime.globals.end() && tour->_value.truth());
+					uint32 reached = 0, total = 0;
+					for (const auto &item : flow.items()) if (item.ending) { ++total; if (!item.locked) ++reached; }
+					warning("BOOT FLOW visible=%u reached=%u total=%u", uint32(flow.items().size()), reached, total);
+					for (const auto &item : flow.items()) warning("BOOT FLOW node=%u parent=%d chapter=%u ending=%u locked=%u", item.node, item.parent, item.node ? session.routes.graph.node(item.node)->chapter : 0, item.ending, item.locked);
 					for (uint32 n = 0; n < session.routes.graph.nodes().size(); ++n) {
 						const RouteNode &node = session.routes.graph.nodes()[n];
 						warning("BOOT ROUTE node=%u kind=%u parent=%u choice=%d seen=%u checkpoint=%u file=%s speaker=%s", n + 1, uint32(node.kind), node.parent, node.parentChoice, node.seenChoices, node.checkpoint, node.entry.file.c_str(), node.entry.speaker.c_str());

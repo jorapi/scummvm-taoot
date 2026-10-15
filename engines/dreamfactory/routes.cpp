@@ -215,7 +215,7 @@ bool RouteCodec::decode(const Bytes &bytes, const Common::String &signature, Rou
 	if (!io.good || input.pos() != input.size() || !prepared.valid()) { error = "Invalid route profile data"; return false; }
 	graph = prepared; return true;
 }
-void RouteMap::build(const RouteGraph &graph) {
+void RouteMap::build(const RouteGraph &graph, uint32 version, bool retail, bool tour) {
 	_items.clear(); _nodeItems.clear();
 	if (!graph.valid()) return;
 	const uint32 count = graph.nodes().size();
@@ -291,6 +291,24 @@ void RouteMap::build(const RouteGraph &graph) {
 		int32 next = starts[i];
 		for (uint32 child : children[i + 1]) { starts[child] = next; next += spans[child]; }
 	}
+	const auto catalog = routeEndingCatalog(version, retail, tour);
+	Common::Array<bool> reached; reached.resize(catalog.size());
+	int32 lastRow = -1;
+	for (auto &item : _items) {
+		lastRow = MAX(lastRow, item.row);
+		const RouteNode *node = graph.node(item.node);
+		if (!node || node->kind != RouteNode::kEnding) continue;
+		for (uint32 i = 0; i < catalog.size(); ++i) if (node->entry.speaker == catalog[i].speaker && node->entry.text == catalog[i].text) {
+			item.ending = i + 1; reached[i] = true; break;
+		}
+	}
+	// Unreached outcomes have no known route or restorable state yet.
+	int32 column = 0;
+	for (uint32 i = 0; i < catalog.size(); ++i) if (!reached[i]) {
+		RouteMapItem item; item.ending = i + 1; item.locked = true;
+		item.column = column; column += 2; item.row = lastRow + 1;
+		_items.push_back(item);
+	}
 }
 int32 RouteMap::itemFor(uint32 node) const {
 	return node < _nodeItems.size() ? _nodeItems[node] : -1;
@@ -298,15 +316,26 @@ int32 RouteMap::itemFor(uint32 node) const {
 int32 RouteMap::navigate(int32 selected, int32 dx, int32 dy) const {
 	if (_items.empty()) return -1;
 	if (selected < 0 || uint32(selected) >= _items.size()) return 0;
-	if (dy < 0) return _items[selected].parent >= 0 ? _items[selected].parent : selected;
+	if (dy < 0 && _items[selected].parent >= 0) return _items[selected].parent;
 	if (dy > 0) {
 		int32 child = selected, column = 0x7fffffff;
 		for (uint32 i = 0; i < _items.size(); ++i) if (_items[i].parent == selected && _items[i].column < column) { child = i; column = _items[i].column; }
-		return child;
+		if (child != selected) return child;
+	}
+	if (dy) {
+		int32 closest = selected, distance = 0x7fffffff;
+		for (uint32 i = 0; i < _items.size(); ++i) {
+			if (!_items[selected].locked && !_items[i].locked) continue;
+			const int32 delta = _items[i].row - _items[selected].row;
+			if ((dy < 0 && delta >= 0) || (dy > 0 && delta <= 0)) continue;
+			const int32 candidate = ABS(delta) * 16384 + ABS(_items[i].column - _items[selected].column);
+			if (candidate < distance) { closest = i; distance = candidate; }
+		}
+		return closest;
 	}
 	int32 closest = selected, distance = 0x7fffffff;
 	for (uint32 i = 0; i < _items.size(); ++i) {
-		if (_items[i].parent != _items[selected].parent) continue;
+		if (_items[i].parent != _items[selected].parent || _items[i].row != _items[selected].row) continue;
 		const int32 delta = _items[i].column - _items[selected].column;
 		if (((dx < 0 && delta < 0) || (dx > 0 && delta > 0)) && ABS(delta) < distance) { closest = i; distance = ABS(delta); }
 	}
@@ -426,5 +455,22 @@ bool identifyRouteEnding(const RouteEndingContext &context, JournalEntry &entry)
 		prepared.speaker = "Interactive demo conclusion"; prepared.text = "You reached the conclusion of the supplied interactive demo.";
 	} else return false;
 	entry = prepared; return true;
+}
+Common::Array<JournalEntry> routeEndingCatalog(uint32 version, bool retail, bool tour) {
+	Common::Array<JournalEntry> catalog;
+	if (tour) return catalog;
+	RouteEndingContext context; context.version = version; context.retail = retail;
+	const char *titanic[] = {"prozac.mov", "rushend.mov", "germend.mov", "germend.mov", "rushend.mov", "rushend.mov", "nuke.mov", "boom.mov"};
+	const char *dust[] = {"trottend.mov", "mayorend.mov", "marieend.mov", "yunniend.mov", "deserend.mov"};
+	const uint32 count = version == 1 ? 5 : version == 4 ? retail ? 8 : 1 : 0;
+	for (uint32 i = 0; i < count; ++i) {
+		context.stage = version == 1 ? "new.flt" : "narend.stg"; context.clock = "endgame";
+		context.day = 5; context.phase = i + 2;
+		context.firstWar = i & 1; context.secondWar = i & 2; context.revolution = i & 4;
+		context.movie = version == 1 ? dust[i] : retail ? titanic[i] : "postdemo.mov";
+		JournalEntry entry;
+		if (identifyRouteEnding(context, entry)) catalog.push_back(entry);
+	}
+	return catalog;
 }
 }

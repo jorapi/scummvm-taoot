@@ -20,6 +20,11 @@ for(const edition of ['demo','full','dust']) {
   const u16=(d,a,n)=>new DataView(d.buffer).setUint16(a,n,true);
   const pstr=(d,a,s)=>{d[a]=s.length;for(let i=0;i<s.length;++i)d[a+1+i]=s.charCodeAt(i);};
   const envelope=containers=>writeContainerFile({header:{fourCC:0x48454144,type:0,gapWhere:0},headerRaw:new Uint8Array(1024),containers:containers.map((data,id)=>({id,data}))});
+  const routeShop=new Uint8Array(2380), routeProp=new Uint8Array(158);
+  u32(routeShop,2,version);u32(routeShop,2340,1);pstr(routeShop,2344,'route-items');u32(routeShop,2360,1);u32(routeShop,2364,2);
+  pstr(routeProp,42,'artifact');u32(routeProp,90,2);
+  u32(routeProp,94,3);pstr(routeProp,110,'intact');u32(routeProp,126,3);pstr(routeProp,142,'used');
+  fs.writeFileSync(`${dir}/ROUTE-ITEMS.SHP`,envelope([routeShop,compileScript('code openshop()\nendcode'),routeProp,new Uint8Array(118)]));
   const at=v1?2100:2120,stride=v1?28:46,head=new Uint8Array(at+4+stride*2);
   u32(head,2,version);u16(head,v1?28:40,320);u16(head,v1?30:42,200);u32(head,v1?32:44,1);pstr(head,v1?2084:2104,'internal');u32(head,at,2);
   for(let i=0;i<2;++i){const p=at+4+stride*i;u32(head,p+(v1?0:6),2+i);u32(head,p+(v1?8:14),i?0:4);pstr(head,p+(v1?12:30),i?'second':'first');}
