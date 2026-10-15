@@ -471,6 +471,7 @@ void MSBuildProvider::createBuildProp(const BuildSetup &setup, bool isRelease, M
 	} else {
 		properties << "\t\t<VcpkgTriplet>" << getMSVCArchName(arch) << "-windows</VcpkgTriplet>\n";
 		properties << "\t\t<VcpkgConfiguration>" << cfgPath << "</VcpkgConfiguration>\n";
+		properties << "\t\t<IncludePath>" << includeDirsList << "$(IncludePath)</IncludePath>\n";
 	}
 
 	properties << "\t</PropertyGroup>\n"
