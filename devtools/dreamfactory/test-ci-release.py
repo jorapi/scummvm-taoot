@@ -22,6 +22,9 @@ class PrivacyChecks(unittest.TestCase):
     def test_public_runner_paths(self):
         release.scan(b"/home/runner/work/project C:\\Users\\runneradmin\\work", "runner")
 
+    def test_separate_native_strings(self):
+        release.scan(b"/home/runner\0unrelated-string\0", "native string table")
+
     def test_nested_archive_leak(self):
         data = io.BytesIO()
         with zipfile.ZipFile(data, "w") as archive:

@@ -26,7 +26,11 @@ CREDENTIAL = re.compile(rb"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|\bg
 
 
 def scan(data, label, depth=0):
-    for payload in (data, data[::2] if data[1:2] == b"\0" else b"", re.sub(rb"(.)\x00", rb"\1", data)):
+    # Decode contiguous UTF-16 strings only. Removing every NUL joins unrelated
+    # native string-table entries and invents usernames after /home/runner.
+    payloads = [data]
+    payloads.extend(match.group()[::2] for match in re.finditer(rb"(?:[\x20-\x7e]\x00){6,}", data))
+    for payload in payloads:
         if CREDENTIAL.search(payload):
             raise ValueError(f"Credential-like material in {label}")
         for match in HOME.finditer(payload):
