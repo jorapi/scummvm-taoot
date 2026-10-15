@@ -179,3 +179,44 @@ jobs:
           name: dreamfactory-psp-experimental
           path: build-dreamfactory/artifacts/*.zip
           if-no-files-found: error
+  development-release:
+    needs: [validation, windows, apple, android, psp]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/dreamfactory'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: dreamfactory-*
+          path: release-assets
+          merge-multiple: true
+      - name: Verify all packages and generate provenance
+        run: python3 devtools/dreamfactory/ci-release.py prepare release-assets
+      - name: Publish development prerelease for this push
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="dreamfactory-dev-${GITHUB_RUN_ID}"
+          # One immutable release per push/build run, including on job retries.
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $tag already exists; leaving it unchanged."
+            exit 0
+          fi
+          cat > release-notes.md <<'EOF'
+          Development build of the independent DreamFactory ScummVM fork.
+
+          Supports the supplied English Windows Titanic retail, September 1996 interactive demo and Dust data. No game data or optional soundtrack files are included.
+
+          Windows: extract the portable ZIP and run scummvm.exe. macOS: ad-hoc signed, not notarized. Android APKs and the iOS IPA are unsigned and require signing before installation. PSP: experimental homebrew.
+
+          All eight platform builds and package checks passed. Compilation does not establish device compatibility or a full-game playthrough. See manifest.json for the exact source commit and build run; SHA256SUMS.txt covers every package.
+          EOF
+          printf '\nSource: https://github.com/%s/commit/%s\nBuild: https://github.com/%s/actions/runs/%s\n' \
+            "$GITHUB_REPOSITORY" "$GITHUB_SHA" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" >> release-notes.md
+          gh release create "$tag" release-assets/* --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" --title "DreamFactory development ${GITHUB_SHA:0:8}" \
+            --notes-file release-notes.md --prerelease --draft --latest=false
+          gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --draft=false --latest=false

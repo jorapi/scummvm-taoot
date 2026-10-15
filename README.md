@@ -28,7 +28,9 @@ remaining. Original Macintosh game data and importing original-game saves are
 outside the current supported scope.
 
 Windows x64 and Android ARM64 builds have been built and checked locally.
-macOS, unsigned iOS and PSP build configurations are also provided; their
+GitHub builds all eight platform packages and publishes a development prerelease
+after every successful push to `dreamfactory`. Download them from
+[Releases](https://github.com/jorapi/scummvm-taoot/releases); signing and device
 validation status is documented in the [platform guide](devtools/dreamfactory/README.md).
 The local packaging and CI recipes build DreamFactory-only applications. The
 repository retains ScummVM's other engines, which can be enabled separately.

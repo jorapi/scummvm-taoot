@@ -54,7 +54,11 @@ one failed platform does not cancel the others. They contain no game data.
 All eight packages passed compilation and package checks in the
 [October 15, 2026 push build](https://github.com/jorapi/scummvm-taoot/actions/runs/38695417452)
 at source commit `c4e46a79`. These checks do not establish device compatibility.
-Ordinary commit pushes produce downloadable artifacts. Pushing a
+Ordinary pushes publish a downloadable development prerelease after all eight
+platforms pass, with one release per push even when it contains several commits.
+Local commits alone do not publish anything. See the
+[Releases page](https://github.com/jorapi/scummvm-taoot/releases).
+Pushing a
 `dreamfactory-v*` release tag runs the separate release workflow, which publishes
 an experimental prerelease only after every platform build and package check
 passes; a manual release run creates a draft unless publication is selected.
@@ -225,8 +229,7 @@ read when conversations render, so it is not overwritten by a gameplay save.
 This change passed all nine edition/mode checks and the existing original-panel
 and persisted-settings regression on Windows.
 
-This is an independently maintained fork. Remaining work includes actual
-Apple/PSP and remaining Android ABI builds, device tests, PSP memory profiling,
+This is an independently maintained fork. Remaining work includes device tests, PSP memory profiling,
 and separating the large developer audit driver from release engine code. Original game interfaces remain game
 content; replacing every original panel with ScummVM widgets is not claimed.
 Saves are native DFSV saves, with modal movie/dialogue/camera saves disabled.
