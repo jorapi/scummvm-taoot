@@ -18,7 +18,7 @@ generator="$src/build-dreamfactory/generator/create_project"
 disabled=()
 while IFS= read -r feature; do disabled+=("--disable-$feature"); done < <("$generator" 2>&1 | awk '$1 == "enabled" && $2 == "|" {print $3}')
 # The official static iOS FreeType also references PNG and bzip2 (llvm-nm).
-flags=(--xcode --output-dir "$out" --disable-all-engines --enable-engine=dreamfactory "${disabled[@]}" --enable-highres --enable-16bit --enable-freetype2 --enable-zlib --enable-png --enable-detection-static)
+flags=(--xcode --output-dir "$out" --include-dir "$out" --disable-all-engines --enable-engine=dreamfactory "${disabled[@]}" --enable-opengl --enable-builtin-resources --enable-highres --enable-16bit --enable-freetype2 --enable-zlib --enable-png --enable-detection-static)
 case "$platform" in
   macos)
     case "$arch" in arm64|x86_64) ;; *) echo 'Unsupported macOS architecture' >&2; exit 2;; esac
