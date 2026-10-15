@@ -319,6 +319,12 @@ bool auditPuppetSession(const Common::FSNode &root, OSystem *backend) {
 	backend->getEventManager()->pushEvent(skipLine);
 	if (choices.runtime.run(test, "speak").value.number() != 42 || selectedPuppet->interrupted) return false;
 	warning("GAMEPAD CURSOR REPLY PASS unfocused confirm selects cursor row standard skip-line supported");
+	choices.puppetChoices.start(selectedPuppet); choices.pointer = Common::Point(20, 300); choices.updateHoverCursor();
+	if (choices.cursors.displayedName() != "hand") return false;
+	choices.pointer = Common::Point(20, 0); choices.updateHoverCursor();
+	if (choices.cursors.displayedName() != "arrow") return false;
+	choices.puppetChoices.escape();
+	warning("DIALOGUE HOVER PASS hand over reply and arrow outside reply rows");
 	pad.customType = kPadPrevious; backend->getEventManager()->pushEvent(pad);
 	pad.customType = kPadInteract; backend->getEventManager()->pushEvent(pad);
 	if (choices.runtime.run(test, "choices").value.number() != 902 || PuppetView::choiceAt(choices.pointer.x, choices.pointer.y, 2) != 1) {
@@ -612,11 +618,12 @@ bool auditPuppetSession(const Common::FSNode &root, OSystem *backend) {
 	// Exercise the reader with wrapped text, a decision, bookmarks and an empty search.
 	Session journalLayout(backend);
 	if (!journalLayout.init(root)) return false;
-	for (uint32 i = 0; i < 6; ++i) {
+	for (uint32 i = 0; i < 12; ++i) {
 		JournalEntry entry;
 		entry.speaker = i % 2 ? "Passenger" : "Officer";
 		entry.room = "Journal layout fixture"; entry.time = 123000 + i * 60000;
 		entry.text = "This is a long journal entry used to check line wrapping and reading space. The complete conversation should remain easy to read without truncation.";
+		if (i % 2) { entry.choices.push_back(entry.text); entry.choices.push_back("Another offered reply."); entry.selected = 0; }
 		journalLayout.journal.add(entry);
 	}
 	JournalEntry fork; fork.speaker = "Passenger"; fork.room = "Journal layout fixture"; fork.time = 510000;
@@ -635,47 +642,22 @@ bool auditPuppetSession(const Common::FSNode &root, OSystem *backend) {
 		bool pollEvent(Common::Event &event) override {
 			const uint32 elapsed = _backend->getMillis() - _start;
 			if (elapsed > 5000 && !_timedOut) { _timedOut = true; event.type = Common::EVENT_QUIT; return true; }
-			if (phase > 12 || elapsed < (phase + 1) * 120) return false;
-			const int w = MIN<int>(760, _backend->getOverlayWidth() - 12), h = MIN<int>(560, _backend->getOverlayHeight() - 12);
-			const int x = (_backend->getOverlayWidth() - w) / 2, y = (_backend->getOverlayHeight() - h) / 2;
-			const int row = MAX(24, g_gui.getFont().getFontHeight() + 12);
-			if (phase == 0 || phase == 5 || phase == 4 || phase == 10) {
+			const uint32 commands[] = {kJournalReplay, kJournalRead, kJournalClose, kJournalViewNext, kJournalUp, kJournalViewNext, kJournalViewPrevious, kJournalViewPrevious, kJournalClose};
+			if (phase >= ARRAYSIZE(commands) || elapsed < (phase + 1) * 180) return false;
+			if (phase == 0 || phase == 4 || phase == 6) {
 				Graphics::Surface overlay; overlay.create(_backend->getOverlayWidth(), _backend->getOverlayHeight(), _backend->getOverlayFormat()); _backend->grabOverlay(overlay);
-				Common::DumpFile image;
-				Common::String name = phase == 0 ? "journal-layout.bmp" : phase == 5 ? "journal-starred.bmp" : phase == 4 ? "journal-decisions.bmp" : "journal-search-empty.bmp";
+				Common::String name = phase == 0 ? "journal-layout.bmp" : phase == 4 ? "journal-decisions.bmp" : "journal-flow.bmp";
 				if (_backend->getOverlayWidth() < 600) name = "compact-" + name;
-				if (image.open(_root.getChild(name))) Image::writeBMP(image, overlay);
-				overlay.free();
+				Common::DumpFile image; if (image.open(_root.getChild(name))) Image::writeBMP(image, overlay); overlay.free();
 			}
-			if (phase == 0) {
-				Common::Event physical; physical.type = Common::EVENT_JOYBUTTON_DOWN; physical.joystick.button = Common::JOYSTICK_BUTTON_X;
-				Common::List<Common::Event> actions;
-				_backend->getEventManager()->getKeymapper()->mapEvent(physical, actions);
-				mapped = actions.size() == 1 && actions.front().type == Common::EVENT_CUSTOM_ENGINE_ACTION_START && actions.front().customType == kJournalStar;
-				event.type = Common::EVENT_CUSTOM_ENGINE_ACTION_START; event.customType = kJournalStar;
-			} else if (phase == 1) {
-				Common::Event physical; physical.type = Common::EVENT_JOYBUTTON_DOWN; physical.joystick.button = Common::JOYSTICK_BUTTON_A;
-				Common::List<Common::Event> actions;
-				_backend->getEventManager()->getKeymapper()->mapEvent(physical, actions);
-				replayMapped = actions.size() == 1 && actions.front().type == Common::EVENT_CUSTOM_ENGINE_ACTION_START && actions.front().customType == kJournalReplay;
-				event.type = Common::EVENT_CUSTOM_ENGINE_ACTION_START; event.customType = kJournalReplay;
-			} else if (phase == 2 || phase == 4) { event.type = Common::EVENT_CUSTOM_ENGINE_ACTION_START; event.customType = kJournalViewNext; }
-			else if (phase == 12) {
-				Common::Event physical; physical.type = Common::EVENT_JOYBUTTON_DOWN; physical.joystick.button = Common::JOYSTICK_BUTTON_B;
-				Common::List<Common::Event> actions;
-				_backend->getEventManager()->getKeymapper()->mapEvent(physical, actions);
-				closeMapped = actions.size() == 1 && actions.front().type == Common::EVENT_CUSTOM_ENGINE_ACTION_START && actions.front().customType == kJournalClose;
-				event.type = Common::EVENT_CUSTOM_ENGINE_ACTION_START; event.customType = kJournalClose;
-			} else if (phase == 11) { event.type = Common::EVENT_MOUSEMOVE; event.mouse = Common::Point(x + 100, y + row * 2 + 16 + row / 2); }
-			else if (phase == 8 || phase == 9) { event.type = phase == 8 ? Common::EVENT_KEYDOWN : Common::EVENT_KEYUP; event.kbd.keycode = Common::KEYCODE_z; event.kbd.ascii = 'z'; }
-			else {
-				event.type = phase == 10 ? Common::EVENT_MOUSEMOVE : phase % 2 ? Common::EVENT_LBUTTONUP : Common::EVENT_LBUTTONDOWN;
-				if (phase <= 1) event.mouse = Common::Point(x + 12 + 2 * (w - 20) / 4 + 20, y + h - 20);
-				else if (phase <= 3) event.mouse = Common::Point(x + 12 + 2 * (w - 20) / 3 + 20, y + row + 12 + row / 2);
-				else if (phase <= 5) event.mouse = Common::Point(x + 12 + (w - 20) / 3 + 20, y + row + 12 + row / 2);
-				else event.mouse = Common::Point(x + 100, y + row * 2 + 16 + row / 2);
+			if (phase == 0 || phase == 1 || phase == 8) {
+				Common::Event physical; physical.type = Common::EVENT_JOYBUTTON_DOWN;
+				physical.joystick.button = phase == 0 ? Common::JOYSTICK_BUTTON_A : phase == 1 ? Common::JOYSTICK_BUTTON_Y : Common::JOYSTICK_BUTTON_B;
+				Common::List<Common::Event> actions; _backend->getEventManager()->getKeymapper()->mapEvent(physical, actions);
+				const bool valid = actions.size() == 1 && actions.front().type == Common::EVENT_CUSTOM_ENGINE_ACTION_START && actions.front().customType == commands[phase];
+				if (phase == 0) replayMapped = valid; else if (phase == 1) mapped = valid; else closeMapped = valid;
 			}
-			++phase; return true;
+			event.type = Common::EVENT_CUSTOM_ENGINE_ACTION_START; event.customType = commands[phase++]; return true;
 		}
 	};
 	class ControllerInputs {
@@ -693,10 +675,11 @@ bool auditPuppetSession(const Common::FSNode &root, OSystem *backend) {
 		ControllerInputs controller(backend);
 		LayoutSource source(backend, root);
 		openJournal(journalLayout);
-		if (source.phase != 13 || !source.mapped || !source.replayMapped || !source.closeMapped || !journalLayout.journal.entries.back().bookmarked || journalLayout.journal.entries.size() != 7) {
+		if (source.phase != 9 || !source.mapped || !source.replayMapped || !source.closeMapped || journalLayout.journal.entries.size() != 13) {
 			warning("JOURNAL LAYOUT FAIL phase=%u mapped=%d bookmarked=%d", source.phase, source.mapped, journalLayout.journal.entries.back().bookmarked); return false;
 		}
 	}
+	if (!auditJournalInput(journalLayout)) { warning("JOURNAL POINTER FAIL desktop"); return false; }
 	// Run the same interaction path at a handheld-sized game surface.
 	const uint oldWidth = backend->getWidth(), oldHeight = backend->getHeight();
 	const Graphics::PixelFormat oldFormat = backend->getScreenFormat();
@@ -708,8 +691,10 @@ bool auditPuppetSession(const Common::FSNode &root, OSystem *backend) {
 		ControllerInputs controller(backend);
 		LayoutSource source(backend, root);
 		openJournal(journalLayout);
-		compactOK = source.phase == 13 && source.mapped && source.replayMapped && source.closeMapped && journalLayout.journal.entries.back().bookmarked;
+		compactOK = source.phase == 9 && source.mapped && source.replayMapped && source.closeMapped;
 	}
+	if (!auditJournalInput(journalLayout)) { warning("JOURNAL POINTER FAIL handheld"); return false; }
+	warning("JOURNAL POINTER PASS Log Choices click selection wheel touch drag scrollbar desktop handheld hidden views do not intercept input");
 	backend->beginGFXTransaction(); backend->initSize(oldWidth, oldHeight, &oldFormat);
 	if (backend->endGFXTransaction() != OSystem::kTransactionSuccess || !compactOK) return false;
 	JournalEntry routeDecision; routeDecision.speaker = "Officer"; routeDecision.room = "Fixture corridor"; routeDecision.selected = 0;
@@ -1394,7 +1379,7 @@ bool auditMoviePlayback(const Common::FSNode &fixtures, OSystem *system, bool re
 		bool started = false, watchdog = false, sawInherited = false, sawVoiceHold = false, sawDetached = false;
 		bool checkEffects = false, lostEffects = false, sawCueVoice = false, sawLoopedCue = false, sawPriorVoice = false, sawOrderedBed = false;
 		bool checkTheme = false, changedThemeHandle = false, sawQueuedBed = false, sawFullThemeGain = false;
-		bool hintsShown = false, hintsHidden = false, hintsRestored = false, cursorOnly = false;
+		bool hintsShown = false, hintsHidden = false, hintsRestored = false, cursorOnly = false, hoverHand = false;
 		Bytes beforeFocus;
 		Audio::SoundHandle themeHandle;
 		Source(OSystem *s, Session &owner) : backend(s), session(owner) { backend->getEventManager()->getEventDispatcher()->registerSource(this, false); }
@@ -1448,7 +1433,7 @@ bool auditMoviePlayback(const Common::FSNode &fixtures, OSystem *system, bool re
 			}
 			if (mode == 6 && elapsed >= 50 + stage * 50 && stage < 2) {
                 if (!stage) beforeFocus = session.display.picture();
-				else cursorOnly = !beforeFocus.empty() && beforeFocus == session.display.picture();
+				else { cursorOnly = !beforeFocus.empty() && beforeFocus == session.display.picture(); hoverHand = session.cursors.displayedName() == "hand"; }
                 event.type=Common::EVENT_CUSTOM_ENGINE_ACTION_START; event.customType=stage++?kPadInteract:kPadNext; return true;
             }
             if (mode == 1 && stage == 0 && elapsed >= 50) { ++stage; event.type = Common::EVENT_LBUTTONDOWN; event.mouse = Common::Point(0, 0); return true; }
@@ -1520,7 +1505,7 @@ bool auditMoviePlayback(const Common::FSNode &fixtures, OSystem *system, bool re
 	if (!hintsPass || !worldToggle) { warning("MOVIE HINTS FAIL modal annotation/toggle/cleanup stage=%u shown=%u hidden=%u restored=%u world=%u", source.stage, source.hintsShown, source.hintsHidden, source.hintsRestored, worldToggle); return false; }
 	debug("MOVIE HINT HOST PASS held frame marker toggle redraw original restoration click geometry shared world toggle");
     source.arm(6);
-    if(!run("click") || source.stage!=2 || !source.cursorOnly || session.movies.active()) { warning("GAMEPAD MOVIE FAIL hotspot selection/confirm"); return false; }
+    if(!run("click") || source.stage!=2 || !source.cursorOnly || !source.hoverHand || session.movies.active()) { warning("GAMEPAD MOVIE FAIL hotspot selection/confirm hover=%u", source.hoverHand); return false; }
     debug("GAMEPAD MOVIE PASS authored region focus confirm modal close");
 	for (const char *handler : {"control", "control1"}) for (int mode = 7; mode <= 10; ++mode) {
 		source.arm(mode);
@@ -3197,9 +3182,19 @@ bool auditStageSession(const Common::FSNode &root, OSystem *system) {
 	if (!hints.display.capture(beforeFocus)) return false;
 	Common::Event focus; focus.type = Common::EVENT_CUSTOM_ENGINE_ACTION_START; focus.customType = kPadNext;
 	hints.postEvent(focus);
+	if (hints.cursors.displayedName() != "hand") return false;
 	if (hints.hitTest(hints.pointer.x, hints.pointer.y).name != "hint-test" || !hints.display.capture(afterFocus) || beforeFocus != afterFocus) {
 		warning("INPUT CONTROLS FAIL shoulder focus changed artwork instead of only moving cursor"); return false;
 	}
+	hints.cursors.set("goleft"); hints.pointer = Common::Point(500, 380); hints.updateHoverCursor();
+	if (hints.cursors.displayedName() != "goleft") return false;
+	hints.pointer = Common::Point(20, 12); hints.updateHoverCursor();
+	if (hints.cursors.displayedName() != "hand" || hints.cursors.name != "goleft") return false;
+	hints.cursors.hide(); if (hints.cursors.visible()) return false; hints.cursors.show();
+	hints.roomSystem.moving = true; hints.updateHoverCursor();
+	if (hints.cursors.displayedName() != "goleft") return false;
+	hints.roomSystem.moving = false;
+	warning("HOVER CURSOR PASS hand over interactive target mouse and shoulder pointer authored navigation restored hidden and moving cursors preserved");
     if(touchDirection(48,140)!=kPadUp || touchDirection(83,175)!=kPadUp || touchDirection(84,175)!=-1 || touchDirection(66,238)!=kPadDown || touchDirection(26,198)!=kPadLeft || touchDirection(106,198)!=kPadRight) return false;
     Bytes padPixels; padPixels.resize(512*384*4); memset(padPixels.data(),77,padPixels.size()); drawTouchPad(padPixels);
     if(padPixels[0]!=77 || padPixels[(140*512+48)*4]!=235 || padPixels[(140*512+84)*4]!=77) return false;

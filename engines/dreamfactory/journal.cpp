@@ -35,7 +35,7 @@ bool Session::journalAudio(const JournalEntry &entry, Common::SharedPtr<AudioCli
 	return true;
 }
 namespace {
-enum { kRead = 'JRed', kReplay = 'JPly', kStar = 'JStr', kSearch = 'JSrc', kLines = 'JLin', kPaths = 'JPth', kStarred = 'JFvt', kRoutes = 'JRte', kRouteSelect = 'JRSl', kRevisit = 'JRev', kRouteZoom = 'JRZm', kRouteCurrent = 'JRCr' };
+enum { kRead = 'JRed', kReplay = 'JPly', kStar = 'JStr', kSearch = 'JSrc', kLines = 'JLin', kPaths = 'JPth', kRoutes = 'JRte', kRouteSelect = 'JRSl', kRevisit = 'JRev', kRouteZoom = 'JRZm', kRouteCurrent = 'JRCr' };
 Common::U32String gameText(const Common::String &text) { return Common::U32String(text, Common::kWindows1252); }
 Common::U32String speakerText(const JournalEntry &entry) {
 	Common::String name = entry.speaker; name.trim();
@@ -56,6 +56,11 @@ void fit(GUI::Dialog &dialog) {
 	dialog.resize((g_system->getOverlayWidth() - w) / 2, (g_system->getOverlayHeight() - h) / 2, w, h, false);
 }
 void place(GUI::Widget *widget, int x, int y, int w, int h) { widget->setPos(x, y); widget->setSize(w, h); }
+void showPanel(GUI::Widget *widget, bool visible) {
+	widget->setVisible(visible);
+	// Shared GUI hit testing includes hidden widget rectangles.
+	if (!visible) widget->setPos(-30000, -30000);
+}
 Common::U32String entryBody(const JournalEntry &entry) {
 	if (entry.choices.empty()) return literal(entry.text);
 	Common::U32String text = _("Replies offered at this decision:");
@@ -87,7 +92,7 @@ public:
 		if (!_journal) {
 			_journal = new Common::Keymap(Common::Keymap::kKeymapTypeGui, "dreamfactory-journal-ui", _("DreamFactory journal"));
 			const char *ids[] = {"JNPLAY", "JNSTAR", "JNPREV", "JNNEXT", "JNREAD", "JNCLOSE", "JNBACK", "JNZOOM", "JNCURRENT"};
-			const char *labels[] = {_s("Replay line / open route details"), _s("Bookmark line / revisit scene"), _s("Previous journal view"), _s("Next journal view"), _s("Read entry details"), _s("Close journal"), _s("Close journal"), _s("Switch route overview and cards"), _s("Focus current route position")};
+			const char *labels[] = {_s("Replay line / open route details"), _s("Read line / revisit scene"), _s("Previous journal view"), _s("Next journal view"), _s("Read entry details"), _s("Close journal"), _s("Close journal"), _s("Switch route overview and cards"), _s("Focus current route position")};
 			const char *inputs[] = {"JOY_A", "JOY_X", "JOY_LEFT_SHOULDER", "JOY_RIGHT_SHOULDER", "JOY_Y", "JOY_B", "JOY_BACK", "JOY_RIGHT_STICK", "JOY_LEFT_STICK"};
 			const uint32 commands[] = {kJournalReplay, kJournalStar, kJournalViewPrevious, kJournalViewNext, kJournalRead, kJournalClose, kJournalClose, kJournalZoom, kJournalCurrent};
 			for (uint32 i = 0; i < ARRAYSIZE(ids); ++i) {
@@ -215,8 +220,13 @@ class TranscriptWidget : public GUI::Widget, public GUI::CommandSender {
 	GUI::ScrollBarWidget *_scroll;
 	int _selected = -1, _position = 0, _total = 0;
 	int _downY = 0, _lastY = 0, _pressed = -1;
-	bool _dragging = false;
-	int lineHeight() const { return g_gui.getFont(GUI::ThemeEngine::kFontStyleNormal).getFontHeight() + 4; }
+	bool _dragging = false, _showChoices = false;
+	const Graphics::Font &bodyFont() const {
+		const Graphics::Font &normal = g_gui.getFont(GUI::ThemeEngine::kFontStyleNormal);
+		const Graphics::Font *large = FontMan.getFontByUsage(Graphics::FontManager::kBigGUIFont);
+		return normal.getFontHeight() < 12 && large ? *large : normal;
+	}
+	int lineHeight() const { return bodyFont().getFontHeight() + 4; }
 	int at(int y) const {
 		for (uint32 i = 0; i < _rows.size(); ++i) if (y + _position >= _rows[i].top && y + _position < _rows[i].top + _rows[i].height) return i;
 		return -1;
@@ -228,8 +238,12 @@ class TranscriptWidget : public GUI::Widget, public GUI::CommandSender {
 	Common::U32StringArray wrappedText(const JournalEntry &entry) const {
 		Common::U32String text = gameText(entry.text);
 		if (!entry.choices.empty()) { text = _("You: "); text += entry.selected < 0 ? _("[No reply chosen]") : gameText(entry.text); }
+		if (_showChoices && !entry.choices.empty()) {
+			text = _("Choices:");
+			for (uint32 i = 0; i < entry.choices.size(); ++i) { text += i == uint32(entry.selected) ? U"\n> " : U"\n  "; text += gameText(entry.choices[i]); }
+		}
 		Common::U32StringArray lines;
-		g_gui.getFont(GUI::ThemeEngine::kFontStyleNormal).wordWrapText(text, MAX(20, _w - 48), lines);
+		bodyFont().wordWrapText(text, MAX(20, _w - 48), lines);
 		return lines;
 	}
 	void wrap() {
@@ -255,7 +269,7 @@ protected:
 			l = MAX(0, l); t = MAX(0, t); r = MIN<int>(surface.w, r); b = MIN<int>(surface.h, b);
 			if (r > l && b > t) surface.fillRect(Common::Rect(l, t, r, b), ink);
 		};
-		const Graphics::Font &font = g_gui.getFont(T::kFontStyleNormal), &bold = g_gui.getFont(T::kFontStyleBold);
+		const Graphics::Font &font = bodyFont(), &bold = g_gui.getFont(T::kFontStyleBold);
 		if (_rows.empty()) font.drawString(&surface, _("No recorded dialogue in this view."), 12, 12, surface.w - 24, ivory, Graphics::kTextAlignLeft, 0, true);
 		for (uint32 i = 0; i < _rows.size(); ++i) {
 			const Row &row = _rows[i]; const int top = row.top - _position;
@@ -267,7 +281,9 @@ protected:
 			const int nameWidth = MIN<int>(160, MAX(40, surface.w / 3));
 			bold.drawString(&surface, name, 12, top + 8, nameWidth, brass, Graphics::kTextAlignLeft, 0, true);
 			const int contextWidth = surface.w - nameWidth - 108;
-			if (contextWidth >= 70) font.drawString(&surface, entryContext(entry), nameWidth + 24, top + 8, contextWidth, muted, Graphics::kTextAlignRight, 0, true);
+			Common::U32String context = entryContext(entry);
+			if (_w < 600) { JournalEntry compact = entry; compact.room.clear(); context = entryContext(compact); }
+			if (contextWidth >= 70) font.drawString(&surface, context, nameWidth + 24, top + 8, contextWidth, muted, Graphics::kTextAlignRight, 0, true);
 			if (!entry.ident.empty()) {
 				const int x = _w - 88, right = _w - 24, bottom = top + lineHeight() + 12;
 				rect(x, top + 4, right, bottom, brass); rect(x + 1, top + 5, right - 1, bottom - 1, background);
@@ -290,7 +306,8 @@ public:
 	bool wantsFocus() override { return true; }
 	bool containsWidget(GUI::Widget *widget) const override { return widget == _scroll; }
 	int getSelected() const { return _selected; }
-	void setEntries(const Common::Array<uint32> &indices) { _indices = indices; _selected = -1; _position = 0; wrap(); }
+	int scrollPosition() const { return _position; }
+	void setEntries(const Common::Array<uint32> &indices, bool choices = false) { _indices = indices; _showChoices = choices; _selected = -1; _position = 0; wrap(); }
 	void setSelected(int index) {
 		_selected = index >= 0 && uint32(index) < _rows.size() ? index : -1;
 		if (_selected >= 0) {
@@ -503,14 +520,14 @@ public:
 class JournalDialog : public GUI::Dialog {
 	Session &_session;
 	Replay _replay;
-	GUI::StaticTextWidget *_title, *_searchLabel, *_speaker, *_context, *_status, *_routeLegend;
+	GUI::StaticTextWidget *_searchLabel, *_speaker, *_context, *_status, *_routeLegend;
 	GUI::RichTextWidget *_preview = nullptr;
 	int32 _previewIndex = -2;
 	bool _wide = false, _wasPlaying = false;
 	GUI::EditTextWidget *_search;
 	TranscriptWidget *_list;
 	RouteMapWidget *_mapWidget;
-	GUI::ButtonWidget *_tabs[4], *_buttons[5];
+	GUI::ButtonWidget *_tabs[3], *_buttons[5];
 	Common::Array<uint32> _indices;
 	uint32 _mode = kLines;
 	uint32 _revisitNode = 0;
@@ -539,8 +556,7 @@ class JournalDialog : public GUI::Dialog {
 		_indices.clear();
 		for (uint32 i = 0; i < _session.journal.entries.size(); ++i) {
 			const JournalEntry &entry = _session.journal.entries[i];
-			if ((_mode == kPaths && entry.choices.empty()) || (_mode == kStarred && !entry.bookmarked) ||
-				(_mode == kLines && !entry.choices.empty() && entry.selected < 0)) continue;
+			if ((_mode == kPaths && entry.choices.empty()) || (_mode == kLines && !entry.choices.empty() && entry.selected < 0)) continue;
 			Common::U32String searchable = gameText(entry.speaker + " " + entry.room + " " + entry.text);
 			searchable += U" "; searchable += speakerText(entry);
 			for (const auto &choice : entry.choices) { searchable += ' '; searchable += gameText(choice); }
@@ -551,12 +567,12 @@ class JournalDialog : public GUI::Dialog {
 			while (!tokens.empty()) if (!searchable.contains(tokens.nextToken())) { matches = false; break; }
 			if (matches) _indices.push_back(i);
 		}
-		_list->setEntries(_indices);
+		_list->setEntries(_indices, _mode == kPaths);
 		int selected = _indices.empty() ? -1 : int(_indices.size()) - 1;
 		for (uint32 i = 0; i < _indices.size(); ++i) if (int32(_indices[i]) == previous) selected = i;
 		_list->setSelected(selected);
-		const uint32 modes[] = {kLines, kPaths, kStarred, kRoutes};
-		for (uint32 i = 0; i < 4; ++i) _tabs[i]->setEnabled(_mode != modes[i]);
+		const uint32 modes[] = {kLines, kPaths, kRoutes};
+		for (uint32 i = 0; i < 3; ++i) _tabs[i]->setEnabled(_mode != modes[i]);
 		_previewIndex = -2;
 		updateButtons();
 	}
@@ -570,24 +586,27 @@ class JournalDialog : public GUI::Dialog {
 		const int32 previewIndex = routes ? -10 - index : index;
 		const JournalEntry *entry = selectedEntry();
 		const RouteMapItem *item = routes ? _mapWidget->selected() : nullptr;
+		const bool wantPreview = routes && !_mapWidget->overview() && _w >= 600 && _h >= 360;
 		_buttons[1]->setLabel(routes ? _mapWidget->overview() ? _("Cards") : _("Overview") : entry && _replay.playing(*entry) ? _("Stop") : _("Replay"));
-		_buttons[2]->setLabel(routes ? _("Revisit") : entry && entry->bookmarked ? _("Unstar") : _("Star"));
-		if (previewIndex != _previewIndex) {
+		_buttons[2]->setLabel(_("Revisit"));
+		showPanel(_buttons[2], routes);
+		if (previewIndex != _previewIndex || wantPreview != (_preview != nullptr)) {
 			_previewIndex = previewIndex;
 			_speaker->setLabel(item ? routeTitle(_session.routes.graph, *item) : entry ? speakerText(*entry) : _("Nothing to display"));
 			_context->setLabel(entry ? entryContext(*entry) : Common::U32String());
 			Common::U32String body = entry ? entryBody(*entry) : !_search->getEditString().empty() ? _("No matching entries. Try another search.") :
-				_mode == kStarred ? _("Star a line to keep it here for later.") : _mode == kPaths ? _("Your encountered dialogue choices will appear here.") : _("Heard dialogue will appear here as you play.");
+				_mode == kPaths ? _("Your encountered dialogue choices will appear here.") : _("Heard dialogue will appear here as you play.");
 			if (routes) body = item ? routeBody(_session.routes.graph, *item) : _("Discovered conversations and branches will appear as you play. Future outcomes remain hidden.");
 			// Replacing the reader resets its scroll position and cached Markdown surface.
-			if (_preview) { removeWidget(_preview); delete _preview; }
-			_preview = new GUI::RichTextWidget(this, 8, 80, 200, 100, body);
-			layoutPreview();
-			_preview->setVisible(_wide);
-			if (isVisible()) _preview->reflowLayout();
+			if (_preview) { removeWidget(_preview); delete _preview; _preview = nullptr; }
+			if (wantPreview) {
+				_preview = new GUI::RichTextWidget(this, 8, 80, 200, 100, body);
+				layoutPreview(); showPanel(_preview, _wide);
+				if (isVisible()) _preview->reflowLayout();
+			}
 		}
 		Common::U32String status = Common::U32String::format(_("%u entries  |  Oldest to newest"), uint32(_indices.size()));
-		if (index >= 0) status += _("  |  Activate to read");
+		if (index >= 0) status = Common::U32String::format(_("%u / %u  |  Up/Down: Select"), uint32(_list->getSelected() + 1), uint32(_indices.size()));
 		if (routes) {
 			status = item ? routeTitle(_session.routes.graph, *item) : _("No route discoveries yet");
 			status += Common::U32String::format(_("  |  %u known nodes"), uint32(_session.routes.graph.nodes().size()));
@@ -596,36 +615,53 @@ class JournalDialog : public GUI::Dialog {
 		_buttons[0]->setEnabled(index >= 0);
 		_buttons[1]->setEnabled(routes || (entry && !entry->ident.empty()));
 		_buttons[2]->setEnabled(routes ? canRevisit() : index >= 0);
-		_buttons[4]->setVisible(routes); _buttons[4]->setEnabled(_session.routes.graph.cursor() != 0);
+		showPanel(_buttons[4], routes); _buttons[4]->setEnabled(_session.routes.graph.cursor() != 0);
 	}
 	void layoutPreview() {
 		const int row = MAX(24, g_gui.getFont().getFontHeight() + 12);
-		const int top = row * 3 + 24;
+		const int top = row * 2 + 16;
 		const int left = 20 + (_w - 28) * (_mode == kRoutes ? 62 : 42) / 100;
 		place(_speaker, left, top, _w - left - 12, row);
 		place(_context, left, top + row, _w - left - 12, row);
 		if (_preview) place(_preview, left, top + row * 2 + 8, MAX(20, _w - left - 12), MAX(20, _h - top - row * 4 - 28));
 	}
 public:
+	bool auditPointerInput() {
+		for (uint32 mode : {uint32(kLines), uint32(kPaths)}) {
+			handleCommand(nullptr, mode, 0);
+			_list->setSelected(0); _list->setSelected(-1);
+			const int x = _list->getRelX() + 30, y = _list->getRelY() + 8;
+			if (findWidget(x, y) != _list) { warning("JOURNAL POINTER hit mode=%u x=%d y=%d", mode, x, y); return false; }
+			handleMouseDown(x, y, 1, 1); handleMouseUp(x, y, 1, 1);
+			if (_list->getSelected() != 0) { warning("JOURNAL POINTER selection mode=%u selected=%d", mode, _list->getSelected()); return false; }
+			const int before = _list->scrollPosition();
+			handleMouseWheel(x, y, 1);
+			if (_list->scrollPosition() <= before) { warning("JOURNAL POINTER scroll mode=%u before=%d after=%d", mode, before, _list->scrollPosition()); return false; }
+			handleMouseWheel(x, y, -1);
+			if (_list->scrollPosition() != before) { warning("JOURNAL POINTER wheel return mode=%u", mode); return false; }
+			handleMouseDown(x, y + 30, 1, 1); handleMouseMoved(x, y + 10, 1); handleMouseUp(x, y + 10, 1, 1);
+			if (_list->scrollPosition() <= before) { warning("JOURNAL POINTER scroll mode=%u before=%d after=%d", mode, before, _list->scrollPosition()); return false; }
+			if (!_list->containsWidget(findWidget(_list->getRelX() + _list->getWidth() - 8, y))) { warning("JOURNAL POINTER scrollbar mode=%u", mode); return false; }
+		}
+		return true;
+	}
 	explicit JournalDialog(Session &session) : GUI::Dialog(0, 0, 320, 240), _session(session), _replay(session) {
 		_backgroundType = GUI::ThemeEngine::kDialogBackgroundMain;
 		_speaker = new GUI::StaticTextWidget(this, 8, 80, 200, 24, Common::U32String(), Graphics::kTextAlignLeft);
 		_context = new GUI::StaticTextWidget(this, 8, 104, 200, 24, Common::U32String(), Graphics::kTextAlignLeft, Common::U32String(), GUI::ThemeEngine::kFontStyleNormal);
 		_status = new GUI::StaticTextWidget(this, 8, 180, 300, 20, Common::U32String(), Graphics::kTextAlignLeft, Common::U32String(), GUI::ThemeEngine::kFontStyleNormal);
 		_searchLabel = new GUI::StaticTextWidget(this, 8, 56, 56, 20, _("Search:"), Graphics::kTextAlignLeft);
-		_title = new GUI::StaticTextWidget(this, 8, 8, 300, 20, _("Dialogue journal"), Graphics::kTextAlignLeft);
 		_tabs[0] = new GUI::ButtonWidget(this, 8, 32, 95, 20, _("Log"), Common::U32String(), kLines);
-		_tabs[1] = new GUI::ButtonWidget(this, 108, 32, 95, 20, _("Decisions"), Common::U32String(), kPaths);
-		_tabs[2] = new GUI::ButtonWidget(this, 208, 32, 95, 20, _("Starred"), Common::U32String(), kStarred);
-		_tabs[3] = new GUI::ButtonWidget(this, 208, 32, 95, 20, _("Routes"), Common::U32String(), kRoutes);
+		_tabs[1] = new GUI::ButtonWidget(this, 108, 32, 95, 20, _("Choices"), Common::U32String(), kPaths);
+		_tabs[2] = new GUI::ButtonWidget(this, 208, 32, 95, 20, _("Flow"), Common::U32String(), kRoutes);
 		_routeLegend = new GUI::StaticTextWidget(this, 12, 56, 300, 20, _("S: Scene  D: Decision  E: Ending  ?: Unexplored  |  R3/Z: Zoom"), Graphics::kTextAlignLeft, Common::U32String(), GUI::ThemeEngine::kFontStyleNormal);
 		_search = new GUI::EditTextWidget(this, 8, 56, 300, 20, Common::U32String(), _("Search recorded dialogue"), kSearch);
 		_list = new TranscriptWidget(this, session, _replay);
-		_mapWidget = new RouteMapWidget(this, session.routes.graph); _mapWidget->setVisible(false); _routeLegend->setVisible(false);
-		const Common::U32String labels[] = {_("Read"), _("Replay"), _("Star"), _("Close")};
+		_mapWidget = new RouteMapWidget(this, session.routes.graph); showPanel(_mapWidget, false); showPanel(_routeLegend, false);
+		const Common::U32String labels[] = {_("Read"), _("Replay"), _("Revisit"), _("Back")};
 		const uint32 commands[] = {kRead, kReplay, kStar, GUI::kCloseCmd};
 		for (uint32 i = 0; i < 4; ++i) _buttons[i] = new GUI::ButtonWidget(this, 8 + i * 76, 208, 70, 24, labels[i], Common::U32String(), commands[i]);
-		_buttons[4] = new GUI::ButtonWidget(this, 8, 208, 70, 24, _("Current"), Common::U32String(), kRouteCurrent); _buttons[4]->setVisible(false);
+		_buttons[4] = new GUI::ButtonWidget(this, 8, 208, 70, 24, _("Current"), Common::U32String(), kRouteCurrent); showPanel(_buttons[4], false);
 		refresh();
 	}
 	uint32 revisitNode() const { return _revisitNode; }
@@ -633,29 +669,28 @@ public:
 	void reflowLayout() override {
 		fit(*this);
 		const int row = MAX(24, g_gui.getFont().getFontHeight() + 12);
-		_wide = (_mode == kPaths || (_mode == kRoutes && !_mapWidget->overview())) && _w >= 600 && _h >= 360;
-		const bool compactRoutes = _mode == kRoutes && _h < 360;
-		place(_title, 12, 8, _w - 24, row);
-		_title->setVisible(!compactRoutes);
-		for (uint32 i = 0; i < 4; ++i) place(_tabs[i], 12 + i * (_w - 20) / 4, compactRoutes ? 8 : row + 12, (_w - 36) / 4, row);
-		place(_searchLabel, 12, row * 2 + 16, 56, row);
-		place(_search, 72, row * 2 + 16, _w - 84, row);
-		place(_routeLegend, 12, row * 2 + 16, _w - 24, row);
-		_search->setVisible(_mode != kRoutes); _searchLabel->setVisible(_mode != kRoutes); _routeLegend->setVisible(_mode == kRoutes && !compactRoutes);
-		const int top = compactRoutes ? row + 16 : row * 3 + 24;
+		_wide = _mode == kRoutes && !_mapWidget->overview() && _w >= 600 && _h >= 360;
+		const bool compact = _h < 360;
+		for (uint32 i = 0; i < 3; ++i) place(_tabs[i], 8 + i * (_w - 12) / 3, 6, (_w - 24) / 3, row);
+		place(_searchLabel, 12, row + 10, 56, row);
+		place(_search, 72, row + 10, _w - 84, row);
+		place(_routeLegend, 12, row + 10, _w - 24, row);
+		showPanel(_search, _mode != kRoutes && !compact); showPanel(_searchLabel, _mode != kRoutes && !compact); showPanel(_routeLegend, _mode == kRoutes && !compact);
+		const int top = compact ? row + 12 : row * 2 + 16;
 		place(_list, 12, top, _wide ? (_w - 28) * 42 / 100 : _w - 24, MAX(20, _h - top - row * 2 - 20));
 		place(_mapWidget, 12, top, _wide ? (_w - 28) * 62 / 100 : _w - 24, MAX(20, _h - top - row * 2 - 20));
-		_list->setVisible(_mode != kRoutes); _mapWidget->setVisible(_mode == kRoutes);
+		showPanel(_list, _mode != kRoutes); showPanel(_mapWidget, _mode == kRoutes);
 		layoutPreview();
-		_speaker->setVisible(_wide); _context->setVisible(_wide);
-		if (_preview) _preview->setVisible(_wide);
+		showPanel(_speaker, _wide); showPanel(_context, _wide);
+		if (_preview) showPanel(_preview, _wide);
 		place(_status, 12, _h - row * 2 - 12, _w - 24, row);
-		const int count = _mode == kRoutes ? 5 : 4;
+		const int count = _mode == kRoutes ? 5 : 3;
 		for (int i = 0; i < count; ++i) {
-			const int button = count == 5 && i >= 3 ? i == 3 ? 4 : 3 : i;
+			const int button = count == 5 && i >= 3 ? i == 3 ? 4 : 3 : count == 3 && i == 2 ? 3 : i;
 			place(_buttons[button], 12 + i * (_w - 20) / count, _h - row - 8, (_w - 16 - count * 5) / count, row);
 		}
 		GUI::Dialog::reflowLayout();
+		updateButtons();
 	}
 	void handleTickle() override {
 		GUI::Dialog::handleTickle();
@@ -666,9 +701,9 @@ public:
 	}
 
 	void switchView(int direction) {
-		const uint32 modes[] = {kLines, kPaths, kStarred, kRoutes};
-		int current = _mode == kLines ? 0 : _mode == kPaths ? 1 : _mode == kStarred ? 2 : 3;
-		handleCommand(nullptr, modes[(current + direction + 4) % 4], 0);
+		const uint32 modes[] = {kLines, kPaths, kRoutes};
+		int current = _mode == kLines ? 0 : _mode == kPaths ? 1 : 2;
+		handleCommand(nullptr, modes[(current + direction + 3) % 3], 0);
 	}
 	void handleKeyDown(Common::KeyState key) override {
 		if (_mode == kRoutes && getFocusWidget() == _mapWidget && _mapWidget->handleKeyDown(key)) return;
@@ -688,7 +723,7 @@ public:
 			if (event.customType == kJournalUp || event.customType == kJournalDown) { setFocusWidget(_list); _list->handleKeyDown(Common::KeyState(event.customType == kJournalUp ? Common::KEYCODE_UP : Common::KEYCODE_DOWN)); return; }
 			if (event.customType == kJournalLeft || event.customType == kJournalRight) { switchView(event.customType == kJournalLeft ? -1 : 1); return; }
 			if (event.customType == kJournalReplay) { handleCommand(nullptr, kReplay, 0); return; }
-			if (event.customType == kJournalStar) { handleCommand(nullptr, kStar, 0); return; }
+			if (event.customType == kJournalStar) { handleCommand(nullptr, _mode == kRoutes ? kRevisit : kRead, 0); return; }
 			if (event.customType == kJournalViewPrevious || event.customType == kJournalViewNext) { switchView(event.customType == kJournalViewPrevious ? -1 : 1); return; }
 		}
 		GUI::Dialog::handleOtherEvent(event);
@@ -710,13 +745,12 @@ public:
 			if (detail.runModal() == kRevisit) requestRevisit();
 			return;
 		}
-		if (cmd == kLines || cmd == kPaths || cmd == kStarred || cmd == kRoutes) { _mode = cmd; refresh(); reflowLayout(); g_gui.scheduleTopDialogRedraw(); setFocusWidget(_mode == kRoutes ? static_cast<GUI::Widget *>(_mapWidget) : _list); }
+		if (cmd == kLines || cmd == kPaths || cmd == kRoutes) { _mode = cmd; refresh(); reflowLayout(); g_gui.scheduleTopDialogRedraw(); setFocusWidget(_mode == kRoutes ? static_cast<GUI::Widget *>(_mapWidget) : _list); }
 		else if (cmd == kSearch) refresh();
 		else if (cmd == GUI::kListSelectionChangedCmd || cmd == kRouteSelect) updateButtons();
 		else if ((cmd == kRead || cmd == GUI::kListItemActivatedCmd) && index >= 0) {
 			EntryDialog detail(_session.journal.entries[index], _replay); detail.runModal();
 		} else if ((cmd == kReplay || cmd == GUI::kListItemDoubleClickedCmd) && index >= 0 && !_session.journal.entries[index].ident.empty()) { _replay.play(_session.journal.entries[index]); _list->markAsDirty(); }
-		else if (cmd == kStar && index >= 0) { _session.journal.entries[index].bookmarked = !_session.journal.entries[index].bookmarked; refresh(); }
 		else GUI::Dialog::handleCommand(sender, cmd, data);
 	}
 };
@@ -727,6 +761,11 @@ uint32 openJournal(Session &session) {
 	JournalDialog dialog(session);
 	dialog.runModal();
 	return dialog.revisitNode();
+}
+bool auditJournalInput(Session &session) {
+	JournalKeymapScope keys;
+	JournalDialog dialog(session); dialog.open();
+	const bool valid = dialog.auditPointerInput(); dialog.close(); return valid;
 }
 void journalNotice(const Common::String &message) {
 	JournalKeymapScope keys;

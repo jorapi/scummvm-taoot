@@ -50,6 +50,7 @@ public:
 	void postEvent(const Common::Event &event);
 	struct Hit { Common::String name, type = "none"; };
 	Hit hitTest(int32 x, int32 y);
+	void updateHoverCursor();
 	Common::Point pointer;
 	bool pointerDown = false;
 	bool invoke(Runtime &runtime, const Expression &call, ScriptFrame &frame, Value &result) override;

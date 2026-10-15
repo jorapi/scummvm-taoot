@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 #include "dreamfactory/movie_host.h"
+#include "dreamfactory/cursors.h"
 #include "dreamfactory/controls.h"
 #include "common/system.h"
 #include "common/config-manager.h"
@@ -132,6 +133,7 @@ bool MovieSystem::movieSound(const Common::String &name) {
 	return _sound.playVoiceClip(name, clip, loop, &_event);
 }
 void MovieSystem::movieFinished(bool dismissed, bool interactive, bool keepInput) {
+	if (_cursors) _cursors->hover(Common::String());
 	// The player has already released its movie. Event sources polled by the
 	// cleanup must never observe the borrowed pointer after that release.
 	_movie = nullptr;
@@ -196,6 +198,20 @@ bool MovieSystem::play(const Common::String &name, Runtime &runtime, ScriptFrame
 			traceAt = sample;
 		}
 		if (!_quit) _player.tick(now);
+		if (_cursors && _player.active() && _movie) {
+			const MovieSegment &segment = _movie->segments[_segment];
+			const MovieFrame &image = segment.frames[_player.frame()];
+			Common::String cursor;
+			if (!image.playThrough && !image.regions.empty()) {
+				cursor = "arrow";
+				const int width = canvasWidth(), height = width == 640 ? 480 : 384;
+				const Common::Point mouse = _system->getEventManager()->getMousePos();
+				const int x = mouse.x * width / 640 - segment.x, y = mouse.y * height / 480 - segment.y;
+				for (const auto &region : image.regions)
+					if (x >= region.left && x < region.right && y >= region.top && y < region.bottom) { cursor = "hand"; break; }
+			}
+			_cursors->hover(cursor);
+		}
 		// Held interactive frames still need software-cursor redraws. Event
 		// polling moves the cursor, but it does not present the dirty rectangle.
 		_system->updateScreen();

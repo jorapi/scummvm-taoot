@@ -8,6 +8,7 @@
 #include "common/events.h"
 class OSystem;
 namespace DreamFactory {
+class CursorSystem;
 // Owns the modal picture and bed; cues use SoundSystem's shared voice channel.
 class MovieSystem : private MovieHost {
 public:
@@ -16,6 +17,7 @@ public:
 	bool play(const Common::String &name, Runtime &runtime, ScriptFrame &frame);
 	void reset();
 	void setHotspotHints(bool enabled) { _showHints = enabled; }
+	void setCursors(CursorSystem *cursors) { _cursors = cursors; }
 	bool hotspotHints() const { return _showHints; }
 	static bool compositeHotspotHints(Bytes &rgba, const MovieSegment &segment, uint32 frame, uint32 width, uint32 height);
 	uint32 actions() const { return _player.actions(); }
@@ -34,6 +36,7 @@ private:
 	Display &_display;
 	Common::Array<Common::Event> &_pending;
 	OSystem *_system;
+	CursorSystem *_cursors = nullptr;
 	MoviePlayer _player;
 	const Movie *_movie = nullptr;
 	Common::String _name;

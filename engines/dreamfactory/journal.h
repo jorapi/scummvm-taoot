@@ -21,6 +21,7 @@ public:
 	}
 };
 uint32 openJournal(Session &session);
+bool auditJournalInput(Session &session);
 void journalNotice(const Common::String &message);
 }
 #endif

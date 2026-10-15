@@ -7,7 +7,7 @@
 #include "common/formats/winexe.h"
 #include "graphics/cursorman.h"
 namespace DreamFactory {
-void CursorSystem::reset() { _groups.clear(); names.clear(); name = "arrow"; depth = 0; apply(); }
+void CursorSystem::reset() { _groups.clear(); names.clear(); _hover.clear(); name = "arrow"; depth = 0; apply(); }
 bool CursorSystem::load(const Common::String &file) {
 	_groups.clear(); names.clear(); Bytes bytes;
 	if (!_resources.read(file, bytes)) { apply(); return false; }
@@ -29,10 +29,11 @@ const Graphics::Cursor *CursorSystem::art(const Common::String &asked) const {
 	for (uint32 i = 0; i < cursors.size(); ++i) if (cursors[i].cursor->getWidth() == 32 && cursors[i].cursor->getHeight() == 32) return cursors[i].cursor;
 	return cursors[0].cursor;
 }
-void CursorSystem::set(Common::String value) { value.toLowercase(); name = value; apply(); }
+void CursorSystem::set(Common::String value) { value.toLowercase(); name = value; _hover.clear(); apply(); }
+void CursorSystem::hover(const Common::String &value) { if (_hover != value) { _hover = value; apply(); } }
 void CursorSystem::apply() {
 	if (!_display) return;
-	const Graphics::Cursor *cursor = art(name);
+	const Graphics::Cursor *cursor = art(_hover.empty() ? name : _hover);
 	if (cursor) CursorMan.replaceCursor(cursor);
 	else { Common::ScopedPtr<Graphics::Cursor> fallback(Graphics::makeDefaultWinCursor()); CursorMan.replaceCursor(fallback.get()); }
 	CursorMan.showMouse(visible());

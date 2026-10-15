@@ -129,6 +129,12 @@ selected. An empty-space click is consumed rather than activating region zero
 shoulder selection, pointer takeover and mouse/touch parity in v1 and v4 movies.
 Physical controller and Android touch usability still require device playtesting.
 
+Hovering a visible actor, prop, painting or interface button uses the game's
+original hand cursor. Held interactive movie frames update the hand from their
+authored regions, including shoulder-selected targets and pointer movement.
+Leaving a target restores the authored navigation cursor; transitions, hidden
+cursors and explicit scripted cursor changes retain their original behavior.
+
 ## Artwork research (retired)
 
 Replacement artwork is no longer exposed in the Engine settings or local launch
@@ -330,20 +336,26 @@ text. Its Play/Stop button replays the original voice recording. Scroll with a
 mouse wheel, scrollbar, Page Up/Down or a touch drag. Up/Down selects adjacent
 entries; Space replays the selected line and Enter opens its full-page details.
 The transcript uses ivory text, brass speaker headings and a navy background.
+Small GUI fonts use ScummVM's existing larger body font for readable dialogue.
 Location and time share the heading row where space permits; full context remains
-available in Read. An untitled speaker is displayed as "Conversation", preserving
+available in Read. Compact headers show only the time, avoiding truncated room
+names. An untitled speaker is displayed as "Conversation", preserving
 the stored identity and avoiding guesses from internal resource filenames.
 
-The Decisions view lists encountered reply sets, with a reading pane on larger
-overlays that emphasizes the chosen reply. Smaller overlays use Read for details.
+The Choices view lists complete encountered reply sets in the full-width
+transcript, marking the chosen reply with `>`. Read opens a scrolling detail page
+for text longer than the screen. The three main views are Log, Choices and Flow;
+the separate Starred view and bookmark buttons have been removed. Existing
+bookmark fields are retained when loading and saving older history.
 Search matches character names, locations, text and offered replies, with all
-search words required. Star/Unstar bookmarks an entry for the Starred view.
+search words required. Search is shown on taller overlays; compact screens
+dedicate that space to the transcript instead.
 Some replies have no voice recording. Movie/radio audio without conversation
 text is not transcribed.
 
 Journal controller controls use a dedicated, configurable ScummVM GUI keymap:
-D-pad or left stick selects entries; A replays/stops the selected line, X toggles
-its bookmark, Y opens details, B or Back closes, and the shoulders switch views.
+D-pad or left stick selects entries; A replays/stops the selected line, X or Y
+opens details, B or Back closes, and the shoulders switch views.
 Left/Right also switches views when the search field is not focused. Keyboard
 editing shortcuts and mouse input remain available. The normal ScummVM GUI
 keymap is restored on exit; these bindings do not replace gameplay controls.
@@ -357,10 +369,10 @@ journal; earlier dialogue cannot be reconstructed. Saves containing history use
 format v10 (v11 when a route position is recorded) and require a compatible build of this fork. The most recent
 16,384 entries are retained. Disabling recording keeps existing entries.
 
-The Decisions view is a record of choices in the loaded save. **Routes** shows
+The Choices view is a record of choices in the loaded save. **Flow** shows
 the connected discovery graph across playthroughs. Its navy, ivory and brass
 cards distinguish scenes, decisions, the current position and unexplored replies.
-Routes opens in an adaptive overview of compact S/D/E/? tiles. Blue scene tiles,
+Flow opens in an adaptive overview of compact S/D/E/? tiles. Blue scene tiles,
 brass decisions and muted red endings distinguish discovered node types; the
 current playthrough's connecting path is teal and the selected tile has an ivory
 border. Unknown replies remain grey. Switch to Cards for readable node labels
@@ -371,17 +383,22 @@ Only encountered dialogue and offered choices are shown; undiscovered outcomes
 remain anonymous. A visited reply with no subsequent discovery is labelled
 "To be continued", rather than being presented as an ending.
 
-In Routes, D-pad/left stick or arrow keys follow the parent/child path with
+In Flow, D-pad/left stick or arrow keys follow the parent/child path with
 Up/Down and move between sibling branches with Left/Right. Drag the map to pan;
 the mouse wheel and Page Up/Down scroll vertically. Home returns to the current
 route position. A or Y opens details, X requests a scene revisit, B/Back closes,
 and LB/RB switches views. Keyboard Enter opens details, Space replays an available
 voice line and R requests a revisit. The footer buttons provide the same actions
 for mouse and touch. R3 or Z switches Overview/Cards; L3 or the Current button
-returns to the active route position. In Routes the footer's second button
+returns to the active route position. In Flow the footer's second button
 switches Overview/Cards; voice replay remains available in Read or with Space.
-Handheld overlays give the map more room and open details
-on a separate page.
+At 480x272, all views use one tab row without a redundant title or permanent
+search row. Log and Choices have three footer actions: Read, Replay and Back.
+Flow retains on-screen Cards/Overview and Current buttons, so stick-click inputs
+are optional on PSP-style controllers. Details open on a separate scrolling page.
+Pointer selection, mouse wheel, touch dragging and scrollbar routing are tested
+on both desktop and handheld layouts. Hidden alternate views are moved out of
+the hit-test area so they cannot intercept transcript input.
 
 **Revisit** restores the checkpoint before the selected conversation began,
 after a confirmation. Start that conversation again to choose a different reply.

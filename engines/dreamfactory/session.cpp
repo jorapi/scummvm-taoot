@@ -44,6 +44,7 @@ bool Session::subtitlesEnabled() const {
 Session::Session(OSystem *system, SaveHost *saveHost) : display(system), runtime(this), sound(resources, system ? system->getMixer() : nullptr), crickets(sound), cursors(resources, system != nullptr), castSystem(resources, runtime), propSystem(resources, runtime), puppetSystem(resources, runtime), puppetSpeech(*this), stageSystem(resources, runtime, this), roomSystem(resources, runtime, stageSystem, *this), motion(castSystem, runtime), balls(propSystem, castSystem, roomSystem, runtime, playerHitbox), movies(resources, sound, display, pendingEvents, system), _system(system), _saveHost(saveHost), _random("dreamfactory") {}
 bool Session::init(const Common::FSNode &root) {
 	_root = root;
+	movies.setCursors(&cursors);
     _controlFocused = _controlHeld = _touchHeld = false;
 	movies.setHotspotHints(ConfMan.hasKey("dreamfactory_hotspot_hints") && ConfMan.getBool("dreamfactory_hotspot_hints"));
 	_hintValid = false; _hintTime = 0; _hintPoints.clear();
@@ -497,6 +498,7 @@ void Session::yieldFrame(bool cooperative) {
 	ScriptFrame context = runtime.eventFrame(Common::String(), Common::String());
 	if (_system) {
 		pollInput();
+		if (!runtime.busy() || runtime.isRunning("idle") || puppetChoices.active()) updateHoverCursor();
 		_system->updateScreen(); _system->delayMillis(10);
 		sampleTime();
 	} else _time += 10;
@@ -1386,6 +1388,19 @@ namespace DreamFactory {
 bool Session::touchControlsVisible() const {
 	return ConfMan.hasKey("dreamfactory_touch_controls") && ConfMan.getBool("dreamfactory_touch_controls") && roomSystem.current && roomSystem.visible && !roomSystem.moving && !roomSystem.turning && !puppetSystem.current && !movies.active() && !_dialogActive && !_pollingButton && !_paletteBlack && !screenBlack;
 }
+void Session::updateHoverCursor() {
+	if (movies.active()) return;
+	Common::String cursor;
+	if (puppetChoices.active() && puppetSystem.current) {
+		if (PuppetView::choiceAt(pointer.x, pointer.y, puppetSystem.current->choices.size()) >= 0) cursor = "hand";
+		cursors.hover(cursor); return;
+	}
+	if (!_dialogActive && !roomSystem.moving && !roomSystem.turning && !puppetSpeech.active() && !puppetChoices.active() && !screenBlack && !_paletteBlack) {
+		const Hit hit = hitTest(pointer.x, pointer.y);
+		if (hit.type == "actor" || hit.type == "prop" || hit.type == "painting" || hit.type == "button") cursor = "hand";
+	}
+	cursors.hover(cursor);
+}
 void Session::compositeControls(Bytes &rgba) {
 	if (touchControlsVisible())
 		drawTouchPad(rgba);
@@ -1442,6 +1457,7 @@ bool Session::focusControl(int32 direction) {
 	_controlHit = t.hit;
 	_controlFocused = true;
 	pointer = _controlPoint;
+	updateHoverCursor();
 	if (_system)
 		_system->warpMouse((_controlPoint.x * 640 + 511) / 512, (_controlPoint.y * 480 + 383) / 384);
 	presentWorld();
@@ -1704,8 +1720,8 @@ bool Session::step() {
 	// idle owns the shipped timing, cursor routing and calctime call. It yields
 	// through forceupdate, so queued input waits until this handler finishes.
 	for (uint32 i = 0; i < bootScripts.size(); ++i) if (bootScripts[i]->script.handlers.contains("idle")) {
-		runtime.run(*bootScripts[i], "idle"); presentPuppet(); return !_stopped && runtime.error.empty();
+		runtime.run(*bootScripts[i], "idle"); updateHoverCursor(); presentPuppet(); return !_stopped && runtime.error.empty();
 	}
-	yieldFrame(true); return !_stopped && runtime.error.empty();
+	updateHoverCursor(); yieldFrame(true); return !_stopped && runtime.error.empty();
 }
 }
