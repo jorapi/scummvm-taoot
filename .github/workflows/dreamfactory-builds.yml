@@ -76,7 +76,8 @@ jobs:
           Copy-Item dists/engine-data/fonts.dat,COPYING,COPYRIGHT build-dreamfactory/artifacts/windows/
           Copy-Item gui/themes/scumm*.zip build-dreamfactory/artifacts/windows/
           Copy-Item devtools/dreamfactory/Run-Software-Renderer.cmd build-dreamfactory/artifacts/windows/
-          Copy-Item devtools/dreamfactory/ENHANCEMENTS.md,devtools/dreamfactory/README.md,README.md build-dreamfactory/artifacts/windows/
+          Copy-Item devtools/dreamfactory/ENHANCEMENTS.md,README.md build-dreamfactory/artifacts/windows/
+          Copy-Item devtools/dreamfactory/README.md build-dreamfactory/artifacts/windows/PLATFORMS.md
           foreach ($package in Get-ChildItem build-dreamfactory/vcpkg_installed/x64-windows/share -Directory) {
             $copyright = Join-Path $package.FullName copyright
             if (Test-Path -LiteralPath $copyright) {
@@ -144,7 +145,7 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
-      - uses: android-actions/setup-android@v3
+      - uses: android-actions/setup-android@v4
       - name: Install native build prerequisites
         run: sudo apt-get update && sudo apt-get install -y cmake pkg-config
       - name: Install matching platform and NDK

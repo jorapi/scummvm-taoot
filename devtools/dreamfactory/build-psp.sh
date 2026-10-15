@@ -12,9 +12,10 @@ export CXXFLAGS="${CXXFLAGS:-} -ffile-prefix-map=$src=/scummvm -fdebug-prefix-ma
 mkdir -p "$out" "$src/build-dreamfactory/artifacts"
 cd "$out"
 "$src/configure" --host=psp --disable-all-engines --enable-engine=dreamfactory \
-  --enable-highres --enable-16bit --disable-debug --enable-release
+  --enable-highres --disable-debug --enable-release
 # Fail rather than silently packaging a build with the engine/TTF support omitted.
 grep -Eq '^ENABLE_DREAMFACTORY[[:space:]]*[:?+]?=[[:space:]]*STATIC_PLUGIN' config.mk
 grep -q '#define USE_FREETYPE2' config.h
+grep -q '#define USE_RGB_COLOR' config.h
 make -j3 scummvm_psp.zip
 cp scummvm_psp.zip "$src/build-dreamfactory/artifacts/dreamfactory-psp-experimental.zip"
