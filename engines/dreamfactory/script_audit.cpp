@@ -26,6 +26,7 @@
 #include "graphics/paletteman.h"
 #include "graphics/cursorman.h"
 #include "graphics/fonts/ttf.h"
+#include "image/bmp.h"
 namespace DreamFactory {
 static bool collectFiles(const Common::FSNode &node, Common::FSList &files, uint32 depth = 0) {
 	Common::FSList children;
@@ -493,7 +494,58 @@ bool auditPuppetSession(const Common::FSNode &root, OSystem *backend) {
 		if (r.value.number() != 1 || !gfx.runtime.error.empty() || !observer.heard || capture.empty() || !gfx.sound.done(true)) { warning("PUPPET DISPLAY FAIL authored speech %s", gfx.runtime.error.c_str()); return false; }
 	}
 	Common::DumpFile snapshot; if (!snapshot.open(root.getChild("display-preview.rgba")) || snapshot.write(capture.data(), capture.size()) != capture.size()) return false;
-	warning("PUPPET AUTHORED HOST PASS real portrait speech animation caption choices native RGB capture"); return true;
+	warning("PUPPET AUTHORED HOST PASS real portrait speech animation caption choices native RGB capture");
+	const bool hadJournal = ConfMan.hasKey("dreamfactory_journal", Common::ConfigManager::kTransientDomain);
+	const Common::String oldJournal = hadJournal ? ConfMan.get("dreamfactory_journal", Common::ConfigManager::kTransientDomain) : Common::String();
+	ConfMan.setBool("dreamfactory_journal", true, Common::ConfigManager::kTransientDomain);
+	Session journalSession(backend);
+	if (!journalSession.init(root) || !journalSession.puppetSystem.open("speech")) return false;
+	class JournalSource : public Common::EventSource {
+	public:
+		OSystem *backend; Session &session; Common::FSNode root; uint32 phase = 0, start = 0; uint64 logicalStart = 0;
+		JournalSource(OSystem *b, Session &s, const Common::FSNode &r) : backend(b), session(s), root(r) { backend->getEventManager()->getEventDispatcher()->registerSource(this, false); }
+		~JournalSource() { backend->getEventManager()->getEventDispatcher()->unregisterSource(this); }
+		bool allowMapping() const override { return false; }
+		bool pollEvent(Common::Event &event) override {
+			if (!phase && session.puppetSpeech.active()) {
+				start = backend->getMillis(); logicalStart = session.elapsedMillis(); ++phase; event.type = Common::EVENT_CUSTOM_ENGINE_ACTION_START; event.customType = kOpenJournal; return true;
+			}
+			const uint32 elapsed = backend->getMillis() - start;
+			if (phase && elapsed > 5000) { event.type = Common::EVENT_QUIT; return true; }
+			if (phase >= 1 && phase <= 3 && session.dialogActive() && elapsed >= phase * 250) {
+				if (phase < 3) {
+					Graphics::Surface overlay; overlay.create(backend->getOverlayWidth(), backend->getOverlayHeight(), backend->getOverlayFormat());
+					backend->grabOverlay(overlay);
+					Common::DumpFile preview;
+					if (preview.open(root.getChild(phase == 1 ? "journal-preview.bmp" : "journal-detail.bmp"))) Image::writeBMP(preview, overlay);
+					overlay.free();
+				}
+				event.type = Common::EVENT_KEYDOWN; event.kbd.keycode = phase++ == 1 ? Common::KEYCODE_RETURN : Common::KEYCODE_ESCAPE; return true;
+			}
+			return false;
+		}
+	};
+	const uint32 journalStarted = backend->getMillis();
+	{
+		JournalSource source(backend, journalSession, root);
+		if (journalSession.runtime.run(test, "speak").value.number() != 42 || source.phase != 4 || backend->getMillis() - journalStarted < 750 || journalSession.elapsedMillis() - source.logicalStart > 600) return false;
+	}
+	if (journalSession.journal.entries.size() != 1 || journalSession.journal.entries[0].text != "Hello there" || !journalSession.journal.entries[0].file.equalsIgnoreCase("flat/speech.pup")) return false;
+	Common::SharedPtr<AudioClip> replay;
+	const auto owner = journalSession.puppetSystem.current;
+	const uint32 queueSize = owner->voiceQueue.size();
+	if (!journalSession.journalAudio(journalSession.journal.entries[0], replay) || replay->samples.size() != 200 || journalSession.puppetSystem.current != owner || owner->voiceQueue.size() != queueSize || journalSession.journal.entries.size() != 1) return false;
+	Common::Event journalChoice; journalChoice.type = Common::EVENT_CUSTOM_ENGINE_ACTION_START; journalChoice.customType = kPadUp;
+	backend->getEventManager()->pushEvent(journalChoice); journalChoice.customType = kPadInteract; backend->getEventManager()->pushEvent(journalChoice);
+	if (journalSession.runtime.run(test, "choices").value.number() != 902 || journalSession.journal.entries.size() != 2) return false;
+	const JournalEntry &decision = journalSession.journal.entries[1];
+	if (decision.selected != 1 || decision.choices.size() != 2 || decision.text != "answer") return false;
+	ConfMan.setBool("dreamfactory_journal", false, Common::ConfigManager::kTransientDomain);
+	if (journalSession.runtime.run(test, "speak").value.number() != 42 || journalSession.journal.entries.size() != 2) return false;
+	if (hadJournal) ConfMan.set("dreamfactory_journal", oldJournal, Common::ConfigManager::kTransientDomain);
+	else ConfMan.removeKey("dreamfactory_journal", Common::ConfigManager::kTransientDomain);
+	warning("JOURNAL PASS heard lines independent replay pause modal reading recording toggle");
+	return true;
 }
 bool auditPuppets(const Common::FSNode &root) {
 	Common::FSList files; if (!corpusFiles(root, files)) return false; uint32 total = 0, failures = 0;
@@ -1926,6 +1978,12 @@ bool SoundAudit::enhancements(const Common::FSNode &root, OSystem *backend) {
 	if (!session.loadState(saved, error)) { warning("ENHANCEMENT MUSIC FAIL save/load %s", error.c_str()); return false; }
 	ThemeQueue restored;
 	if (!sound.themeSnapshot(restored) || restored.parts.empty() || restored.parts.size() > 2 + originalPrefix || restored.repeat != int32(restored.parts.size() - 1) || restored.parts.back().clip->channels != 2 || restored.parts.back().clip->samples[0] != 401) return false;
+	JournalEntry journalTrack; journalTrack.text = "Heard line"; journalTrack.speaker = "Speaker";
+	session.journal.add(journalTrack);
+	if (!session.saveState(saved, error) || READ_LE_UINT32(saved.data() + 4) != 10 || !session.loadState(saved, error)) return false;
+	if (session.journal.entries.size() != 1 || session.journal.entries[0].text != "Heard line" || !sound.themeSnapshot(restored) || restored.parts.back().clip->channels != 2) return false;
+	session.journal.entries.clear();
+	warning("JOURNAL STEREO SAVE PASS v10 history and remastered stereo music restored together");
 	sound.haltTheme();
 	warning("ENHANCEMENT MUSIC PASS edition identity stereo channels authored queue intro loop boundaries invalid missing traversal fallback original v8 stereo v9 embedded save without pack");
 	return true;
@@ -2675,6 +2733,24 @@ bool auditStageSession(const Common::FSNode &root, OSystem *system) {
     if(controls.pendingEvents.empty() || controls.pendingEvents[0].type!=Common::EVENT_LBUTTONDOWN) return false;
     if(hadTouch) ConfMan.set("dreamfactory_touch_controls",oldTouch,Common::ConfigManager::kTransientDomain); else ConfMan.removeKey("dreamfactory_touch_controls",Common::ConfigManager::kTransientDomain);
     warning("INPUT CONTROLS PASS gamepad hotspot focus paired click authored movement touch bounds pad pixels original click fallback during movement");
+	Session journalSave;
+	if (!journalSave.init(root) || !journalSave.stageSystem.open("display", nullptr, false)) return false;
+	Bytes withoutJournal, withJournal; Common::String journalError;
+	if (!journalSave.saveState(withoutJournal, journalError)) { warning("JOURNAL SAVE FAIL baseline %s", journalError.c_str()); return false; }
+	JournalEntry entry; entry.speaker = "Speaker"; entry.file = "speech.pup"; entry.ident = "line.0";
+	entry.room = "Room"; entry.time = 12345; entry.bookmarked = true; entry.text = "Chosen reply";
+	entry.choices.push_back("Another reply"); entry.choices.push_back(entry.text); entry.selected = 1;
+	journalSave.journal.add(entry);
+	if (!journalSave.saveState(withJournal, journalError) || READ_LE_UINT32(withJournal.data() + 4) != 10) { warning("JOURNAL SAVE FAIL encode %s", journalError.c_str()); return false; }
+	journalSave.journal.entries.clear();
+	if (!journalSave.loadState(withJournal, journalError) || journalSave.journal.entries.size() != 1) { warning("JOURNAL SAVE FAIL decode %s", journalError.c_str()); return false; }
+	const JournalEntry &restoredEntry = journalSave.journal.entries[0];
+	if (!restoredEntry.bookmarked || restoredEntry.selected != 1 || restoredEntry.choices != entry.choices || restoredEntry.text != entry.text || restoredEntry.time != 12345 || restoredEntry.file != entry.file) return false;
+	journalSave.journal.entries[0].selected = 5;
+	Bytes invalidJournal;
+	if (journalSave.saveState(invalidJournal, journalError)) return false;
+	if (!journalSave.loadState(withoutJournal, journalError) || !journalSave.journal.entries.empty()) { warning("JOURNAL SAVE FAIL legacy %s", journalError.c_str()); return false; }
+	warning("JOURNAL SAVE PASS bounded v10 history choices bookmarks timestamps invalid row rejection old-save compatibility");
 
 	return true;
 }

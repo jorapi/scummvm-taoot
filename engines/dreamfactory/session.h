@@ -2,6 +2,7 @@
 #ifndef DREAMFACTORY_SESSION_H
 #define DREAMFACTORY_SESSION_H
 #include "dreamfactory/resources.h"
+#include "dreamfactory/journal.h"
 #include "dreamfactory/runtime.h"
 #include "dreamfactory/sound.h"
 #include "dreamfactory/crickets.h"
@@ -39,6 +40,8 @@ public:
 	void resetClock();
 	void excludeWallTime(uint32 started);
 	bool subtitlesEnabled() const;
+	Journal journal;
+	bool journalAudio(const JournalEntry &entry, Common::SharedPtr<AudioClip> &clip);
 	// One main-loop pass: deliver one queued gesture, otherwise run boot idle.
 	bool step();
 	void postEvent(const Common::Event &event);
@@ -101,6 +104,7 @@ private:
 	bool _stopped = false;
 	bool _scriptQuit = false;
 	bool _dialogActive = false;
+	bool _journalRequested = false;
 	uint64 _dialogGeneration = 0;
 	bool _pollingButton = false;
 	uint64 _buttonQuerySequence = 0;

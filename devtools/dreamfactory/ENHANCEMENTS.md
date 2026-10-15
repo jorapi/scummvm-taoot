@@ -309,3 +309,29 @@ to establish that assets for a scene survive or that restoring it is appropriate
 There is also a cataloged [September 29, 1995 second-draft script binder](https://library.gamehistory.org/repositories/2/digital_objects/10382).
 The digital archive viewer currently exposes only its page shell through the
 text browsing tool; no claim of having reviewed those scan contents is made.
+
+## Dialogue journal
+
+Recording is enabled by default and can be disabled with **Record dialogue
+journal** in ScummVM's game options. Open the journal with **J** or controller
+**Back/Select**; the binding is configurable in ScummVM's keymapper.
+
+The Journal view contains conversation lines that started playing and replies
+you selected. Search matches character names and text. Use Read for the complete
+text, Replay (or double-click a line) for its original voice recording, and Star
+to bookmark an entry. The Decisions view shows encountered reply sets and the
+choice you made, without revealing later branches. Some replies have no voice
+recording. Movie/radio audio without conversation text is not transcribed.
+
+Browsing pauses gameplay and existing audio. Replays use a separate speech
+channel and never rerun dialogue scripts. Closing the journal resumes the game.
+The journal is unavailable during movies.
+
+History and bookmarks belong to the loaded save. Old saves load with an empty
+journal; earlier dialogue cannot be reconstructed. Saves containing history use
+format v10 and require a journal-capable build of this fork. The most recent
+16,384 entries are retained. Disabling recording keeps existing entries.
+
+The Decisions view is a record of choices, not a complete branching flowchart.
+Cross-route discovery tracking and checkpoint-based branch replay are follow-up
+work; this version does not jump into suspended conversation scripts.

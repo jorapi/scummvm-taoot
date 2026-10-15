@@ -376,6 +376,14 @@ bool SaveState::sync(Session &g, StateIO &io) {
 		for (uint32 i = 0; i < g.balls.balls.size(); ++i) if (g.balls.balls[i])
 			for (uint32 j = 0; j < i; ++j) if (g.balls.balls[j] && g.balls.balls[j]->name.equalsIgnoreCase(g.balls.balls[i]->name)) io.good = false;
 	}
+	if (io.formatVersion >= 10) {
+		io.array(g.journal.entries, 16384, [&](JournalEntry &entry) {
+			io.str(entry.speaker); io.str(entry.room); io.str(entry.file); io.str(entry.ident); io.str(entry.text);
+			io.u64(entry.time); io.flag(entry.bookmarked); io.i32(entry.selected);
+			io.array(entry.choices, 5, [&](Common::String &choice) { io.str(choice); });
+			if (entry.selected < -1 || (entry.selected >= 0 && uint32(entry.selected) >= entry.choices.size())) io.good = false;
+		});
+	}
 	return io.good && !io.s.err() && g.runtime.error.empty();
 }
 
@@ -395,6 +403,7 @@ void SaveState::commit(Session &g, Session &p, const StateIO &state) {
 	g.scheduler.loops = p.scheduler.loops; g.scheduler.frame = p.scheduler.frame; g.scheduler._time = p.scheduler._time; g.scheduler._service = p.scheduler._service; g.scheduler._display = p.scheduler._display;
 	g._time = p._time; g._lastMillis = g._system ? g._system->getMillis() : 0; g._random.setSeed(p._random.getSeed());
 	g.frameRate = p.frameRate; g.cameraHi = p.cameraHi; g.menuVisible = p.menuVisible; g.keyAborts = p.keyAborts; g.puppetGrab = p.puppetGrab;
+	g.journal = p.journal;
 	g.lastResult = p.lastResult; g.playerHitbox = p.playerHitbox; g.puppetParams = p.puppetParams;
 	g._paletteKind = p._paletteKind; g._roomPalette = p._roomPalette; g._stagePalette = p._stagePalette; g._puppetPalette = p._puppetPalette; g._puppetArtPalette = p._puppetArtPalette; memcpy(g.displayPalette, p.displayPalette, 768); g.textOverlay = p.textOverlay;
 	g._paletteBlack = g.screenBlack = g.pointerDown = g._stopped = g._scriptQuit = false; g._pointerButtons = 0; g._controlFocused = g._controlHeld = g._touchHeld = false;
@@ -446,15 +455,16 @@ bool Session::canAutosave() const {
 	return canSave() && roomSystem.current && roomSystem.visible;
 }
 bool Session::canSave() const {
-	return !runtime.busy() && !pointerDown && !_paletteBlack && !screenBlack && !puppetSystem.current && !movies.active() && !roomSystem.moving && !roomSystem.turning && stageSystem.current;
+	return !_dialogActive && !runtime.busy() && !pointerDown && !_paletteBlack && !screenBlack && !puppetSystem.current && !movies.active() && !roomSystem.moving && !roomSystem.turning && stageSystem.current;
 }
 bool Session::saveState(Bytes &bytes, Common::String &error) {
 	error.clear(); bytes.clear();
 	if (puppetSystem.current || puppetSpeech.active() || puppetChoices.active() || movies.active() || roomSystem.moving || roomSystem.turning || !stageSystem.current) { error = "The game is in a modal interaction"; return false; }
 	Common::MemoryWriteStreamDynamic payload(DisposeAfterUse::YES); StateIO io(nullptr, &payload);
-	// Original mono gameplay keeps writing v8. Stereo replacement music needs
-	// v9's channel count; its PCM is embedded so saves do not depend on a pack.
+	// Empty journals retain v8/v9 compatibility. History-bearing saves use v10.
+	// Stereo PCM remains embedded, independent of the enhancement pack.
 	if (SaveState::stereoTheme(sound)) io.formatVersion = 9;
+	if (!journal.entries.empty()) io.formatVersion = 10;
 	if (!SaveState::sync(*this, io) || payload.size() > 128 * 1024 * 1024) { error = "Cannot encode game state"; return false; }
 	Common::MemoryReadStream content(payload.getData(), uint32(payload.size())); byte digest[16]; Common::computeStreamMD5(content, digest);
 	Common::MemoryWriteStreamDynamic out(DisposeAfterUse::YES); out.writeUint32BE(MKTAG('D','F','S','V')); out.writeUint32LE(io.formatVersion); out.writeUint32LE(uint32(payload.size())); out.write(digest, 16); out.write(payload.getData(), uint32(payload.size()));
@@ -465,7 +475,7 @@ bool Session::loadState(const Bytes &bytes, Common::String &error) {
 	if (bytes.size() < 28 || bytes.size() > 128 * 1024 * 1024 + 28) { error = "Invalid save size"; return false; }
 	Common::MemoryReadStream in(bytes.data(), bytes.size());
 	const uint32 magic = in.readUint32BE(), formatVersion = in.readUint32LE(), payloadSize = in.readUint32LE();
-	if (magic != MKTAG('D','F','S','V') || (formatVersion < 1 || formatVersion > 9) || payloadSize != bytes.size() - 28) { error = "Unsupported DreamFactory save"; return false; }
+	if (magic != MKTAG('D','F','S','V') || (formatVersion < 1 || formatVersion > 10) || payloadSize != bytes.size() - 28) { error = "Unsupported DreamFactory save"; return false; }
 	byte expected[16], digest[16]; in.read(expected, 16); Common::computeStreamMD5(in, digest); in.seek(28);
 	if (memcmp(expected, digest, 16)) { error = "Save checksum mismatch"; return false; }
 	Session prepared;

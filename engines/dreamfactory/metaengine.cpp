@@ -15,6 +15,7 @@ static const ADExtraGuiOptionsMap optionsList[] = {
 	{GUIO_GAMEOPTIONS4, {_s("Enhanced dialogue controls"), _s("Select replies with Up/Down and Enter or number keys; tap or confirm to skip speech"), "dreamfactory_dialogue_controls", false, 0, 0}},
 	{GUIO_GAMEOPTIONS5, {_s("Show hotspot hints"), _s("Show markers for sampled clickable objects; the mapped hotspot action toggles visibility"), "dreamfactory_hotspot_hints", false, 0, 0}},
 	{GUIO_GAMEOPTIONS6, {_s("Touch direction pad"), _s("Show walking and turning buttons in navigable world views"), "dreamfactory_touch_controls", false, 0, 0}},
+	{GUIO_GAMEOPTIONS7, {_s("Record dialogue journal"), _s("Keep heard lines and encountered decisions in your saves; open with J or controller Back"), "dreamfactory_journal", true, 0, 0}},
 	AD_EXTRA_GUI_OPTIONS_TERMINATOR};
 class DreamFactoryMetaEngine : public AdvancedMetaEngine<ADGameDescription> {
 public:
@@ -66,6 +67,11 @@ public:
 			}
 		}
 		Common::Keymap *extras = maps[0];
+		Common::Action *journal = new Common::Action("DFJOURNAL", _("Dialogue journal"));
+		journal->setCustomEngineActionEvent(DreamFactory::kOpenJournal);
+		journal->addDefaultInputMapping("j");
+		journal->addDefaultInputMapping("JOY_BACK");
+		extras->addAction(journal);
 		Common::Action *repeat = new Common::Action("DFREPEAT", _("Repeat last dialogue"));
 		repeat->setKeyEvent(Common::KEYCODE_F7);
 		repeat->addDefaultInputMapping("F7");

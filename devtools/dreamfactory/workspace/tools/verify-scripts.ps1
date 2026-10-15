@@ -66,6 +66,8 @@ dreamfactory_stage_fixtures=$root/build/stage-session-$edition
         $text = Get-Content $log -Raw
         if ($text -notmatch "$($auditKind.ToUpper()) PASS") { throw "$edition $auditKind audit failed; inspect $log" }
         if ($Stars -and $text -notmatch 'STAR READER PASS') { throw "$edition star reader checks failed; inspect $log" }
+        if ($Puppets -and $text -notmatch 'JOURNAL PASS') { throw "$edition journal capture/replay/modal UI checks failed; inspect $log" }
+        if ($Stages -and $text -notmatch 'JOURNAL SAVE PASS') { throw "$edition journal save checks failed; inspect $log" }
         if ($Puppets -and $text -notmatch 'GAMEPAD DIALOGUE PASS') { throw "$edition gamepad dialogue checks failed; inspect $log" }
         if ($Stages -and $text -notmatch 'INPUT CONTROLS PASS') { throw "$edition touch/gamepad checks failed; inspect $log" }
         if ($Puppets -and ($text -notmatch 'DIALOGUE CONTROLS HOST PASS' -or $text -notmatch 'DIALOGUE TOUCH PASS' -or $text -notmatch 'DIALOGUE ACCESSIBILITY PASS')) { throw "$edition dialogue enhancement checks failed; inspect $log" }

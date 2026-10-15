@@ -24,7 +24,7 @@ namespace DreamFactory {
 void DreamFactoryEngine::pauseEngineIntern(bool pause) { Engine::pauseEngineIntern(pause); if (!pause && _session) _session->resetClock(); }
 bool DreamFactoryEngine::canSaveGameStateCurrently(Common::U32String *) { return _session && (_scriptSave || _session->canSave()); }
 bool DreamFactoryEngine::canSaveAutosaveCurrently() { return _session && _session->canAutosave(); }
-bool DreamFactoryEngine::canLoadGameStateCurrently(Common::U32String *) { return _session && !_session->movies.active() && !_session->puppetSpeech.active() && !_session->puppetChoices.active(); }
+bool DreamFactoryEngine::canLoadGameStateCurrently(Common::U32String *) { return _session && !_session->dialogActive() && !_session->movies.active() && !_session->puppetSpeech.active() && !_session->puppetChoices.active(); }
 bool DreamFactoryEngine::saveGame() {
 	_scriptSave = true;
 	const bool diagnostic = ConfMan.hasKey("dreamfactory_boot_trace") && ConfMan.getBool("dreamfactory_boot_trace") && ConfMan.hasKey("dreamfactory_boot_dialog_slot");

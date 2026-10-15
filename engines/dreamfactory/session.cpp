@@ -50,6 +50,7 @@ bool Session::init(const Common::FSNode &root) {
 	_time = 0; _lastMillis = _system ? _system->getMillis() : 0; _paletteBlack = false;
 	runtime.abandon(); runtime.globals.clear(); runtime.fallbacks.clear(); runtime.error.clear(); bootScripts.clear();
 	puppetParams.clear(); playerHitbox = Common::Point(); cameraHi = 0; memset(displayPalette, 0, sizeof(displayPalette)); lastResult = Value();
+	journal.entries.clear(); _journalRequested = false;
 	pointer = Common::Point(); _pointerButtons = 0; pointerDown = _stopped = _scriptQuit = _dialogActive = false;
 	frameRate = 3; menuVisible = keyAborts = puppetGrab = screenBlack = false;
 	Bytes data; Archive boot;
@@ -1130,6 +1131,16 @@ void Session::presentPuppet() {
 void Session::speakPuppet(const Common::String &ident, ScriptFrame &frame, bool queue) {
 	if (!puppetSpeech.start(puppetSystem.current, ident, 0, queue)) { runtime.fail(puppetSpeech.error); return; }
 	if (!puppetSpeech.active()) return;
+	if (queue && puppetSystem.current && !puppetSystem.current->subtitle.empty() &&
+		(!ConfMan.hasKey("dreamfactory_journal") || ConfMan.getBool("dreamfactory_journal"))) {
+		const auto puppet = puppetSystem.current;
+		JournalEntry entry;
+		entry.speaker = puppetSystem.name(); entry.file = resources.sourceName(puppet->file);
+		const int32 line = puppet->data.line(ident, true);
+		if (line >= 0) entry.ident = puppet->data.lines[line].ident;
+		entry.text = puppet->subtitle; entry.time = _time; entry.room = roomSystem.current ? roomSystem.current->data.name : Common::String();
+		journal.add(entry);
+	}
 	if (!_system) { puppetSpeech.abandon(); runtime.fail("Puppet speech requires a display/audio host"); return; }
 	// Loading/decoding time is outside this line's authored playback clock.
 	presentPuppet(); sampleTime(); const uint64 started = _time; bool tapStarted = false;
@@ -1228,6 +1239,21 @@ int32 Session::waitPuppet(ScriptFrame &frame) {
 		}
 	}
 	const int32 answer = puppetChoices.answer();
+	if (runtime.current(frame) && puppetSystem.current == puppet &&
+		(!ConfMan.hasKey("dreamfactory_journal") || ConfMan.getBool("dreamfactory_journal"))) {
+		JournalEntry entry;
+		entry.speaker = puppetSystem.name(); entry.file = resources.sourceName(puppet->file);
+		entry.room = roomSystem.current ? roomSystem.current->data.name : Common::String(); entry.time = _time;
+		for (uint32 i = 0; i < puppet->choices.size(); ++i) {
+			entry.choices.push_back(puppet->choices[i].text);
+			if (answer >= 0 && int32(i) == puppet->lastChosen) {
+				entry.selected = i; entry.text = puppet->choices[i].text;
+				const int32 line = puppet->data.textLine(entry.text);
+				if (line >= 0) entry.ident = puppet->data.lines[line].ident;
+			}
+		}
+		journal.add(entry);
+	}
 	if (puppetChoices.active()) puppetChoices.escape();
 	return answer;
 }
@@ -1431,6 +1457,10 @@ bool Session::controlEvent(const Common::Event &event) {
 }
 void Session::postEvent(const Common::Event &event) {
     if (controlEvent(event)) return;
+	if (event.type == Common::EVENT_CUSTOM_ENGINE_ACTION_START && event.customType == kOpenJournal) {
+		if (!movies.active()) _journalRequested = true;
+		return;
+	}
 	if (event.type == Common::EVENT_CUSTOM_ENGINE_ACTION_START && event.customType == 1) {
 		if (ConfMan.hasKey("dreamfactory_hotspot_hints") && ConfMan.getBool("dreamfactory_hotspot_hints")) {
 			movies.setHotspotHints(!movies.hotspotHints()); _hintValid = false; _hintPoints.clear(); _hintTime = 0;
@@ -1465,6 +1495,19 @@ void Session::postEvent(const Common::Event &event) {
 void Session::pollInput() {
 	if (!_system) return;
 	Common::Event event; while (_system->getEventManager()->pollEvent(event)) postEvent(event);
+	if (_journalRequested && !_dialogActive && !_stopped) {
+		_journalRequested = false;
+		pendingEvents.clear();
+		const uint32 started = _system->getMillis();
+		_dialogActive = true;
+		openJournal(*this);
+		_dialogActive = false;
+		pointerDown = false; _pointerButtons = 0; _controlHeld = _touchHeld = false;
+		excludeWallTime(started);
+		if (_system->getEventManager()->shouldQuit() || _system->getEventManager()->shouldReturnToLauncher()) {
+			_stopped = true; runtime.abandon();
+		}
+	}
 }
 bool Session::pointInRoom(int32 x, int32 y) const {
 	return roomSystem.current && roomSystem.visible && x >= 0 && y >= 0 && x < roomSystem.frame.width && y < roomSystem.frame.height && !roomSystem.frame.pixels.empty();

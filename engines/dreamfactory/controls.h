@@ -4,7 +4,8 @@
 #include "common/events.h"
 #include "dreamfactory/archive.h"
 namespace DreamFactory {
-enum ControlAction { kPadUp = 100,
+enum ControlAction { kOpenJournal = 2,
+					 kPadUp = 100,
 					 kPadDown,
 					 kPadLeft,
 					 kPadRight,
