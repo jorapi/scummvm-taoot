@@ -2,14 +2,15 @@
 # Uses authored navigation and dialogue through ordinary native input events.
 param([string[]]$ExtraActions = @(), [string[]]$Choices = @(), [int]$TimeoutSeconds = 300)
 $ErrorActionPreference = 'Stop'
+function Plan($room, $from, $to) {
+    $route = @(& node "$PSScriptRoot/room-route.mjs" demo $room $from $to | ForEach-Object { ($_ -split ' # ')[0] })
+    if ($LASTEXITCODE) { throw "Cannot plan the demo $room route" }
+    return $route
+}
 $missionChoices = @('dpenny.pup:101', 'dpenny.pup:101') + $Choices
-$missionActions = @(
-    'key uparrow', 'key rightarrow', 'key rightarrow', 'key uparrow',
-    'key rightarrow', 'key rightarrow', 'key uparrow', 'key rightarrow',
-    'key uparrow', 'key rightarrow', 'key uparrow',
-    'key rightarrow', 'key rightarrow',
-    'expectset gstair1', 'expectscene Scene15', 'expectview View27',
-    'key leftarrow', 'key uparrow', 'key rightarrow', 'key rightarrow',
+$missionActions = @(Plan GSTAIR2 View23 View73) + @(
+    'expectset gstair1', 'expectview View27'
+) + @(Plan GSTAIR1 View27 View38) + @(
     'expectscene Scene18', 'expectview View38',
     'clickon actor penny', 'expectglobal phase 1'
 ) + $ExtraActions

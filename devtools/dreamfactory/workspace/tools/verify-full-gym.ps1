@@ -1,9 +1,10 @@
 # Walk from the boat-deck map destination to Penny's first mission briefing.
 param([string[]]$ExtraActions = @(), [string[]]$Choices = @(), [string[]]$ClickMovies = @(), [int]$TimeoutSeconds = 480)
 $ErrorActionPreference = 'Stop'
-$gymActions = @(
-    'key leftarrow', 'expectview View31', 'key uparrow', 'expectscene Scene19',
-    'key rightarrow', 'key rightarrow', 'expectview View43',
+$stairRoute = @(& node "$PSScriptRoot/room-route.mjs" full GSTAIR1 View47 View43 | ForEach-Object { ($_ -split ' # ')[0] })
+if ($LASTEXITCODE) { throw 'Cannot plan the gym approach' }
+$gymActions = $stairRoute + @(
+    'expectview View43',
     'clickon painting door', 'key uparrow', 'expectset veststbd', 'expectview View18',
     'key rightarrow', 'expectview View21', 'clickon painting door',
     'key uparrow', 'expectset gym', 'expectview View47',

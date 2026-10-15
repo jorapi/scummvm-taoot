@@ -360,9 +360,9 @@ the stored identity and avoiding guesses from internal resource filenames.
 
 The Choices view lists complete encountered reply sets in the full-width
 transcript, marking the chosen reply with `>`. Read opens a scrolling detail page
-for text longer than the screen. The three main views are Log, Choices and Flow;
-the separate Starred view and bookmark buttons have been removed. Existing
-bookmark fields are retained when loading and saving older history.
+for text longer than the screen. The four main views are Log, Choices, Flow and
+Leads. Track/Untrack in Log or Choices keeps a personal note in Leads, using the
+existing saved bookmark field; a separate Starred view is unnecessary.
 Search matches character names, locations, text and offered replies, with all
 search words required. Search is shown on taller overlays; compact screens
 dedicate that space to the transcript instead.
@@ -370,8 +370,11 @@ Some replies have no voice recording. Movie/radio audio without conversation
 text is not transcribed.
 
 Journal controller controls use a dedicated, configurable ScummVM GUI keymap:
-D-pad or left stick selects entries; A replays/stops the selected line, X or Y
-opens details, B or Back closes, and the shoulders switch views.
+D-pad or left stick selects entries; A replays/stops the selected line, Y opens
+details, X tracks/untracks a line, B or Back closes, and the shoulders switch
+views. In Leads, A/Y reads the selected lead and X requests one optional hint.
+Inside its reader, A replays the latest recorded evidence and X requests the
+next hint. Pointer buttons provide the same actions.
 Left/Right also switches views when the search field is not focused. Keyboard
 editing shortcuts and mouse input remain available. The normal ScummVM GUI
 keymap is restored on exit; these bindings do not replace gameplay controls.
@@ -552,7 +555,7 @@ rules, and remain usable with a controller at 480x272.
 5. Accessibility: implemented subtitle size, background opacity, speaker labels
    and verified shared audio controls. Native desktop/480x272 settings, caption
    layout and all three editions pass; physical handheld testing is outstanding.
-6. Journal: discovered clues, promises and unresolved leads with optional progressive hints.
+6. **Implemented:** discovery-gated leads, tracked notes and optional progressive reminders; native desktop/480x272 checks, authored briefings and a real item-delivery rewind pass.
 7. Map: visited rooms, current location, encountered characters and optional next-direction guidance.
 8. Ending hints: optional progressively more specific guidance based on discovered information.
 
@@ -632,6 +635,41 @@ Dust item/quest/cash/clock rewind, the shared autosave timer and pre-boot Contin
 Storage tests include torn writes, corruption, restart, stale selections and
 preservation of manual/route files. Native save formats remain unchanged.
 Physical Android/controller and PSP runtime testing remains outstanding.
+
+### Clues, promises and leads
+
+The journal's Leads view groups related heard lines into a small set of topics.
+The curated catalog covers Penny's Rubaiyat, painting and notebook discussions,
+the supplied demo's photograph assignment, and Dust's ring request, Sonoma's
+search and first-night lodging advice. It is not an exhaustive automatic quest
+log. Track any other recorded line or chosen reply to keep a personal note here.
+
+Topics unlock from specific source files and line identifiers in the loaded
+save's transcript. Item ownership or a profile-wide route discovery alone cannot
+unlock a topic. Repeated evidence is collapsed while retaining its latest
+recorded occurrence. A collected clue does not expose later plot details.
+If an old save has no transcript, its undisclosed topics stay hidden until you
+hear their relevant dialogue; existing saved bookmarks remain usable.
+
+Read opens the collected evidence without hints. Hint requests one reminder at
+a time, and reminders that refer to specific instructions require those lines
+to have been heard. The reader supports controller scrolling and replay of its
+latest recorded evidence. Requesting hints does not execute scripts, set story
+flags, transfer items, change timers or choose replies.
+
+Status reflects the current native snapshot. For example, Jones's accepted ring
+promise and the ring's actual owner distinguish a promise, a carried ring and a
+day-three delivery. Restoring an earlier checkpoint restores that earlier
+status even if a later outcome remains discovered in the flow profile. Unknown
+completion conditions are left as open/earlier leads instead of guessed.
+The existing journal/bookmark save format is unchanged.
+
+`tools/verify-journal-leads.ps1` combines native desktop/480x272 controller and
+pointer checks, original Titanic/demo briefings, Dust's actual ring exchanges,
+and an earlier-state restore after delivery. It requires the earned Dust
+schoolhouse-pages checkpoint. `-CollectOnly -EvidenceDirectory <folder>` verifies
+existing earned snapshots against the current executable and collects the
+native logs and screenshots. Physical handheld runtime remains untested.
 
 ### Dialogue replay
 

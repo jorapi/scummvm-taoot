@@ -25,8 +25,7 @@ foreach ($edition in $Editions) {
                 'clickon button ok','expectflat main 1','key rightarrow','key rightarrow',
                 'key rightarrow','expectview View61','clickon prop watch','expectowner watch frank',
                 'clickon prop map','expectowner map frank','key rightarrow','key rightarrow',
-                'expectview View63','key uparrow','expectscene Scene49','key leftarrow',
-                'key leftarrow','key leftarrow','key leftarrow','expectview View55'
+                'expectview View63','key uparrow','expectscene Scene49','expectview View55'
             )
         }
         full {

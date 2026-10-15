@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 #include "dreamfactory/journal.h"
+#include "dreamfactory/leads.h"
 #include "dreamfactory/controls.h"
 #include "dreamfactory/session.h"
 #include "common/system.h"
@@ -35,7 +36,7 @@ bool Session::journalAudio(const JournalEntry &entry, Common::SharedPtr<AudioCli
 	return true;
 }
 namespace {
-enum { kRead = 'JRed', kReplay = 'JPly', kStar = 'JStr', kSearch = 'JSrc', kLines = 'JLin', kPaths = 'JPth', kRoutes = 'JRte', kRouteSelect = 'JRSl', kRevisit = 'JRev', kRouteZoom = 'JRZm', kRouteCurrent = 'JRCr' };
+enum { kRead = 'JRed', kReplay = 'JPly', kStar = 'JStr', kSearch = 'JSrc', kLines = 'JLin', kPaths = 'JPth', kRoutes = 'JRte', kLeads = 'JLds', kHint = 'JHnt', kRouteSelect = 'JRSl', kRevisit = 'JRev', kRouteZoom = 'JRZm', kRouteCurrent = 'JRCr' };
 Common::U32String gameText(const Common::String &text) { return Common::U32String(text, Common::kWindows1252); }
 Common::U32String speakerText(const JournalEntry &entry) {
 	Common::String name = entry.speaker; name.trim();
@@ -92,7 +93,7 @@ public:
 		if (!_journal) {
 			_journal = new Common::Keymap(Common::Keymap::kKeymapTypeGui, "dreamfactory-journal-ui", _("DreamFactory journal"));
 			const char *ids[] = {"JNPLAY", "JNSTAR", "JNPREV", "JNNEXT", "JNREAD", "JNCLOSE", "JNBACK", "JNZOOM", "JNCURRENT"};
-			const char *labels[] = {_s("Replay line / open route details"), _s("Read line / revisit scene"), _s("Previous journal view"), _s("Next journal view"), _s("Read entry details"), _s("Close journal"), _s("Close journal"), _s("Switch route overview and cards"), _s("Focus current route position")};
+			const char *labels[] = {_s("Replay line / read lead or route"), _s("Track line / request hint / revisit scene"), _s("Previous journal view"), _s("Next journal view"), _s("Read entry details"), _s("Close journal"), _s("Close journal"), _s("Switch route overview and cards"), _s("Focus current route position")};
 			const char *inputs[] = {"JOY_A", "JOY_X", "JOY_LEFT_SHOULDER", "JOY_RIGHT_SHOULDER", "JOY_Y", "JOY_B", "JOY_BACK", "JOY_RIGHT_STICK", "JOY_LEFT_STICK"};
 			const uint32 commands[] = {kJournalReplay, kJournalStar, kJournalViewPrevious, kJournalViewNext, kJournalRead, kJournalClose, kJournalClose, kJournalZoom, kJournalCurrent};
 			for (uint32 i = 0; i < ARRAYSIZE(ids); ++i) {
@@ -257,8 +258,9 @@ public:
 // together, with ScummVM fonts, a period palette and independent scrolling.
 class TranscriptWidget : public GUI::Widget, public GUI::CommandSender {
 	struct Row { int top = 0, height = 0; };
-	Session &_session;
+	const Journal *_journal;
 	Replay &_replay;
+	bool _showContext = true;
 	Common::Array<uint32> _indices;
 	Common::Array<Row> _rows;
 	GUI::ScrollBarWidget *_scroll;
@@ -280,7 +282,7 @@ class TranscriptWidget : public GUI::Widget, public GUI::CommandSender {
 		_scroll->_currentPos = _position; _scroll->recalc(); markAsDirty();
 	}
 	Common::U32StringArray wrappedText(const JournalEntry &entry) const {
-		Common::U32String text = gameText(entry.text);
+		Common::U32String text = _showContext ? gameText(entry.text) : Common::U32String(entry.text, Common::kUtf8);
 		if (!entry.choices.empty()) { text = _("You: "); text += entry.selected < 0 ? _("[No reply chosen]") : gameText(entry.text); }
 		if (_showChoices && !entry.choices.empty()) {
 			text = _("Choices:");
@@ -294,7 +296,7 @@ class TranscriptWidget : public GUI::Widget, public GUI::CommandSender {
 		_rows.clear(); _total = 0;
 		for (uint32 index : _indices) {
 			Row row; row.top = _total;
-			const auto lines = wrappedText(_session.journal.entries[index]);
+			const auto lines = wrappedText(_journal->entries[index]);
 			row.height = lineHeight() * (MAX<uint32>(1, lines.size()) + 1) + 20;
 			_total += row.height; _rows.push_back(row);
 		}
@@ -314,20 +316,20 @@ protected:
 			if (r > l && b > t) surface.fillRect(Common::Rect(l, t, r, b), ink);
 		};
 		const Graphics::Font &font = bodyFont(), &bold = g_gui.getFont(T::kFontStyleBold);
-		if (_rows.empty()) font.drawString(&surface, _("No recorded dialogue in this view."), 12, 12, surface.w - 24, ivory, Graphics::kTextAlignLeft, 0, true);
+		if (_rows.empty()) font.drawString(&surface, _showContext ? _("No recorded dialogue in this view.") : _("No discovered or tracked leads yet."), 12, 12, surface.w - 24, ivory, Graphics::kTextAlignLeft, 0, true);
 		for (uint32 i = 0; i < _rows.size(); ++i) {
 			const Row &row = _rows[i]; const int top = row.top - _position;
 			if (top >= _h) break;
 			if (top + row.height <= 0) continue;
-			const JournalEntry &entry = _session.journal.entries[_indices[i]];
-			Common::U32String name(entry.bookmarked ? "* " : ""); name += speakerText(entry);
+			const JournalEntry &entry = _journal->entries[_indices[i]];
+			Common::U32String name(entry.bookmarked ? "* " : ""); name += _showContext ? speakerText(entry) : Common::U32String(entry.speaker, Common::kUtf8);
 			if (int(i) == _selected) { rect(4, top + 3, surface.w - 6, top + lineHeight() + 14, surface.format.RGBToColor(42, 56, 68)); rect(4, top + 3, 7, top + row.height - 6, brass); }
-			const int nameWidth = MIN<int>(160, MAX(40, surface.w / 3));
+			const int nameWidth = _showContext ? MIN<int>(160, MAX(40, surface.w / 3)) : surface.w - 24;
 			bold.drawString(&surface, name, 12, top + 8, nameWidth, brass, Graphics::kTextAlignLeft, 0, true);
 			const int contextWidth = surface.w - nameWidth - 108;
 			Common::U32String context = entryContext(entry);
 			if (_w < 600) { JournalEntry compact = entry; compact.room.clear(); context = entryContext(compact); }
-			if (contextWidth >= 70) font.drawString(&surface, context, nameWidth + 24, top + 8, contextWidth, muted, Graphics::kTextAlignRight, 0, true);
+			if (_showContext && contextWidth >= 70) font.drawString(&surface, context, nameWidth + 24, top + 8, contextWidth, muted, Graphics::kTextAlignRight, 0, true);
 			if (!entry.ident.empty()) {
 				const int x = _w - 88, right = _w - 24, bottom = top + lineHeight() + 12;
 				rect(x, top + 4, right, bottom, brass); rect(x + 1, top + 5, right - 1, bottom - 1, background);
@@ -343,7 +345,7 @@ protected:
 		g_gui.theme()->drawManagedSurface(Common::Point(_x, _y), surface, Graphics::ALPHA_OPAQUE);
 	}
 public:
-	TranscriptWidget(GUI::Dialog *boss, Session &session, Replay &replay) : GUI::Widget(boss, 8, 80, 300, 120), GUI::CommandSender(boss), _session(session), _replay(replay) {
+	TranscriptWidget(GUI::Dialog *boss, Session &session, Replay &replay) : GUI::Widget(boss, 8, 80, 300, 120), GUI::CommandSender(boss), _journal(&session.journal), _replay(replay) {
 		setFlags(GUI::WIDGET_ENABLED | GUI::WIDGET_CLEARBG | GUI::WIDGET_TRACK_MOUSE | GUI::WIDGET_HOOK_DRAG);
 		_scroll = new GUI::ScrollBarWidget(this, 284, 0, 16, 120); _scroll->setTarget(this);
 	}
@@ -351,6 +353,7 @@ public:
 	bool containsWidget(GUI::Widget *widget) const override { return widget == _scroll; }
 	int getSelected() const { return _selected; }
 	int scrollPosition() const { return _position; }
+	void setJournal(const Journal &journal, bool context) { _journal = &journal; _showContext = context; _indices.clear(); _rows.clear(); _selected = -1; }
 	void setEntries(const Common::Array<uint32> &indices, bool choices = false) { _indices = indices; _showChoices = choices; _selected = -1; _position = 0; wrap(); }
 	void setSelected(int index) {
 		_selected = index >= 0 && uint32(index) < _rows.size() ? index : -1;
@@ -373,7 +376,7 @@ public:
 	void handleMouseUp(int x, int y, int button, int clicks) override {
 		if (!_dragging && _pressed >= 0 && _pressed == at(y)) {
 			setSelected(_pressed);
-			if (!_session.journal.entries[_indices[_pressed]].ident.empty() && x >= _w - 88 && x < _w - 24 && y + _position - _rows[_pressed].top < lineHeight() + 12) sendCommand(kReplay, 0);
+			if (!_journal->entries[_indices[_pressed]].ident.empty() && x >= _w - 88 && x < _w - 24 && y + _position - _rows[_pressed].top < lineHeight() + 12) sendCommand(kReplay, 0);
 			else if (clicks == 2) sendCommand(kRead, 0);
 		}
 		_pressed = -1; _dragging = false;
@@ -576,6 +579,63 @@ public:
 		return false;
 	}
 };
+class LeadReader : public GUI::Dialog {
+	const JournalLead &_lead;
+	const Journal &_journal;
+	Replay &_replay;
+	GUI::StaticTextWidget *_title;
+	GUI::RichTextWidget *_text = nullptr;
+	GUI::ButtonWidget *_hint, *_play, *_back;
+	uint32 _revealed = 0;
+	void refresh() {
+		Common::U32String body = literal(_lead.status); body += U"\n\n"; body += literal(_lead.summary);
+		if (_revealed) {
+			body += _("\n\n**Hints requested**\n\n");
+			for (uint32 i = 0; i < _revealed; ++i) { body += Common::U32String::format("%u. ", i + 1); body += literal(_lead.hints[i]); body += U"\n\n"; }
+		} else body += _("\n\nHints are optional. Each press reveals one reminder based on information you have already discovered.\n\n");
+		body += _("**Recorded evidence**\n\n");
+		for (uint32 index : _lead.evidence) {
+			const auto &entry = _journal.entries[index];
+			body += literal(speakerText(entry)); body += U"\n\n"; body += entryBody(entry); body += U"\n\n";
+		}
+		if (_text) { removeWidget(_text); delete _text; }
+		_text = new GUI::RichTextWidget(this, 8, 36, 300, 140, body);
+		_hint->setEnabled(_revealed < _lead.hints.size());
+		_hint->setLabel(_revealed < _lead.hints.size() ? Common::U32String::format(_("Hint %u / %u"), _revealed + 1, uint32(_lead.hints.size())) : _("Hints shown"));
+		if (isVisible()) { reflowLayout(); g_gui.scheduleTopDialogRedraw(); }
+	}
+public:
+	LeadReader(const JournalLead &lead, const Journal &journal, Replay &replay, bool showHint) : GUI::Dialog(0, 0, 320, 240), _lead(lead), _journal(journal), _replay(replay) {
+		_backgroundType = GUI::ThemeEngine::kDialogBackgroundMain;
+		_title = new GUI::StaticTextWidget(this, 8, 8, 300, 24, lead.title, Graphics::kTextAlignLeft);
+		_hint = new GUI::ButtonWidget(this, 8, 208, 95, 24, _("Hint"), Common::U32String(), kHint);
+		_play = new GUI::ButtonWidget(this, 112, 208, 95, 24, _("Replay latest"), Common::U32String(), kReplay);
+		_back = new GUI::ButtonWidget(this, 216, 208, 95, 24, _("Back"), Common::U32String(), GUI::kCloseCmd);
+		_play->setEnabled(!lead.evidence.empty() && !journal.entries[lead.evidence.back()].ident.empty());
+		if (showHint && !lead.hints.empty()) _revealed = 1;
+		refresh();
+	}
+	void reflowLayout() override {
+		fit(*this); const int row = MAX(24, g_gui.getFont().getFontHeight() + 12), width = (_w - 32) / 3;
+		place(_title, 8, 8, _w - 16, row); place(_text, 8, row + 12, _w - 16, MAX(20, _h - row * 2 - 28));
+		place(_hint, 8, _h - row - 8, width, row); place(_play, 16 + width, _h - row - 8, width, row); place(_back, 24 + width * 2, _h - row - 8, width, row);
+		GUI::Dialog::reflowLayout();
+	}
+	void handleOtherEvent(const Common::Event &event) override {
+		if (event.type == Common::EVENT_CUSTOM_ENGINE_ACTION_START) {
+			if (event.customType == kJournalClose) { close(); return; }
+			if (event.customType == kJournalReplay) { handleCommand(nullptr, kReplay, 0); return; }
+			if (event.customType == kJournalStar) { handleCommand(nullptr, kHint, 0); return; }
+			if (event.customType == kJournalUp || event.customType == kJournalDown) { _text->handleMouseWheel(0, 0, event.customType == kJournalUp ? -1 : 1); return; }
+		}
+		GUI::Dialog::handleOtherEvent(event);
+	}
+	void handleCommand(GUI::CommandSender *sender, uint32 cmd, uint32 data) override {
+		if (cmd == kHint) { if (_revealed < _lead.hints.size()) { ++_revealed; refresh(); } }
+		else if (cmd == kReplay) { if (_play->isEnabled()) _replay.play(_journal.entries[_lead.evidence.back()]); }
+		else GUI::Dialog::handleCommand(sender, cmd, data);
+	}
+};
 class JournalDialog : public GUI::Dialog {
 	Session &_session;
 	Replay _replay;
@@ -586,11 +646,15 @@ class JournalDialog : public GUI::Dialog {
 	GUI::EditTextWidget *_search;
 	TranscriptWidget *_list;
 	RouteMapWidget *_mapWidget;
-	GUI::ButtonWidget *_tabs[3], *_buttons[5];
+	GUI::ButtonWidget *_tabs[4], *_buttons[5];
+	Common::Array<JournalLead> _leads;
+	Journal _leadRows;
 	Common::Array<uint32> _indices;
 	uint32 _mode = kLines;
 	uint32 _revisitNode = 0;
+	const JournalLead *selectedLead() const { const int32 index = selected(); return _mode == kLeads && index >= 0 && uint32(index) < _leads.size() ? &_leads[index] : nullptr; }
 	const JournalEntry *selectedEntry() const {
+		if (_mode == kLeads) { const auto *lead = selectedLead(); return lead && !lead->evidence.empty() ? &_session.journal.entries[lead->evidence.back()] : nullptr; }
 		if (_mode == kRoutes) {
 			const RouteMapItem *item = _mapWidget->selected(); const RouteNode *node = item ? _session.routes.graph.node(item->node) : nullptr;
 			return node ? &node->entry : nullptr;
@@ -615,10 +679,14 @@ class JournalDialog : public GUI::Dialog {
 		const int old = _list->getSelected();
 		const int32 previous = old >= 0 && uint32(old) < _indices.size() ? int32(_indices[old]) : -1;
 		_indices.clear();
-		for (uint32 i = 0; i < _session.journal.entries.size(); ++i) {
-			const JournalEntry &entry = _session.journal.entries[i];
+		_leads = journalLeads(_session.journal, journalLeadState(_session)); _leadRows.entries.clear();
+		for (const auto &lead : _leads) { JournalEntry row; row.speaker = lead.status.encode(Common::kUtf8); Common::U32String text = lead.title; text += U"\n"; text += lead.summary; row.text = text.encode(Common::kUtf8); _leadRows.add(row); }
+		const Journal &displayed = _mode == kLeads ? _leadRows : _session.journal;
+		_list->setJournal(displayed, _mode != kLeads);
+		for (uint32 i = 0; i < displayed.entries.size(); ++i) {
+			const JournalEntry &entry = displayed.entries[i];
 			if ((_mode == kPaths && entry.choices.empty()) || (_mode == kLines && !entry.choices.empty() && entry.selected < 0)) continue;
-			Common::U32String searchable = gameText(entry.speaker + " " + entry.room + " " + entry.text);
+			Common::U32String searchable(entry.speaker + " " + entry.room + " " + entry.text, _mode == kLeads ? Common::kUtf8 : Common::kWindows1252);
 			searchable += U" "; searchable += speakerText(entry);
 			for (const auto &choice : entry.choices) { searchable += ' '; searchable += gameText(choice); }
 			searchable.toLowercase();
@@ -632,8 +700,8 @@ class JournalDialog : public GUI::Dialog {
 		int selected = _indices.empty() ? -1 : int(_indices.size()) - 1;
 		for (uint32 i = 0; i < _indices.size(); ++i) if (int32(_indices[i]) == previous) selected = i;
 		_list->setSelected(selected);
-		const uint32 modes[] = {kLines, kPaths, kRoutes};
-		for (uint32 i = 0; i < 3; ++i) _tabs[i]->setEnabled(_mode != modes[i]);
+		const uint32 modes[] = {kLines, kPaths, kRoutes, kLeads};
+		for (uint32 i = 0; i < 4; ++i) _tabs[i]->setEnabled(_mode != modes[i]);
 		_previewIndex = -2;
 		updateButtons();
 	}
@@ -648,9 +716,9 @@ class JournalDialog : public GUI::Dialog {
 		const JournalEntry *entry = selectedEntry();
 		const RouteMapItem *item = routes ? _mapWidget->selected() : nullptr;
 		const bool wantPreview = routes && !_mapWidget->overview() && _w >= 600 && _h >= 360;
-		_buttons[1]->setLabel(routes ? _mapWidget->overview() ? _("Cards") : _("Overview") : entry && _replay.playing(*entry) ? _("Stop") : _("Replay"));
-		_buttons[2]->setLabel(_("Revisit"));
-		showPanel(_buttons[2], routes);
+		_buttons[1]->setLabel(routes ? _mapWidget->overview() ? _("Cards") : _("Overview") : _mode == kLeads ? _("Hint") : entry && _replay.playing(*entry) ? _("Stop") : _("Replay"));
+		_buttons[2]->setLabel(routes ? _("Revisit") : entry && entry->bookmarked ? _("Untrack") : _("Track"));
+		showPanel(_buttons[2], _mode != kLeads);
 		if (previewIndex != _previewIndex || wantPreview != (_preview != nullptr)) {
 			_previewIndex = previewIndex;
 			_speaker->setLabel(item ? routeTitle(_session.routes.graph, *item) : entry ? speakerText(*entry) : _("Nothing to display"));
@@ -673,9 +741,10 @@ class JournalDialog : public GUI::Dialog {
 			if (_mapWidget->endingCount(false)) status = Common::U32String::format(_("Endings: %u / %u  |  "), _mapWidget->endingCount(true), _mapWidget->endingCount(false)) + status;
 			else status += Common::U32String::format(_("  |  %u return points / outcomes"), _mapWidget->visibleCount());
 		}
+		if (_mode == kLeads) status = Common::U32String::format(_("%u discovered / tracked leads"), uint32(_indices.size()));
 		_status->setLabel(status);
 		_buttons[0]->setEnabled(index >= 0);
-		_buttons[1]->setEnabled(routes || (entry && !entry->ident.empty()));
+		_buttons[1]->setEnabled(routes || selectedLead() || (entry && !entry->ident.empty()));
 		_buttons[2]->setEnabled(routes ? canRevisit() : index >= 0);
 		showPanel(_buttons[4], routes); _buttons[4]->setEnabled(_session.routes.graph.cursor() != 0);
 	}
@@ -689,7 +758,12 @@ class JournalDialog : public GUI::Dialog {
 	}
 public:
 	bool auditPointerInput() {
-		for (uint32 mode : {uint32(kLines), uint32(kPaths)}) {
+		struct RestoreTracking {
+			Journal &journal; Common::Array<bool> flags;
+			explicit RestoreTracking(Journal &j) : journal(j) { for (auto &entry : journal.entries) { flags.push_back(entry.bookmarked); entry.bookmarked = true; } }
+			~RestoreTracking() { for (uint32 i = 0; i < flags.size(); ++i) journal.entries[i].bookmarked = flags[i]; }
+		} tracking(_session.journal);
+		for (uint32 mode : {uint32(kLines), uint32(kPaths), uint32(kLeads)}) {
 			handleCommand(nullptr, mode, 0);
 			_list->setSelected(0); _list->setSelected(-1);
 			const int x = _list->getRelX() + 30, y = _list->getRelY() + 8;
@@ -716,6 +790,7 @@ public:
 		_tabs[0] = new GUI::ButtonWidget(this, 8, 32, 95, 20, _("Log"), Common::U32String(), kLines);
 		_tabs[1] = new GUI::ButtonWidget(this, 108, 32, 95, 20, _("Choices"), Common::U32String(), kPaths);
 		_tabs[2] = new GUI::ButtonWidget(this, 208, 32, 95, 20, _("Flow"), Common::U32String(), kRoutes);
+		_tabs[3] = new GUI::ButtonWidget(this, 308, 32, 95, 20, _("Leads"), Common::U32String(), kLeads);
 		_routeLegend = new GUI::StaticTextWidget(this, 12, 56, 300, 20, _("C: Return point  E: Reached ending  ?: Unreached ending"), Graphics::kTextAlignLeft, Common::U32String(), GUI::ThemeEngine::kFontStyleNormal);
 		_search = new GUI::EditTextWidget(this, 8, 56, 300, 20, Common::U32String(), _("Search recorded dialogue"), kSearch);
 		_list = new TranscriptWidget(this, session, _replay);
@@ -733,7 +808,7 @@ public:
 		const int row = MAX(24, g_gui.getFont().getFontHeight() + 12);
 		_wide = _mode == kRoutes && !_mapWidget->overview() && _w >= 600 && _h >= 360;
 		const bool compact = _h < 360;
-		for (uint32 i = 0; i < 3; ++i) place(_tabs[i], 8 + i * (_w - 12) / 3, 6, (_w - 24) / 3, row);
+		for (uint32 i = 0; i < 4; ++i) place(_tabs[i], 8 + i * (_w - 12) / 4, 6, (_w - 28) / 4, row);
 		place(_searchLabel, 12, row + 10, 56, row);
 		place(_search, 72, row + 10, _w - 84, row);
 		place(_routeLegend, 12, row + 10, _w - 24, row);
@@ -746,7 +821,7 @@ public:
 		showPanel(_speaker, _wide); showPanel(_context, _wide);
 		if (_preview) showPanel(_preview, _wide);
 		place(_status, 12, _h - row * 2 - 12, _w - 24, row);
-		const int count = _mode == kRoutes ? 5 : 3;
+		const int count = _mode == kRoutes ? 5 : _mode == kLeads ? 3 : 4;
 		for (int i = 0; i < count; ++i) {
 			const int button = count == 5 && i >= 3 ? i == 3 ? 4 : 3 : count == 3 && i == 2 ? 3 : i;
 			place(_buttons[button], 12 + i * (_w - 20) / count, _h - row - 8, (_w - 16 - count * 5) / count, row);
@@ -759,13 +834,13 @@ public:
 		const JournalEntry *entry = selectedEntry();
 		const bool playing = _replay.active();
 		if (playing != _wasPlaying) { _wasPlaying = playing; _list->markAsDirty(); }
-		if (_mode != kRoutes) _buttons[1]->setLabel(entry && _replay.playing(*entry) ? _("Stop") : _("Replay"));
+		if (_mode != kRoutes && _mode != kLeads) _buttons[1]->setLabel(entry && _replay.playing(*entry) ? _("Stop") : _("Replay"));
 	}
 
 	void switchView(int direction) {
-		const uint32 modes[] = {kLines, kPaths, kRoutes};
-		int current = _mode == kLines ? 0 : _mode == kPaths ? 1 : 2;
-		handleCommand(nullptr, modes[(current + direction + 3) % 3], 0);
+		const uint32 modes[] = {kLines, kPaths, kRoutes, kLeads};
+		int current = _mode == kLines ? 0 : _mode == kPaths ? 1 : _mode == kRoutes ? 2 : 3;
+		handleCommand(nullptr, modes[(current + direction + 4) % 4], 0);
 	}
 	void handleKeyDown(Common::KeyState key) override {
 		if (_mode == kRoutes && getFocusWidget() == _mapWidget && _mapWidget->handleKeyDown(key)) return;
@@ -779,13 +854,13 @@ public:
 				const Common::KeyCode keys[] = {Common::KEYCODE_UP, Common::KEYCODE_DOWN, Common::KEYCODE_LEFT, Common::KEYCODE_RIGHT};
 				setFocusWidget(_mapWidget); _mapWidget->handleKeyDown(Common::KeyState(keys[event.customType - kJournalUp])); return;
 			}
-			if (_mode == kRoutes && event.customType == kJournalReplay) { handleCommand(nullptr, kRead, 0); return; }
+			if ((_mode == kRoutes || _mode == kLeads) && event.customType == kJournalReplay) { handleCommand(nullptr, kRead, 0); return; }
 			if (event.customType == kJournalClose) { close(); return; }
 			if (event.customType == kJournalRead) { handleCommand(nullptr, kRead, 0); return; }
 			if (event.customType == kJournalUp || event.customType == kJournalDown) { setFocusWidget(_list); _list->handleKeyDown(Common::KeyState(event.customType == kJournalUp ? Common::KEYCODE_UP : Common::KEYCODE_DOWN)); return; }
 			if (event.customType == kJournalLeft || event.customType == kJournalRight) { switchView(event.customType == kJournalLeft ? -1 : 1); return; }
 			if (event.customType == kJournalReplay) { handleCommand(nullptr, kReplay, 0); return; }
-			if (event.customType == kJournalStar) { handleCommand(nullptr, _mode == kRoutes ? kRevisit : kRead, 0); return; }
+			if (event.customType == kJournalStar) { handleCommand(nullptr, _mode == kRoutes ? kRevisit : _mode == kLeads ? kReplay : kStar, 0); return; }
 			if (event.customType == kJournalViewPrevious || event.customType == kJournalViewNext) { switchView(event.customType == kJournalViewPrevious ? -1 : 1); return; }
 		}
 		GUI::Dialog::handleOtherEvent(event);
@@ -793,6 +868,9 @@ public:
 
 	void handleCommand(GUI::CommandSender *sender, uint32 cmd, uint32 data) override {
 		const int32 index = selected();
+		if (_mode == kLeads && (cmd == kRead || cmd == kReplay || cmd == GUI::kListItemActivatedCmd || cmd == GUI::kListItemDoubleClickedCmd)) {
+			const auto *lead = selectedLead(); if (lead) { LeadReader reader(*lead, _session.journal, _replay, cmd == kReplay); reader.runModal(); } return;
+		}
 		if (_mode == kRoutes && (cmd == kRouteZoom || (cmd == kReplay && sender == _buttons[1]))) {
 			_mapWidget->toggleOverview(); _previewIndex = -2; updateButtons(); reflowLayout(); g_gui.scheduleTopDialogRedraw(); setFocusWidget(_mapWidget); return;
 		}
@@ -808,7 +886,8 @@ public:
 			if (detail.runModal() == kRevisit) requestRevisit();
 			return;
 		}
-		if (cmd == kLines || cmd == kPaths || cmd == kRoutes) { _mode = cmd; refresh(); reflowLayout(); g_gui.scheduleTopDialogRedraw(); setFocusWidget(_mode == kRoutes ? static_cast<GUI::Widget *>(_mapWidget) : _list); }
+		if (cmd == kLines || cmd == kPaths || cmd == kRoutes || cmd == kLeads) { _mode = cmd; refresh(); reflowLayout(); g_gui.scheduleTopDialogRedraw(); setFocusWidget(_mode == kRoutes ? static_cast<GUI::Widget *>(_mapWidget) : _list); }
+		else if (cmd == kStar && _mode != kLeads && index >= 0) { _session.journal.entries[index].bookmarked = !_session.journal.entries[index].bookmarked; refresh(); }
 		else if (cmd == kSearch) refresh();
 		else if (cmd == GUI::kListSelectionChangedCmd || cmd == kRouteSelect) updateButtons();
 		else if ((cmd == kRead || cmd == GUI::kListItemActivatedCmd) && index >= 0) {

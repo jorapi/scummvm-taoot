@@ -7,6 +7,7 @@
 #include "dreamfactory/session.h"
 #include "dreamfactory/routes.h"
 #include "dreamfactory/heard.h"
+#include "dreamfactory/leads.h"
 #include "dreamfactory/controls.h"
 #include "dreamfactory/checkers.h"
 #include "dreamfactory/audio.h"
@@ -108,6 +109,8 @@ public:
 	bool exists(const Common::String &name) override { return files.contains(name); }
 };
 bool auditPuppetSession(const Common::FSNode &root, OSystem *backend) {
+	if (!auditJournalLeads()) { warning("JOURNAL LEADS FAIL discovery gates, hints or restored state"); return false; }
+	warning("JOURNAL LEADS PASS heard-only topics incremental hints source identity item and promise state rewind manual tracking");
 	const char *bad[] = { "bad-head", "bad-version", "bad-lines", "bad-band", "bad-script", "bad-name", "bad-layer", "bad-frame", "bad-stance" };
 	Bytes bytes; for (uint32 i = 0; i < ARRAYSIZE(bad); ++i) { Puppet value; if (!read(root.getChild(Common::String(bad[i]) + ".pup"), bytes) || value.load(bytes)) { warning("PUPPET READER FAIL accepted %s", bad[i]); return false; } }
 	Puppet damaged; Common::Array<PuppetPose> poses; PuppetPose retained; retained.layers[0].frame = 99; poses.push_back(retained);
@@ -847,6 +850,37 @@ bool auditPuppetSession(const Common::FSNode &root, OSystem *backend) {
 		}
 	}
 	if (!auditJournalInput(journalLayout)) { warning("JOURNAL POINTER FAIL desktop"); return false; }
+	class LeadUISource : public Common::EventSource {
+		OSystem *_backend; const Common::FSNode &_root; uint32 _started; bool _timedOut = false;
+	public:
+		uint32 phase = 0; bool mapped = false;
+		LeadUISource(OSystem *b, const Common::FSNode &r) : _backend(b), _root(r), _started(b->getMillis()) { b->getEventManager()->getEventDispatcher()->registerSource(this, false); }
+		~LeadUISource() { _backend->getEventManager()->getEventDispatcher()->unregisterSource(this); }
+		bool allowMapping() const override { return false; }
+		bool pollEvent(Common::Event &event) override {
+			const uint32 elapsed = _backend->getMillis() - _started;
+			if (elapsed > 6000 && !_timedOut) { _timedOut = true; event.type = Common::EVENT_QUIT; return true; }
+			const uint32 commands[] = {kJournalStar, kJournalViewPrevious, kJournalReplay, kJournalStar, kJournalDown, kJournalReplay, kJournalClose, kJournalClose};
+			if (phase >= ARRAYSIZE(commands) || elapsed < (phase + 1) * 160) return false;
+			if (!phase) {
+				Common::Event physical; physical.type = Common::EVENT_JOYBUTTON_DOWN; physical.joystick.button = Common::JOYSTICK_BUTTON_X;
+				Common::List<Common::Event> actions; _backend->getEventManager()->getKeymapper()->mapEvent(physical, actions);
+				mapped = actions.size() == 1 && actions.front().customType == kJournalStar;
+			}
+			if (phase == 2 || phase == 3 || phase == 4) {
+				Graphics::Surface overlay; overlay.create(_backend->getOverlayWidth(), _backend->getOverlayHeight(), _backend->getOverlayFormat()); _backend->grabOverlay(overlay); Common::DumpFile image;
+				const Common::String name = Common::String(_backend->getOverlayWidth() < 600 ? "compact-" : "") + (phase == 2 ? "journal-leads.bmp" : phase == 3 ? "journal-lead-reader.bmp" : "journal-lead-hint.bmp");
+				if (image.open(_root.getChild(name))) Image::writeBMP(image, overlay); overlay.free();
+			}
+			event.type = Common::EVENT_CUSTOM_ENGINE_ACTION_START; event.customType = commands[phase++]; return true;
+		}
+	};
+	auto checkLeadUI = [&]() {
+		journalLayout.journal.entries.back().bookmarked = false;
+		ControllerInputs controller(backend); LeadUISource source(backend, root); openJournal(journalLayout);
+		return source.phase == 8 && source.mapped && journalLayout.journal.entries.back().bookmarked && !backend->getEventManager()->shouldQuit();
+	};
+	if (!checkLeadUI()) { warning("JOURNAL LEAD UI FAIL desktop"); return false; }
 	// Run the same interaction path at a handheld-sized game surface.
 	const uint oldWidth = backend->getWidth(), oldHeight = backend->getHeight();
 	const Graphics::PixelFormat oldFormat = backend->getScreenFormat();
@@ -861,7 +895,9 @@ bool auditPuppetSession(const Common::FSNode &root, OSystem *backend) {
 		compactOK = source.phase == 9 && source.mapped && source.replayMapped && source.closeMapped;
 	}
 	if (!auditJournalInput(journalLayout)) { warning("JOURNAL POINTER FAIL handheld"); return false; }
-	warning("JOURNAL POINTER PASS Log Choices click selection wheel touch drag scrollbar desktop handheld hidden views do not intercept input");
+	if (!checkLeadUI()) { warning("JOURNAL LEAD UI FAIL handheld"); return false; }
+	warning("JOURNAL LEAD UI PASS desktop 480x272 controller track tab reader explicit hint scrolling replay close");
+	warning("JOURNAL POINTER PASS Log Choices Leads click selection wheel touch drag scrollbar desktop handheld hidden views do not intercept input");
 	backend->beginGFXTransaction(); backend->initSize(oldWidth, oldHeight, &oldFormat);
 	if (backend->endGFXTransaction() != OSystem::kTransactionSuccess || !compactOK) return false;
 	JournalEntry routeDecision; routeDecision.speaker = "Officer"; routeDecision.room = "Fixture corridor"; routeDecision.selected = 0;
@@ -872,6 +908,7 @@ bool auditPuppetSession(const Common::FSNode &root, OSystem *backend) {
 	if (!routeSession.routes.save(error)) return false;
 	class RouteUISource : public Common::EventSource {
 		OSystem *_backend; Common::FSNode _root; uint32 _start; bool _compact, _failure, _timedOut = false;
+		bool _passedLeads = false;
 		uint32 _gesture = 0;
 		Common::String _beforeDrag;
 	public:
@@ -884,6 +921,7 @@ bool auditPuppetSession(const Common::FSNode &root, OSystem *backend) {
 		bool pollEvent(Common::Event &event) override {
 			const uint32 elapsed = _backend->getMillis() - _start;
 			if (elapsed > 6000 && !_timedOut) { _timedOut = true; event.type = Common::EVENT_QUIT; return true; }
+			if (!phase && !_passedLeads) { if (elapsed < 150) return false; _passedLeads = true; _start += 150; event.type = Common::EVENT_CUSTOM_ENGINE_ACTION_START; event.customType = kJournalViewPrevious; return true; }
 			if (phase == 1 && _gesture < 4) {
 				if (elapsed < (2 + _gesture) * 150) return false;
 				if (!_gesture) {
@@ -984,6 +1022,7 @@ bool auditPuppetSession(const Common::FSNode &root, OSystem *backend) {
 	const uint32 chartCursor = chartPreview.routes.graph.cursor();
 	class ChartSource : public Common::EventSource {
 		OSystem *_backend; Common::FSNode _root; uint32 _start; bool _compact, _timedOut = false;
+		bool _passedLeads = false;
 		Common::String _selection, _overview;
 	public:
 		uint32 phase = 0;
@@ -994,6 +1033,7 @@ bool auditPuppetSession(const Common::FSNode &root, OSystem *backend) {
 		bool pollEvent(Common::Event &event) override {
 			const uint32 elapsed = _backend->getMillis() - _start;
 			if (elapsed > 6000 && !_timedOut) { _timedOut = true; event.type = Common::EVENT_QUIT; return true; }
+			if (!phase && !_passedLeads) { if (elapsed < 150) return false; _passedLeads = true; _start += 150; event.type = Common::EVENT_CUSTOM_ENGINE_ACTION_START; event.customType = kJournalViewPrevious; return true; }
 			const uint32 commands[] = {kJournalViewPrevious, kJournalUp, kJournalUp, kJournalCurrent, kJournalUp, kJournalUp, kJournalZoom, kJournalZoom, kJournalReplay, kJournalClose, kJournalClose};
 			if (phase >= ARRAYSIZE(commands) || elapsed < (phase + 1) * 150) return false;
 			if (phase == 1 || phase == 3 || phase == 6 || phase == 7 || phase == 8 || phase == 9) {

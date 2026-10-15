@@ -8,7 +8,7 @@ $stewardActions = @(
     'clickon prop watch', 'expectowner watch frank',
     'key rightarrow', 'key rightarrow', 'key rightarrow', 'expectview View63',
     'key uparrow', 'expectscene Scene49',
-    'key leftarrow', 'key leftarrow', 'key leftarrow', 'key leftarrow', 'expectview View55',
+    'expectview View55',
     'clickon painting door', 'expectglobal smethphase 1', 'expectowner map frank',
     'clickon painting door',
     'key uparrow', 'expectset hallc', 'expectscene Scene27', 'expectview View35'

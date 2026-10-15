@@ -3,6 +3,7 @@
 #include "dreamfactory/controls.h"
 #include "dreamfactory/inventory.h"
 #include "dreamfactory/dialogue.h"
+#include "dreamfactory/leads.h"
 #include "dreamfactory/script_audit.h"
 #include "dreamfactory/session.h"
 #include "common/config-manager.h"
@@ -629,6 +630,14 @@ Common::Error DreamFactoryEngine::run() {
 				} else if (command == "auditdialogueoptions") {
 					const Common::FSNode output(ConfMan.getPath("dreamfactory_boot_checkpoint").getParent());
 					ok = auditDialogueOptions(_system, output, false) && auditDialogueOptions(_system, output, true);
+				} else if (command == "dumpleads" || command == "expectlead" || command == "expectnolead") {
+					const auto leads = journalLeads(session.journal, journalLeadState(session));
+					const Common::String leadID = words.empty() ? Common::String() : words.nextToken(); bool foundLead = false;
+					for (const auto &lead : leads) {
+						warning("BOOT LEAD id=%s evidence=%u hints=%u status=%s", lead.id.c_str(), uint32(lead.evidence.size()), uint32(lead.hints.size()), lead.status.encode(Common::kUtf8).c_str());
+						if (lead.id == leadID) foundLead = true;
+					}
+					if (command != "dumpleads") ok = command == "expectlead" ? foundLead : !foundLead;
 				} else if (command == "dumpheard") {
 					warning("BOOT HEARD lines=%u active=%u dirty=%u", session.heard.index().size(), session.heard.active(), session.heard.dirty());
 				} else if (command == "expectrecoveries") {
