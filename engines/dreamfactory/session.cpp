@@ -51,6 +51,7 @@ bool Session::init(const Common::FSNode &root) {
 	runtime.abandon(); runtime.globals.clear(); runtime.fallbacks.clear(); runtime.error.clear(); bootScripts.clear();
 	puppetParams.clear(); playerHitbox = Common::Point(); cameraHi = 0; memset(displayPalette, 0, sizeof(displayPalette)); lastResult = Value();
 	journal.entries.clear(); _journalRequested = false;
+	routes = RouteStore(); _routePending.clear(); _routeOwner.reset(); _savedRouteCursor = 0; _savedRouteChoice = -1; _savedRouteToken.clear(); _routeResumeScene = 0;
 	pointer = Common::Point(); _pointerButtons = 0; pointerDown = _stopped = _scriptQuit = _dialogActive = false;
 	frameRate = 3; menuVisible = keyAborts = puppetGrab = screenBlack = false;
 	Bytes data; Archive boot;
@@ -82,7 +83,54 @@ bool Session::init(const Common::FSNode &root) {
 		bootScripts.push_back(instance); runtime.fallbacks.push_back(instance.get());
 	}
 	if (bootScripts.empty()) { runtime.fail("BOOTFILE has no script containers"); return false; }
+	if (_system && _saveHost) {
+		Common::String error;
+		if (!routes.open(_system->getSavefileManager(), ConfMan.getActiveDomainName(), _bootSignature, error)) warning("Route profile: %s", error.c_str());
+		routes.graph.restoreCursor(0, -1);
+		const int32 budget = ConfMan.hasKey("dreamfactory_route_storage_mib") ? ConfMan.getInt("dreamfactory_route_storage_mib") : 1024;
+		routes.setBudget(uint64(CLIP<int32>(budget, 64, 4096)) * 1024 * 1024);
+	}
 	return true;
+}
+void Session::prepareRouteCheckpoint() {
+	_routePending.clear(); _routeOwner.reset();
+	if (!routes.active() || (ConfMan.hasKey("dreamfactory_routes") && !ConfMan.getBool("dreamfactory_routes"))) return;
+	// This runs before dispatch, with no authored script stack to reconstruct.
+	// pointerDown already reflects the queued press, so omit that one guard.
+	if (_dialogActive || runtime.busy() || _paletteBlack || screenBlack || puppetSystem.current || movies.active() || roomSystem.moving || roomSystem.turning || !stageSystem.current) return;
+	const uint32 started = _system ? _system->getMillis() : 0;
+	Common::String error;
+	if (!saveState(_routePending, error)) warning("Route checkpoint: %s", error.c_str());
+	excludeWallTime(started);
+}
+void Session::recordRoute(const JournalEntry &entry, bool decision) {
+	if (!routes.active() || (ConfMan.hasKey("dreamfactory_routes") && !ConfMan.getBool("dreamfactory_routes"))) return;
+	const uint32 started = _system ? _system->getMillis() : 0;
+	Common::String error;
+	bool changed = decision;
+	if (_routeOwner != puppetSystem.current || !routes.graph.sceneFor(routes.graph.cursor())) {
+		changed = true;
+		JournalEntry scene = entry; scene.choices.clear(); scene.selected = -1;
+		const RouteNode *resume = routes.graph.node(_routeResumeScene);
+		const bool sameScene = resume && resume->kind == RouteNode::kScene && resume->entry.file.equalsIgnoreCase(entry.file) && resume->entry.room == entry.room && resume->entry.speaker == entry.speaker;
+		const uint32 id = sameScene ? _routeResumeScene : routes.graph.recordScene(scene);
+		_routeResumeScene = 0;
+		_routeOwner = puppetSystem.current;
+		if (id && !sameScene && !_routePending.empty() && !routes.writeCheckpoint(id, _routePending, error)) warning("Route checkpoint: %s", error.c_str());
+		_routePending.clear();
+	}
+	if (decision) routes.graph.recordDecision(entry);
+	if (changed && !routes.save(error)) warning("Route profile: %s", error.c_str());
+	excludeWallTime(started);
+}
+bool Session::restoreRouteScene(uint32 id, Common::String &error) {
+	if (_dialogActive) { error = "Close the journal before restoring a scene"; return false; }
+	const uint32 scene = routes.graph.sceneFor(id);
+	Bytes bytes;
+	const uint32 started = _system ? _system->getMillis() : 0;
+	const bool restored = routes.readCheckpoint(id, bytes, error) && loadState(bytes, error);
+	if (restored) { routes.graph.restoreCursor(scene, -1); _routeResumeScene = scene; }
+	excludeWallTime(started); return restored;
 }
 bool Session::boot() {
 	for (uint32 i = 0; i < bootScripts.size(); ++i) {
@@ -1131,15 +1179,15 @@ void Session::presentPuppet() {
 void Session::speakPuppet(const Common::String &ident, ScriptFrame &frame, bool queue) {
 	if (!puppetSpeech.start(puppetSystem.current, ident, 0, queue)) { runtime.fail(puppetSpeech.error); return; }
 	if (!puppetSpeech.active()) return;
-	if (queue && puppetSystem.current && !puppetSystem.current->subtitle.empty() &&
-		(!ConfMan.hasKey("dreamfactory_journal") || ConfMan.getBool("dreamfactory_journal"))) {
+	if (queue && puppetSystem.current && !puppetSystem.current->subtitle.empty()) {
 		const auto puppet = puppetSystem.current;
 		JournalEntry entry;
 		entry.speaker = puppetSystem.name(); entry.file = resources.sourceName(puppet->file);
 		const int32 line = puppet->data.line(ident, true);
 		if (line >= 0) entry.ident = puppet->data.lines[line].ident;
 		entry.text = puppet->subtitle; entry.time = _time; entry.room = roomSystem.current ? roomSystem.current->data.name : Common::String();
-		journal.add(entry);
+		if (!ConfMan.hasKey("dreamfactory_journal") || ConfMan.getBool("dreamfactory_journal")) journal.add(entry);
+		recordRoute(entry, false);
 	}
 	if (!_system) { puppetSpeech.abandon(); runtime.fail("Puppet speech requires a display/audio host"); return; }
 	// Loading/decoding time is outside this line's authored playback clock.
@@ -1243,8 +1291,7 @@ int32 Session::waitPuppet(ScriptFrame &frame) {
 		}
 	}
 	const int32 answer = puppetChoices.answer();
-	if (runtime.current(frame) && puppetSystem.current == puppet &&
-		(!ConfMan.hasKey("dreamfactory_journal") || ConfMan.getBool("dreamfactory_journal"))) {
+	if (runtime.current(frame) && puppetSystem.current == puppet) {
 		JournalEntry entry;
 		entry.speaker = puppetSystem.name(); entry.file = resources.sourceName(puppet->file);
 		entry.room = roomSystem.current ? roomSystem.current->data.name : Common::String(); entry.time = _time;
@@ -1256,7 +1303,8 @@ int32 Session::waitPuppet(ScriptFrame &frame) {
 				if (line >= 0) entry.ident = puppet->data.lines[line].ident;
 			}
 		}
-		journal.add(entry);
+		if (!ConfMan.hasKey("dreamfactory_journal") || ConfMan.getBool("dreamfactory_journal")) journal.add(entry);
+		recordRoute(entry, true);
 	}
 	if (puppetChoices.active()) puppetChoices.escape();
 	return answer;
@@ -1610,6 +1658,7 @@ bool Session::step() {
 	while (!pendingEvents.empty()) {
 		const Common::Event event = pendingEvents[0]; pendingEvents.remove_at(0);
 		if (event.type == Common::EVENT_QUIT || event.type == Common::EVENT_RETURN_TO_LAUNCHER) { postEvent(event); return false; }
+		if ((event.type == Common::EVENT_KEYDOWN && !event.kbdRepeat) || event.type == Common::EVENT_LBUTTONDOWN || event.type == Common::EVENT_RBUTTONDOWN) prepareRouteCheckpoint();
 		if (event.type == Common::EVENT_KEYDOWN) { keyInput(event); presentPuppet(); return !_stopped && runtime.error.empty(); }
 		if (event.type == Common::EVENT_LBUTTONDOWN || event.type == Common::EVENT_RBUTTONDOWN) { mouseInput(event); presentPuppet(); return !_stopped && runtime.error.empty(); }
 	}

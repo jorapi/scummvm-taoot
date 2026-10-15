@@ -80,7 +80,23 @@ endcode`);
  bad('bad-band',p=>u32(p[0],0x85a,999));bad('bad-script',p=>u32(p[2],24,999));bad('bad-name',p=>p[0][0x85e]=16);
  bad('bad-layer',p=>u16(p[version===1?3:7],22,33));bad('bad-frame',p=>u32(p[version===1?3:7],28,999));
  bad('bad-stance',p=>u16(p[0],2160,version===1?1:2));bad('bad-animation',p=>p[9]=p[9].slice(0,81));
- const boot=new Uint8Array(6);u32(boot,2,version);fs.writeFileSync(`${dir}/BOOTFILE`,envelope([boot,compileScript('code boot()\nendcode')]));
+ const boot=new Uint8Array(6);u32(boot,2,version);fs.writeFileSync(`${dir}/BOOTFILE`,envelope([boot,compileScript(`code boot()
+endcode
+code mousedown(point)
+global routecounter
+routecounter = routecounter + 1
+openpuppetfile("speech")
+puppetspeak("line.0")
+closepuppetfile()
+endcode`)]));
+ const v1=version===1,flatAt=v1?2100:2120,stride=v1?28:46;
+ const routeStage=new Uint8Array(flatAt+4+stride);
+ u32(routeStage,2,version);u16(routeStage,v1?28:40,512);u16(routeStage,v1?30:42,384);u32(routeStage,v1?32:44,1);
+ pstr(routeStage,v1?2084:2104,'route');u32(routeStage,flatAt,1);
+ u32(routeStage,flatAt+4+(v1?4:10),2);pstr(routeStage,flatAt+4+(v1?12:30),'first');
+ const routeArt=new Uint8Array(4+384*513);u16(routeArt,0,384);u16(routeArt,2,512);
+ for(let y=0;y<384;++y){routeArt[4+y*513]=4;routeArt.fill(0,5+y*513,5+y*513+512);}
+ fs.writeFileSync(`${dir}/ROUTE.${v1?'FLT':'STG'}`,envelope([routeStage,compileScript('code openstage()\nendcode'),routeArt]));
  const test=`code test()
 global boots
 if currentpuppet() != "none" | countpuppets() != 0 | puppetvisible() != 0 | countbevels() != 0

@@ -384,6 +384,16 @@ bool SaveState::sync(Session &g, StateIO &io) {
 			if (entry.selected < -1 || (entry.selected >= 0 && uint32(entry.selected) >= entry.choices.size())) io.good = false;
 		});
 	}
+	if (io.formatVersion >= 11) {
+		if (!io.loading) {
+			g._savedRouteCursor = g.routes.graph.cursor(); g._savedRouteChoice = g.routes.graph.choice();
+			g._savedRouteToken = g.routes.graph.cursorToken(g._savedRouteCursor);
+		}
+		io.u32(g._savedRouteCursor); io.i32(g._savedRouteChoice); io.str(g._savedRouteToken);
+		if (g._savedRouteCursor > RouteGraph::kMaxNodes || g._savedRouteChoice < -1 || g._savedRouteChoice > 4 ||
+			(!g._savedRouteCursor && (g._savedRouteChoice != -1 || !g._savedRouteToken.empty())) ||
+			(g._savedRouteCursor && g._savedRouteToken.size() != 32)) io.good = false;
+	}
 	return io.good && !io.s.err() && g.runtime.error.empty();
 }
 
@@ -404,6 +414,9 @@ void SaveState::commit(Session &g, Session &p, const StateIO &state) {
 	g._time = p._time; g._lastMillis = g._system ? g._system->getMillis() : 0; g._random.setSeed(p._random.getSeed());
 	g.frameRate = p.frameRate; g.cameraHi = p.cameraHi; g.menuVisible = p.menuVisible; g.keyAborts = p.keyAborts; g.puppetGrab = p.puppetGrab;
 	g.journal = p.journal;
+	g._routePending.clear(); g._routeOwner.reset(); g._routeResumeScene = 0;
+	if (p._savedRouteToken != g.routes.graph.cursorToken(p._savedRouteCursor) || !g.routes.graph.restoreCursor(p._savedRouteCursor, p._savedRouteChoice))
+		g.routes.graph.restoreCursor(0, -1);
 	g.lastResult = p.lastResult; g.playerHitbox = p.playerHitbox; g.puppetParams = p.puppetParams;
 	g._paletteKind = p._paletteKind; g._roomPalette = p._roomPalette; g._stagePalette = p._stagePalette; g._puppetPalette = p._puppetPalette; g._puppetArtPalette = p._puppetArtPalette; memcpy(g.displayPalette, p.displayPalette, 768); g.textOverlay = p.textOverlay;
 	g._paletteBlack = g.screenBlack = g.pointerDown = g._stopped = g._scriptQuit = false; g._pointerButtons = 0; g._controlFocused = g._controlHeld = g._touchHeld = false;
@@ -465,6 +478,7 @@ bool Session::saveState(Bytes &bytes, Common::String &error) {
 	// Stereo PCM remains embedded, independent of the enhancement pack.
 	if (SaveState::stereoTheme(sound)) io.formatVersion = 9;
 	if (!journal.entries.empty()) io.formatVersion = 10;
+	if (routes.graph.cursor()) io.formatVersion = 11;
 	if (!SaveState::sync(*this, io) || payload.size() > 128 * 1024 * 1024) { error = "Cannot encode game state"; return false; }
 	Common::MemoryReadStream content(payload.getData(), uint32(payload.size())); byte digest[16]; Common::computeStreamMD5(content, digest);
 	Common::MemoryWriteStreamDynamic out(DisposeAfterUse::YES); out.writeUint32BE(MKTAG('D','F','S','V')); out.writeUint32LE(io.formatVersion); out.writeUint32LE(uint32(payload.size())); out.write(digest, 16); out.write(payload.getData(), uint32(payload.size()));
@@ -475,7 +489,7 @@ bool Session::loadState(const Bytes &bytes, Common::String &error) {
 	if (bytes.size() < 28 || bytes.size() > 128 * 1024 * 1024 + 28) { error = "Invalid save size"; return false; }
 	Common::MemoryReadStream in(bytes.data(), bytes.size());
 	const uint32 magic = in.readUint32BE(), formatVersion = in.readUint32LE(), payloadSize = in.readUint32LE();
-	if (magic != MKTAG('D','F','S','V') || (formatVersion < 1 || formatVersion > 10) || payloadSize != bytes.size() - 28) { error = "Unsupported DreamFactory save"; return false; }
+	if (magic != MKTAG('D','F','S','V') || (formatVersion < 1 || formatVersion > 11) || payloadSize != bytes.size() - 28) { error = "Unsupported DreamFactory save"; return false; }
 	byte expected[16], digest[16]; in.read(expected, 16); Common::computeStreamMD5(in, digest); in.seek(28);
 	if (memcmp(expected, digest, 16)) { error = "Save checksum mismatch"; return false; }
 	Session prepared;

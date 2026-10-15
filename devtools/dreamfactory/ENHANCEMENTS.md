@@ -350,7 +350,7 @@ The journal is unavailable during movies.
 
 History and bookmarks belong to the loaded save. Old saves load with an empty
 journal; earlier dialogue cannot be reconstructed. Saves containing history use
-format v10 and require a journal-capable build of this fork. The most recent
+format v10 (v11 when a route position is recorded) and require a compatible build of this fork. The most recent
 16,384 entries are retained. Disabling recording keeps existing entries.
 
 The Decisions view is a record of choices, not a complete branching flowchart.
@@ -364,13 +364,35 @@ The interface uses ScummVM theme widgets and fonts, without borrowing game art.
 
 ### VLR-inspired route work (active)
 
-The continuous log is the first milestone. The route graph/model foundation is
-now implemented and covered by the native stage audit: stable scene/decision
-IDs, independently accumulated choice discovery, restoring a playthrough cursor,
-scene-only checkpoint references, and a bounded, checksummed metadata codec.
-Malformed profiles and profiles for different game data are rejected before
-replacing the current graph. This foundation is not yet wired into gameplay or
-a flowchart screen and does not create checkpoints or enable scene revisiting.
+Route discovery is now recorded during gameplay, independently of the loaded
+save's dialogue history. The shared game options include **Record branching
+routes**; disabling it preserves existing discoveries. Profiles are isolated by
+ScummVM game target and BOOTFILE identity, and use ScummVM's save-file manager.
+Alternating checksummed metadata files retain the previous committed generation
+if the newest write is damaged. If neither generation is intact, recording is
+disabled for that session rather than overwriting the damaged profile.
+
+Before an input gesture is dispatched at an idle script boundary, the engine
+prepares a native checkpoint. If it starts a recorded conversation, that snapshot
+is stored separately from manual/autosave slots. Conversations with no safe
+pre-interaction snapshot remain discoverable without a revisit checkpoint.
+Each snapshot is immutable, bounded to the native save limit, and counted against
+a default 1024 MiB uncompressed storage budget. The optional configuration key
+`dreamfactory_route_storage_mib` accepts 64–4096 MiB. Reaching the budget stops
+new checkpoint storage while discovery recording continues.
+
+Native v11 saves retain the playthrough's route position and a lineage token;
+loading an older save resets that position without erasing discoveries. A save
+from a different discovery profile cannot accidentally select a reused numeric
+node ID. All prior native save versions remain loadable.
+
+The internal scene-restore operation validates and loads the complete checkpoint
+transactionally, then reuses the discovered scene when its conversation starts
+again. Tests cover input-triggered capture, authored state restoration, replay
+without duplicate scenes, cumulative discoveries, failed writes, recovery,
+storage limits, and missing/corrupt checkpoints for all three supported games.
+The route map and its player-facing revisit action are still under construction;
+the current Decisions list does not yet expose these checkpoints.
 
 The planned route map will expose
 connected scenes and encountered decisions, conceal undiscovered outcomes, and
@@ -385,8 +407,7 @@ Keep route discovery separate from the loaded playthrough, preserve manual save
 slots, bound checkpoint storage, and validate a checkpoint before replacing the
 live session. Tests must cover alternate paths, corrupt/missing checkpoints,
 loading old saves, controller input, and all three supported games. The branch
-map, discovery persistence, scene checkpoints and period styling remain work in
-progress; this milestone does not enable rewinding.
+map, ending identification, and period styling remain work in progress.
 
 After route functionality is complete, compare the interface against actual
 Virtue's Last Reward screenshots and match its log/flowchart interaction as

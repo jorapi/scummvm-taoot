@@ -72,6 +72,39 @@ public:
 	void number(uint32 n) { for (uint32 i = 0; i < 4; ++i) byteValue(byte(n >> (8 * i))); }
 	void text(const Common::String &s) { for (uint32 i = 0; i < s.size(); ++i) byteValue(byte(s[i])); byteValue(0); }
 };
+class RouteTestFiles : public Common::SaveFileManager {
+public:
+	Common::HashMap<Common::String, Bytes> files;
+	Common::String failSuffix;
+	class Output : public Common::OutSaveFile {
+		RouteTestFiles &_owner;
+		Common::String _name;
+		bool _failed = false;
+	public:
+		Output(RouteTestFiles &owner, const Common::String &name) : OutSaveFile(new Common::MemoryWriteStreamDynamic(DisposeAfterUse::YES)), _owner(owner), _name(name) {}
+		void finalize() override {
+			auto *stream = static_cast<Common::MemoryWriteStreamDynamic *>(_wrapped);
+			_failed = !_owner.failSuffix.empty() && _name.hasSuffix(_owner.failSuffix);
+			Bytes &bytes = _owner.files[_name]; bytes.resize(_failed ? 1 : uint32(stream->size()));
+			memcpy(bytes.data(), stream->getData(), bytes.size());
+		}
+		bool err() const override { return _failed || OutSaveFile::err(); }
+	};
+	Common::OutSaveFile *openForSaving(const Common::String &name, bool compress = true) override { return new Output(*this, name); }
+	Common::InSaveFile *openForLoading(const Common::String &name) override {
+		if (!files.contains(name)) return nullptr;
+		const Bytes &bytes = files[name]; return new Common::MemoryReadStream(bytes.data(), bytes.size());
+	}
+	Common::InSaveFile *openRawFile(const Common::String &name) override { return openForLoading(name); }
+	bool removeSavefile(const Common::String &name) override { if (!files.contains(name)) return false; files.erase(name); return true; }
+	Common::StringArray listSavefiles(const Common::String &pattern) override {
+		Common::StringArray names;
+		for (const auto &file : files) if (file._key.matchString(pattern)) names.push_back(file._key);
+		return names;
+	}
+	void updateSavefilesList(Common::StringArray &) override {}
+	bool exists(const Common::String &name) override { return files.contains(name); }
+};
 bool auditPuppetSession(const Common::FSNode &root, OSystem *backend) {
 	const char *bad[] = { "bad-head", "bad-version", "bad-lines", "bad-band", "bad-script", "bad-name", "bad-layer", "bad-frame", "bad-stance" };
 	Bytes bytes; for (uint32 i = 0; i < ARRAYSIZE(bad); ++i) { Puppet value; if (!read(root.getChild(Common::String(bad[i]) + ".pup"), bytes) || value.load(bytes)) { warning("PUPPET READER FAIL accepted %s", bad[i]); return false; } }
@@ -510,6 +543,8 @@ bool auditPuppetSession(const Common::FSNode &root, OSystem *backend) {
 	ConfMan.setBool("dreamfactory_journal", true, Common::ConfigManager::kTransientDomain);
 	Session journalSession(backend);
 	if (!journalSession.init(root) || !journalSession.puppetSystem.open("speech")) return false;
+	RouteTestFiles routeFiles;
+	if (!journalSession.routes.open(&routeFiles, "conversation-test", "fixture", error)) return false;
 	class JournalSource : public Common::EventSource {
 	public:
 		OSystem *backend; Session &session; Common::FSNode root; uint32 phase = 0, start = 0; uint64 logicalStart = 0;
@@ -550,6 +585,18 @@ bool auditPuppetSession(const Common::FSNode &root, OSystem *backend) {
 	if (journalSession.runtime.run(test, "choices").value.number() != 902 || journalSession.journal.entries.size() != 2) return false;
 	const JournalEntry &decision = journalSession.journal.entries[1];
 	if (decision.selected != 1 || decision.choices.size() != 2 || decision.text != "answer") return false;
+	RouteStore discovered;
+	if (!discovered.open(&routeFiles, "conversation-test", "fixture", error) || discovered.graph.nodes().size() != 2 || discovered.graph.node(2)->entry.choices != decision.choices || discovered.graph.node(2)->seenChoices != 2) return false;
+	warning("ROUTE CAPTURE PASS heard speech starts a scene actual chosen reply discovery persisted across restart");
+	Session routeSession(backend); RouteTestFiles checkpointFiles;
+	if (!routeSession.init(root) || !routeSession.stageSystem.open("route", nullptr, false) || !routeSession.routes.open(&checkpointFiles, "input-test", "fixture", error)) { warning("ROUTE CHECKPOINT FAIL init %s %s", error.c_str(), routeSession.runtime.error.c_str()); return false; }
+	Common::Event routeClick; routeClick.type = Common::EVENT_LBUTTONDOWN; routeClick.mouse = Common::Point(100, 100);
+	routeSession.postEvent(routeClick);
+	if (!routeSession.step() || routeSession.runtime.globals["routecounter"].number() != 1 || routeSession.routes.graph.nodes().size() != 1 || !routeSession.routes.graph.node(1)->checkpoint) { warning("ROUTE CHECKPOINT FAIL capture nodes=%u counter=%d error=%s", routeSession.routes.graph.nodes().size(), routeSession.runtime.globals["routecounter"].number(), routeSession.runtime.error.c_str()); return false; }
+	if (!routeSession.restoreRouteScene(1, error) || routeSession.runtime.globals["routecounter"].number() != 0 || routeSession.pointerDown) { warning("ROUTE CHECKPOINT FAIL restore %s", error.c_str()); return false; }
+	routeSession.postEvent(routeClick);
+	if (!routeSession.step() || routeSession.runtime.globals["routecounter"].number() != 1 || routeSession.routes.graph.nodes().size() != 1) { warning("ROUTE CHECKPOINT FAIL revisit nodes=%u error=%s", routeSession.routes.graph.nodes().size(), routeSession.runtime.error.c_str()); return false; }
+	warning("ROUTE CHECKPOINT PASS pre-gesture native snapshot restores prior authored state replay reuses discovered scene without duplicating nodes");
 	ConfMan.setBool("dreamfactory_journal", false, Common::ConfigManager::kTransientDomain);
 	if (journalSession.runtime.run(test, "speak").value.number() != 42 || journalSession.journal.entries.size() != 2) return false;
 	if (hadJournal) ConfMan.set("dreamfactory_journal", oldJournal, Common::ConfigManager::kTransientDomain);
@@ -2658,6 +2705,48 @@ bool auditRooms(const Common::FSNode &root) {
 	}
 	warning("ROOM %s files=%u failures=%u", failures ? "FAIL" : "PASS", count, failures); return !failures;
 }
+static bool auditRouteStore() {
+	RouteTestFiles files; RouteStore store; Common::String error;
+	if (store.open(&files, "../unsafe", "fixture", error) || store.active() || !store.open(&files, "test", "fixture", error)) return false;
+	JournalEntry entry; entry.text = "Scene";
+	const uint32 scene = store.graph.recordScene(entry);
+	if (!store.save(error)) return false;
+	entry.choices.push_back("Reply"); entry.selected = 0;
+	const uint32 decision = store.graph.recordDecision(entry);
+	if (!store.save(error)) return false;
+	RouteStore loaded;
+	if (!loaded.open(&files, "test", "fixture", error) || loaded.graph.cursor() != decision) return false;
+	// A torn newest slot must retain the previous committed discovery.
+	const Common::String latest = files.listSavefiles("*.b")[0]; Bytes intact = files.files[latest]; files.files[latest].resize(1);
+	if (!loaded.open(&files, "test", "fixture", error) || loaded.graph.cursor() != scene) return false;
+	files.files[latest] = intact;
+	RouteStore foreign;
+	if (!foreign.open(&files, "test", "another-fixture", error) || !foreign.graph.nodes().empty()) return false;
+	// Storage checks the native envelope; Session::loadState validates its contents.
+	Bytes checkpoint; checkpoint.resize(32); Common::MemoryWriteStream encoded(checkpoint.data(), checkpoint.size());
+	encoded.writeUint32BE(MKTAG('D','F','S','V')); encoded.writeUint32LE(10); encoded.writeUint32LE(4);
+	memset(checkpoint.data() + 28, 0, 4);
+	Common::MemoryReadStream payload(checkpoint.data() + 28, 4); byte digest[16]; Common::computeStreamMD5(payload, digest); encoded.write(digest, 16);
+	store.setBudget(31);
+	if (store.writeCheckpoint(scene, checkpoint, error) || store.graph.node(scene)->checkpoint) return false;
+	store.setBudget(1024);
+	files.failSuffix = ".a";
+	if (store.writeCheckpoint(scene, checkpoint, error) || store.graph.node(scene)->checkpoint || !files.listSavefiles("*.checkpoint").empty()) return false;
+	if (!loaded.open(&files, "test", "fixture", error) || loaded.graph.cursor() != decision) return false;
+	files.failSuffix.clear();
+	if (!store.writeCheckpoint(scene, checkpoint, error) || store.writeCheckpoint(scene, checkpoint, error)) return false;
+	Bytes replay;
+	if (!loaded.open(&files, "test", "fixture", error) || !loaded.readCheckpoint(decision, replay, error) || replay != checkpoint) return false;
+	const Common::String snapshot = files.listSavefiles("*.checkpoint")[0];
+	files.files[snapshot].back() ^= 1;
+	if (loaded.readCheckpoint(decision, replay, error) || !replay.empty()) return false;
+	files.removeSavefile(snapshot);
+	if (loaded.readCheckpoint(decision, replay, error) || !replay.empty()) return false;
+	for (const auto &name : files.listSavefiles("*.?")) files.files[name].resize(1);
+	if (loaded.open(&files, "test", "fixture", error) || loaded.active()) return false;
+	warning("ROUTE STORE PASS restart identity isolation torn metadata recovery immutable snapshots failed commit rollback quota missing corrupt checkpoint rejection");
+	return true;
+}
 static bool auditRouteGraph() {
 	RouteGraph graph;
 	JournalEntry scene; scene.speaker = "Speaker"; scene.room = "Room"; scene.file = "disc1/speech.pup"; scene.text = "A scene";
@@ -2667,7 +2756,7 @@ static bool auditRouteGraph() {
 	decision.selected = 1; decision.text = decision.choices[1];
 	const uint32 second = graph.recordDecision(decision), ending = graph.recordEnding(scene);
 	if (!start || first != 2 || continuation != 3 || second != 4 || ending != 5 || graph.sceneFor(second) != continuation || !graph.attachCheckpoint(start, 1024)) return false;
-	if (graph.attachCheckpoint(first, 1024) || graph.attachCheckpoint(start, 33 * 1024 * 1024) || graph.restoreCursor(start, 0) || graph.restoreCursor(first, 1)) return false;
+	if (graph.attachCheckpoint(first, 1024) || graph.attachCheckpoint(start, RouteGraph::kMaxCheckpointBytes + 1) || graph.restoreCursor(start, 0) || graph.restoreCursor(first, 1)) return false;
 	if (!graph.restoreCursor(start, -1) || graph.recordDecision(decision) != first || graph.node(first)->seenChoices != 3) return false;
 	const uint32 alternate = graph.recordScene(scene);
 	if (alternate != 6 || graph.node(alternate)->parent != first || graph.node(alternate)->parentChoice != 1 || !graph.valid()) return false;
@@ -2695,7 +2784,7 @@ static bool auditRouteGraph() {
 	return true;
 }
 bool auditStageSession(const Common::FSNode &root, OSystem *system) {
-	if (!auditRouteGraph()) return false;
+	if (!auditRouteGraph() || !auditRouteStore()) return false;
 	Session session; Bytes bytes; ScriptInstance test; test.name = "stage-test"; Common::String error;
 	if (!session.init(root) || !read(root.getChild("test.dfscript"), bytes) || !loadScript(bytes, test.script, error)) { warning("STAGE SESSION FAIL fixture init %s", error.c_str()); return false; }
 	const ScriptResult result = session.runtime.run(test, "test");
@@ -2959,6 +3048,26 @@ bool auditStageSession(const Common::FSNode &root, OSystem *system) {
 	if (journalSave.saveState(invalidJournal, journalError)) return false;
 	if (!journalSave.loadState(withoutJournal, journalError) || !journalSave.journal.entries.empty()) { warning("JOURNAL SAVE FAIL legacy %s", journalError.c_str()); return false; }
 	warning("JOURNAL SAVE PASS bounded v10 history choices bookmarks timestamps invalid row rejection old-save compatibility");
+	RouteTestFiles routeFiles;
+	if (!journalSave.routes.open(&routeFiles, "save-test", "fixture", journalError)) return false;
+	JournalEntry sceneEntry; sceneEntry.speaker = "Speaker"; sceneEntry.file = "speech.pup";
+	const uint32 sceneId = journalSave.routes.graph.recordScene(sceneEntry);
+	const uint32 decisionId = journalSave.routes.graph.recordDecision(entry);
+	Bytes routeSave;
+	if (!journalSave.saveState(routeSave, journalError) || READ_LE_UINT32(routeSave.data() + 4) != 11) return false;
+	if (!journalSave.routes.writeCheckpoint(sceneId, withoutJournal, journalError)) return false;
+	const uint32 newScene = journalSave.routes.graph.recordScene(sceneEntry);
+	if (!journalSave.loadState(routeSave, journalError) || journalSave.routes.graph.nodes().size() != 3 || journalSave.routes.graph.cursor() != decisionId || journalSave.routes.graph.choice() != 1) return false;
+	if (!journalSave.loadState(withoutJournal, journalError) || journalSave.routes.graph.cursor() || journalSave.routes.graph.nodes().size() != 3) return false;
+	if (!journalSave.restoreRouteScene(decisionId, journalError) || journalSave.routes.graph.cursor() != sceneId || journalSave.routes.graph.nodes().size() != 3 || !journalSave.stageSystem.current) return false;
+	const Common::String savedSnapshot = routeFiles.listSavefiles("*.checkpoint")[0]; routeFiles.files[savedSnapshot].back() ^= 1;
+	journalSave.runtime.globals["routeRetained"] = Value(72);
+	if (journalSave.restoreRouteScene(decisionId, journalError) || journalSave.runtime.globals["routeRetained"].number() != 72 || journalSave.routes.graph.cursor() != sceneId) return false;
+	// A different profile may reuse numeric IDs; its incompatible lineage must not be selected.
+	journalSave.routes.graph = RouteGraph(); sceneEntry.speaker = "Another speaker";
+	journalSave.routes.graph.recordScene(sceneEntry); journalSave.routes.graph.recordDecision(entry);
+	if (!journalSave.loadState(routeSave, journalError) || journalSave.routes.graph.cursor() || journalSave.routes.graph.nodes().size() != 2 || newScene != 3) return false;
+	warning("ROUTE SAVE PASS v11 playthrough cursor cumulative discovery old-save compatibility safe native checkpoint restore corrupt restore leaves game intact foreign lineage rejected");
 
 	return true;
 }

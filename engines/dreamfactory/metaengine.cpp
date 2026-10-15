@@ -16,6 +16,7 @@ static const ADExtraGuiOptionsMap optionsList[] = {
 	{GUIO_GAMEOPTIONS5, {_s("Show hotspot hints"), _s("Show markers for sampled clickable objects; the mapped hotspot action toggles visibility"), "dreamfactory_hotspot_hints", false, 0, 0}},
 	{GUIO_GAMEOPTIONS6, {_s("Touch direction pad"), _s("Show walking and turning buttons in navigable world views"), "dreamfactory_touch_controls", false, 0, 0}},
 	{GUIO_GAMEOPTIONS7, {_s("Record dialogue journal"), _s("Keep heard lines and encountered decisions in your saves; open with J or controller Back"), "dreamfactory_journal", true, 0, 0}},
+	{GUIO_GAMEOPTIONS8, {_s("Record branching routes"), _s("Keep discovered conversations across saves and record scene checkpoints for revisiting branches"), "dreamfactory_routes", true, 0, 0}},
 	AD_EXTRA_GUI_OPTIONS_TERMINATOR};
 class DreamFactoryMetaEngine : public AdvancedMetaEngine<ADGameDescription> {
 public:

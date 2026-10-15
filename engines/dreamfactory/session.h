@@ -3,6 +3,7 @@
 #define DREAMFACTORY_SESSION_H
 #include "dreamfactory/resources.h"
 #include "dreamfactory/journal.h"
+#include "dreamfactory/routes.h"
 #include "dreamfactory/runtime.h"
 #include "dreamfactory/sound.h"
 #include "dreamfactory/crickets.h"
@@ -41,6 +42,8 @@ public:
 	void excludeWallTime(uint32 started);
 	bool subtitlesEnabled() const;
 	Journal journal;
+	RouteStore routes;
+	bool restoreRouteScene(uint32 node, Common::String &error);
 	bool journalAudio(const JournalEntry &entry, Common::SharedPtr<AudioClip> &clip);
 	// One main-loop pass: deliver one queued gesture, otherwise run boot idle.
 	bool step();
@@ -105,6 +108,14 @@ private:
 	bool _scriptQuit = false;
 	bool _dialogActive = false;
 	bool _journalRequested = false;
+	Bytes _routePending;
+	Common::SharedPtr<LoadedPuppet> _routeOwner;
+	uint32 _savedRouteCursor = 0;
+	int32 _savedRouteChoice = -1;
+	Common::String _savedRouteToken;
+	uint32 _routeResumeScene = 0;
+	void prepareRouteCheckpoint();
+	void recordRoute(const JournalEntry &entry, bool decision);
 	uint64 _dialogGeneration = 0;
 	bool _pollingButton = false;
 	uint64 _buttonQuerySequence = 0;
