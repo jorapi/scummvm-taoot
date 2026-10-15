@@ -1,0 +1,2 @@
+# This file is included from the main configure script.
+add_engine dreamfactory "CyberFlix DreamFactory" no "" "" "highres 16bit freetype2"

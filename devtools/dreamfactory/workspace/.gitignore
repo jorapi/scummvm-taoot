@@ -1,0 +1,7 @@
+/game-data/
+/references/
+/dependencies/
+/build/
+*.dbgl.zip
+*.log
+__pycache__/

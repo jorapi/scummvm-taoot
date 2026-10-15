@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Titanic enhancement comparison</title>
+<style>
+body{margin:24px;background:#131821;color:#edf0f7;font:16px system-ui;max-width:1100px}h1{font-size:24px}
+button,select,input{font:inherit;margin:6px;padding:8px}button,select{background:#242e40;color:inherit;border:1px solid #64748b;border-radius:5px}
+#picture{position:relative;width:100%;max-width:1024px;aspect-ratio:512/264;background:#070a0f;overflow:hidden}
+#picture img{position:absolute;inset:0;width:100%;height:100%;object-fit:fill}#top{clip-path:inset(0 50% 0 0)}
+label{display:inline-flex;align-items:center}#status{color:#c5cedf}#slide{width:min(500px,60vw)}
+</style>
+<h1>Titanic enhancement comparison</h1>
+<p>Compare a still, then play its entire walk or turn to check consistency. Left of the slider is the enhanced image.</p>
+<div><select id="sequences" aria-label="Sequence"></select><button id="play">Play</button><button id="previous">Previous</button><button id="next">Next</button>
+<label>Frame <input id="frame" type="range" min="0" value="0"></label></div>
+<div id="picture"><img id="original" alt="Original game background"><img id="top" alt="Enhanced background"></div>
+<label>Enhanced / Original <input id="slide" type="range" min="0" max="100" value="50"></label>
+<button id="originalOnly">Original</button><button id="enhancedOnly">Enhanced</button>
+<p id="status" role="status"></p>
+<p>Put 2× PNG outputs in <code>enhanced/</code> using the original filenames. Missing images display the original. This preview does not change game data.</p>
+<script>
+const manifest = /* MANIFEST */ null;
+const $ = id => document.getElementById(id);
+if (!manifest) throw new Error('Generate this workbench with tools/export-enhancement-scenes.mjs');
+for (const [i, sequence] of manifest.sequences.entries()) $('sequences').add(new Option(sequence.name, i));
+let frame = 0, timer = null, request = 0;
+function show() {
+  const sequence = manifest.sequences[Number($('sequences').value)];
+  frame = (frame + sequence.frames.length) % sequence.frames.length;
+  $('frame').max = sequence.frames.length - 1; $('frame').value = frame;
+  const asset = manifest.assets[sequence.frames[frame].asset], token = ++request;
+  $('original').src = 'original/' + asset.file;
+  $('top').src = 'original/' + asset.file;
+  const candidate = new Image();
+  $('status').textContent = `${sequence.name} · ${frame + 1}/${sequence.frames.length} · ${asset.file} · checking enhanced image`;
+  candidate.onload = () => {
+    if (token !== request) return;
+    $('top').src = candidate.src;
+    $('status').textContent = `${sequence.name} · ${frame + 1}/${sequence.frames.length} · ${candidate.naturalWidth}×${candidate.naturalHeight} enhanced`;
+  };
+  candidate.onerror = () => { if (token === request) $('status').textContent = `${sequence.name} · ${frame + 1}/${sequence.frames.length} · original only; enhanced image missing`; };
+  candidate.src = 'enhanced/' + asset.file;
+}
+function clip(value) { $('slide').value = value; $('top').style.clipPath = `inset(0 ${100-value}% 0 0)`; }
+$('slide').oninput = event => clip(event.target.value);
+$('originalOnly').onclick = () => clip(0); $('enhancedOnly').onclick = () => clip(100);
+$('sequences').onchange = () => { frame = 0; show(); };
+$('frame').oninput = event => { frame = Number(event.target.value); show(); };
+$('previous').onclick = () => { --frame; show(); }; $('next').onclick = () => { ++frame; show(); };
+$('play').onclick = () => { if (timer) {clearInterval(timer);timer=null;$('play').textContent='Play';} else {timer=setInterval(()=>{++frame;show();},125);$('play').textContent='Pause';} };
+show();
+</script></html>

@@ -1,0 +1,139 @@
+name: DreamFactory platform builds
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'engines/dreamfactory/**'
+      - 'devtools/dreamfactory/**'
+      - '.github/workflows/dreamfactory-builds.yml'
+  pull_request:
+    paths:
+      - 'engines/dreamfactory/**'
+      - 'devtools/dreamfactory/**'
+      - '.github/workflows/dreamfactory-builds.yml'
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: microsoft/setup-msbuild@v2
+      - name: Configure and build
+        shell: pwsh
+        env:
+          VCPKG_DEFAULT_TRIPLET: x64-windows
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $env:VCPKG_ROOT = $env:VCPKG_INSTALLATION_ROOT
+          & "$env:VCPKG_ROOT/vcpkg.exe" install --triplet x64-windows --x-manifest-root=devtools/dreamfactory/windows-deps --x-install-root=build-dreamfactory/vcpkg_installed
+          if ($LASTEXITCODE) { throw 'Dependency installation failed' }
+          & "$env:VCPKG_ROOT/vcpkg.exe" integrate install
+          cmake -S devtools/create_project/cmake -B build-dreamfactory/generator
+          cmake --build build-dreamfactory/generator --config Release
+          if ($LASTEXITCODE) { throw 'Generator build failed' }
+          $generator = Resolve-Path build-dreamfactory/generator/Release/create_project.exe
+          $disabled = & $generator 2>&1 | Select-String '^\s+enabled\s+\|\s+(\S+)' | ForEach-Object { '--disable-' + $_.Matches[0].Groups[1].Value }
+          New-Item -ItemType Directory -Force build-dreamfactory/windows | Out-Null
+          Push-Location build-dreamfactory/windows
+          & $generator ../.. --msvc --vcpkg --disable-all-engines --enable-engine=dreamfactory @disabled --enable-opengl --enable-builtin-resources --enable-freetype2 --enable-zlib --enable-highres --enable-16bit --enable-detection-static
+          if ($LASTEXITCODE) { throw 'Project generation failed' }
+          $installed = [IO.Path]::GetFullPath('../vcpkg_installed') + '/'
+          msbuild scummvm.sln /m /p:Configuration=Release /p:Platform=x64 /p:VcpkgEnableManifest=false "/p:VcpkgInstalledDir=$installed" /v:minimal
+          if ($LASTEXITCODE) { throw 'Engine build failed' }
+          Pop-Location
+          New-Item -ItemType Directory -Force build-dreamfactory/artifacts/windows | Out-Null
+          Copy-Item build-dreamfactory/windows/Releasex64/scummvm.exe build-dreamfactory/artifacts/windows/
+          Copy-Item build-dreamfactory/vcpkg_installed/x64-windows/bin/*.dll build-dreamfactory/artifacts/windows/
+          Copy-Item dists/engine-data/fonts.dat,COPYING,COPYRIGHT build-dreamfactory/artifacts/windows/
+          Copy-Item gui/themes/scumm*.zip build-dreamfactory/artifacts/windows/
+          Copy-Item devtools/dreamfactory/Run-Software-Renderer.cmd build-dreamfactory/artifacts/windows/
+          Copy-Item devtools/dreamfactory/ENHANCEMENTS.md build-dreamfactory/artifacts/windows/
+          foreach ($package in Get-ChildItem build-dreamfactory/vcpkg_installed/x64-windows/share -Directory) {
+            $copyright = Join-Path $package.FullName copyright
+            if (Test-Path -LiteralPath $copyright) {
+              $licenseDir = "build-dreamfactory/artifacts/windows/licenses/$($package.Name)"
+              New-Item -ItemType Directory -Force $licenseDir | Out-Null
+              Copy-Item -LiteralPath $copyright -Destination $licenseDir
+            }
+          }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dreamfactory-windows-x64-unsigned
+          path: build-dreamfactory/artifacts/windows/
+          if-no-files-found: error
+  apple:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            platform: macos
+            arch: arm64
+            signing: adhoc
+          - runner: macos-15-intel
+            platform: macos
+            arch: x86_64
+            signing: adhoc
+          - runner: macos-15
+            platform: ios
+            arch: arm64
+            signing: unsigned
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: macOS dependencies
+        if: matrix.platform == 'macos'
+        run: brew install sdl2 freetype dylibbundler
+      - name: Build without Apple identity certificates
+        run: bash devtools/dreamfactory/build-apple.sh '${{ matrix.platform }}' '${{ matrix.arch }}'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dreamfactory-${{ matrix.platform }}-${{ matrix.arch }}-${{ matrix.signing }}
+          path: build-dreamfactory/artifacts/*
+          if-no-files-found: error
+  android:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        abi: [arm64-v8a, armeabi-v7a, x86_64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+      - name: Install native build prerequisites
+        run: sudo apt-get update && sudo apt-get install -y cmake pkg-config
+      - name: Install matching platform and NDK
+        run: |
+          ndk=$(sed -n 's/^[[:space:]]*ndkVersion = "\([^"]*\)".*/\1/p' dists/android/build.gradle)
+          sdk=$(sed -n 's/.*version = release(\([0-9]*\)).*/\1/p' dists/android/build.gradle)
+          test -n "$ndk" && test -n "$sdk"
+          platform=$sdk
+          if [ "$sdk" -ge 37 ]; then platform="$sdk.0"; fi
+          sdkmanager "ndk;$ndk" "platforms;android-$platform" "build-tools;$sdk.0.0"
+          echo "ANDROID_NDK_ROOT=$ANDROID_SDK_ROOT/ndk/$ndk" >> "$GITHUB_ENV"
+      - name: Build unsigned APK
+        run: bash devtools/dreamfactory/build-android.sh '${{ matrix.abi }}'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dreamfactory-android-${{ matrix.abi }}-unsigned
+          path: build-dreamfactory/artifacts/*.apk
+          if-no-files-found: error
+  psp:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build experimental PSP homebrew
+        # PSPDEV's image is Alpine; run Node-based Actions on the host instead.
+        run: |
+          docker run --rm -v "$PWD:/src" -w /src pspdev/pspdev:latest \
+            bash -lc 'apk add --no-cache zip python3 && bash devtools/dreamfactory/build-psp.sh'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dreamfactory-psp-experimental
+          path: build-dreamfactory/artifacts/*.zip
+          if-no-files-found: error

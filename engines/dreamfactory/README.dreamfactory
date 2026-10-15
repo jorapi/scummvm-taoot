@@ -1,0 +1,1622 @@
+DreamFactory development engine
+==============================
+
+This is an experimental engine for Titanic (DreamFactory 4) and Dust
+(DreamFactory 1). Normal launch runs BOOTFILE and authored input, story,
+dialogue, inventory, media and timers. The supplied English Windows retail,
+September 1996 interactive demo and Dust pass fresh-start completion paths on
+one native build. Hash-verified checkpoint chains contain 57 retail traces,
+2 demo traces and 330 Dust traces. Retail reaches its four-evidence best
+ending, credits and quit; Dust completes both gunfights, the duel, four temples,
+Bloodstone and the Yunni ending/credits quit. Separate regressions cover
+alternate endings, settings, native save/load, invalid saves and death recovery.
+These checks do not exhaust every dialogue/quest permutation or establish
+support for other editions. Original TI/DF saves cannot be imported, and
+saving during modal movies/dialogue/camera actions is disabled.
+dreamfactory_viewer=true explicitly selects the developer room viewer.
+Older progress entries below are historical implementation milestones.
+
+Current music uses one shared queued channel with authored repeat roots.
+Repeated banks have independent controls and owners. New checkpoints are DFSV
+v8; v1-v7 remain readable. Dust separates one-shots from music and preserves
+duplicate one-shot records. The workspace's build/completion-requirements.json
+records current validation scope and evidence.
+
+Format and codec reference:
+  https://github.com/dhobi/dreamrefactory
+  revision d08950b58191fd20e22d2184d7334afbe737bb1c
+  GPL-3.0, dreamREfactory contributors, with format work credited there to DFET.
+
+image.cpp adapts engine/src/df/image.ts's frame decoder. archive.cpp follows
+container.ts's envelope layout; room.cpp and room_v1.cpp follow the documented
+SET layouts in set.ts and set-v1.ts. Frame decoding also retains the optional
+RLE scenery depth plane, with bounded row offsets and exact row coverage.
+A frame without depth clears the previous depth plane; malformed input leaves
+both colour and depth untouched. Room readers retain v4 motion camera coordinates,
+view heights, depth quantization, and Dust's eye height and camera setback.
+Independent reference hashes match all 37,452 decoded depth planes in the
+122 preserved SET files, including original disc variants. The C++ readers add explicit bounds and
+reference checks and use ScummVM types. All these files are GPL-3.0-or-later.
+
+script.cpp adapts df/script.ts and runtime/parser.ts; runtime.cpp follows
+runtime/interp.ts. stage.cpp follows df/stg.ts's v1/v4 layouts. opcodes.h is
+derived from df/opcodes.ts, which credits DFET (M3tox) for the opcode names.
+session.cpp implements boot library loading and scalar host commands, following
+runtime/builtins. motion.cpp follows runtime/scheduler.ts's v1/v4 actor
+walk/turn records and completion dispatch. stars.cpp reads primary/secondary
+placements and routes from df/set.ts and df/set-v1.ts. Session room entry binds
+those tables and settles pending actors. resources.cpp resolves script paths against preserved installed
+and CD trees; it never flattens canonical resource lookup across discs.
+The separate reference audits execute those TypeScript modules unchanged.
+
+rooms.cpp follows runtime/setscripts.ts and web/viewer.ts: stable room/scene/
+painting scripts, lifecycle chains, scene timers, authored navigation, named
+jumps, re-entry and callback-driven replacement. room_v1.cpp reads the full
+scene table, including built-on cells and custom names, and its trailing script
+references. All 122 preserved SET files match reference room/camera metadata hashes; native
+checks reconstruct every available standpoint. Synthetic v1/v4 tests cover
+containment, stage-library resolution, keyboard forwarding, self-closing scripts,
+Dust grid queries, malformed references/counts/names, delta images and zero-image
+scripted scenes. SDL checks cover palette/scaled output, pacing and quit during
+a scripted move. Depth planes, projected actors/props and native input routing
+are connected in gameplay; the developer viewer is selected explicitly.
+
+audio.cpp adapts df/audio.ts, banks.ts and snd.ts for V40/V41 audio and bank
+layouts. sound.cpp supplies ScummVM mixer streams for music, effects and speech;
+session.cpp exposes the corresponding script calls. PCM and resampled music
+hashes match the reference for all supplied banks. Mixer host smoke tests use
+SDL dummy audio. Scene audio is connected; playback save state remains pending.
+
+cast.cpp adapts df/cst.ts and the transparent sprite codec in df/shp.ts. Cast
+metadata, playback lists, angle variants, sprite anchors, palette indexes and
+opacity masks match the reference throughout the supplied CST corpus. actors.cpp
+connects cast lifecycle events, copies, deletion, enumeration and state storage
+to the session, following runtime/actors.ts and session-resources.ts. Deferred
+actor/cast dispatch and containment contexts follow session-events.ts. Compiled
+v1/v4 fixtures check dispatch, fresh copy state, scriptless actors and storage
+lifetime when a handler closes its cast. Animation, projection and stage composition are connected. Timed walking, turning
+and star routes are implemented in motion.cpp, with session room binding. Actual Dust BOOTFILE creates 16 actor copies through openactor handlers.
+
+scheduler.cpp follows runtime/scheduler.ts and clock.ts: the 32-entry one-shot
+loop table, case-folded identity, ordered replacement, countdown suspension and
+50 ms service/60 Hz tick clocks. Session timing calls drive actor callbacks and
+cooperative yields without re-entering the same handler. The actor audit also
+checks loop edge cases and compiled delay/forceupdate fixtures with virtual and
+real SDL clocks. Scene/flat dispatch, walking, positional ambience and BOOT idle
+are connected in gameplay; the separate room viewer does not run the session.
+
+crickets.cpp follows runtime/scheduler.ts: Titanic's 16-entry room-scoped ambience
+table with independent countdown jitter, fixed coordinates, pause and one-shot
+semantics. sound.cpp tracks positional mixer handles, sharing retail's two SFX
+slots with ordinary effects, and applies positional gain/pan
+and wave-master scaling. Synthetic compiled APIs and SDL mixer tests cover
+capacity/replacement, busy countdowns, overlapping loops, room exit/return, bank
+closure and reset. Integer distance/volume and folded bearing pan now follow
+the supplied original executables; active loops follow listener movement and
+stop outside their audible radius. Session rooms bind the room and settled camera
+listener; the ordinary interactive viewer still does not run that session.
+
+movie.cpp follows df/mov.ts, mov-v1.ts and the reference movie player's action
+model. It reads segmented Windows v1/v4 movies and retains separate raw delta
+and Dust transparency-composited frames. All 535 Windows movie files match
+the reference metadata, indexed pixel and PCM hashes. Eleven unused Macintosh
+assets in Dust's ZUNUSED directory are identified by their big-endian size field
+and excluded. Synthetic native checks cover malformed references and cycles,
+frame timing, voice waits, regions, cues, sound-follow jumps, chained calls and
+returns, action flags and skips. The MovieHost interface separates platform
+operations from the tested controller. movie_host.cpp connects ScummVM display
+and mixer operations to modal session playmovie/actionframe calls. Compiled
+fixtures check actual indexed screen output, palettes, sound/bed separation,
+segment inheritance, narration tails/replacement, voice waits, stale input,
+clicks, Escape, reset flags and quit abandoning the script. Real BOOTFILE diagnostics now complete startup for both Titanic editions:
+the demo reaches demo.stg/demo 1; retail reaches bedsit1 Scene2/View14 and
+main.stg/main 1 after the authored game/tour menu. Dust completes its three
+intro movies and opens Town Scene G15/north with new.flt/mainpanel, returning
+normally. Dust has two casts/54 actors (16 copies) and two shops/73 props
+(six copies) at startup. Native conversation rendering is connected to session diagnostics; native player input is connected in experimental session mode. Normal launch runs the authored session.
+
+shop.cpp adapts df/shp.ts's v1/v4 SHP/PRP directory, state and play-list reader,
+including its structural idle-pose correction. Prop sprites share cast.cpp's
+transparent codec. All 61 supplied shops match metadata and sprite hashes;
+synthetic checks cover repeated steps, degree selectors, reference-scale
+defaults, non-drawing archive gaps, malformed references/counts and name lengths.
+SCORP's desk references a typed archive gap, which is an empty picture. Shop
+lifecycle and basic prop host commands are connected by props.cpp and session.cpp.
+They fire openprop before openshop, preserve state and re-fire openshop on
+re-entry, and fire closeshop before removal. Deferred prop/shop dispatch, copies,
+state accessors and prop loop callbacks have compiled v1/v4 fixtures. Visibility
+hiding is separate from the visible flag; compiled checks verify visible-only
+broadcasts, newly shown controls, named hiding, release and reset. Screen-space animation, rendering and hit testing are connected. World
+projection and gameplay input are connected to stage composition. Existence
+queries remain pending. Named/remembered prop-star
+placement and deferred settlement on room entry are connected; compiled checks
+cover room filtering, explicit positions, facing overrides, copies and defaults.
+
+cursors.cpp reads CURS.<name> groups from the user's original executable via
+ScummVM's WinResources/WinCursorGroup readers. All 31 named cursor images and
+hotspots match dreamREfactory's independent dumpcursors.ts reader. Nested
+hide/show counters, case folding, NONE, fallback and reset have compiled checks.
+The data preparation script retains TI.EXE/DF.EXE as resource archives only.
+
+Session CLUT commands and blocking fades retain source palettes separately
+from black, use one 60 Hz tick per ramp step, and honor quit while deferring
+input and leaving the scheduler frozen. SDL and virtual-clock fixtures cover
+named palettes, range mixing, endpoints, timing and script abandonment. Room
+rendering retains a black palette across a draw until explicitly revealed.
+Plain visualeffect preserves black; named puppet palettes are available from
+the loaded conversation. Animated effects and persistent per-layer dimming
+still require the compositor.
+
+Static analysis of the supplied executables also informs session.cpp:
+  DF.EXE SHA256 d8a22e266c7307e550bd7284d2743947765303348a6b33cda48534c467aa95fe
+  TI.EXE (retail) SHA256 09e4c9c6536660c303fd26f0fa01dc91e2583eb78b81243f8fb1b27ef761011f
+Dust actorhitbox setter/getter 0x4261a0/0x4262b0 store signed words and a
+separate player pair. Actor collision remains pending. Distance routines
+DF.EXE 0x405e00 and TI.EXE 0x4276a0 sign-extend packed halves, wrap the squared
+sum at 32 bits, and return a truncated unsigned word square root, unlike the
+reference's rounded floating-point result. Camera-height getter/setter in this
+retail build (0x427b30/0x43dc60) read/write a signed word. Compiled checks cover
+negative coordinates, extreme-word distance arithmetic and fresh actor copies.
+No original executable instruction bytes are included in engine sources.
+
+puppet.cpp follows df/pup.ts: v1's direct stance versus v4's directory,
+eleven layer tables, dialogue/subtitle records, speech/animation references,
+per-line stance selection, the answer band and four idle intervals. All 95
+supplied Windows PUP files match independent metadata, sprite, lip-sync and
+PCM hashes; every linked script parses. Synthetic boundary cases cover counts,
+references, names, invalid stances and transactional animation failure.
+puppets.cpp and Session connect loading, internal names/script enumeration,
+branch dispatch/containment, base/default poses, visibility, five choice slots
+and the original random-swap scramble. Compiled tests cover context, passcode,
+missing/invalid opens, self-close/replacement lifetime and choice behavior.
+PuppetSpeech follows runtime/puppet.ts's line timing, caption gate, stance and
+lip-sync playback. The modal Session host decodes PUP audio into the voice
+channel, waits PCM duration plus 150 ms, consumes Escape across the whole speech
+run, records up to three repeat lines, ignores clicks and handles Ctrl+digits
+for volume. Missing audio falls back to text-byte length with a 1 s minimum.
+Compiled SDL and deterministic checks cover timing, poses, caption suppression,
+queue caps, interrupted runs, replacement lifetime, malformed animation,
+independent voice/effect channels and quit abandoning the waiting script.
+PuppetChoices and Session implement the modal puppetevent row tracker, ten-tick
+press floor, drag cancellation, retained choices and Escape's -1 branch.
+Picture clicks replay the prior answered plaque and up to three queued replies
+without re-entering the script; answer-to-voice matching uses text, not idents.
+Parameter 8 enables the four authored idle intervals. Idle timer draws use the
+original shared script RNG, rather than the reference browser's deliberate
+ambient-stream deviation. Idle lines use blocking speech, discard mouse input
+and exit the plaque on Escape with the interrupt flag intact. Silent-plaque
+Escape does not suppress the script's following parting line. Native/compiled
+checks cover these paths and quit-state isolation between test sessions.
+Native conversation display is connected to session speech and answer waits;
+normal gameplay uses the authored session.
+
+puppet_view.cpp follows web/puppet-view.ts for art composition: a 512x384
+logical screen in both supplied formats, eleven anchored sprite layers, matte
+room backgrounds, subtitle clipping and the original five-row answer band.
+Room and puppet palettes stay separate in the RGBA canvas. Independent audits
+execute the actual reference compositor with neutral gamma and compare images
+for represented stances, opening/final poses, captions and changing backdrops
+across all 95 PUP files. Native boundary fixtures cover layer order, opaque zero,
+reserved endpoints, anchors, transparency, band clipping, visibility, character
+replacement and fixed half-open choice rectangles. The native RGB display now presents this canvas during session conversation
+waits; normal gameplay input routing is connected.
+
+PuppetView's text overlay follows the original Windows caption and plaque
+layout documented in web/puppet-view.ts, including literal-space wrapping at
+496 pixels, a two-line ceiling, baseline spacing, separate subtitle/answer
+margins, raw CLUT inks, and three-pixel selected/inverted frames. CP1252 is
+converted to Unicode before measuring/drawing. The unbroken overlong caption
+case keeps the original's no-text behavior, not the browser CJK deviation.
+PuppetFonts uses ScummVM's FreeType interface, cached by signed size, and owns
+each lazy font stream. A malformed replacement preserves loaded fonts. Native
+fixtures check layout and stream lifetime; previews combine real supplied
+portraits, subtitle text and answer rows. Session speech and answer waits present the canvas through the native RGB
+display; the normal interactive entry point runs the authored session.
+
+The Windows build pins FreeType 2.13.3 and Liberation Sans 2.1.5 via
+SHA256-checked archives in tools/prepare-fonts.ps1. Font bytes can instead come
+from a supplied Arial file. Liberation Sans aims for Arial-compatible metrics
+and is not pixel-identical to Arial. Build font assets and their OFL/FreeType
+license notices are kept in build/runtime-data, outside proprietary game data.
+Engine configure dependencies now include highres, 16bit and freetype2.
+
+DreamCatcher was reviewed for structural/string background, without copying code:
+  https://github.com/JamesK89/DreamCatcher
+
+Data: tools/prepare-data.py preserves installed and CD resource trees, including
+all puzzle, inventory, puppet and movie directories. It also writes a flat view
+for the development room viewer. Differing same-name disc resources must remain
+available to the volume-aware session resolver. Script path slot 0 is read-only;
+slots 1..8 are searched in order. Virtual paths are case insensitive.
+Detection currently covers only the supplied English Windows editions.
+
+Controls: Left/Right turn, Up walks, PgUp/PgDn switch SET, Tab changes scene,
+Escape exits. No scripts or actors are run. Room boundaries do not invoke scripts.
+
+display.cpp shares indexed room/movie and RGB conversation presentation.
+It preserves separate room/character palettes, black holds, picture fades and
+world restoration. Physical-screen checks cover scaling, text/press feedback,
+palette mixing, restoration, and both movie formats after RGB promotion.
+Each supplied edition plays a short authored voiced line and captures the
+640x480 native screen to build/puppet-session-<edition>/display-preview.rgba.
+These are diagnostic scenes with a synthetic backdrop and answer plaque.
+Use tools/preview-rgba.py to export their PNG previews.
+
+stage_view.cpp decodes and caches STG/FLT art by loaded stage ownership and
+composes it beneath the visible room on the 512x384 logical screen. Stage and
+room palettes stay independent, including during mixclut edits. An uncovered
+matte interface retains the prior framebuffer, while conversation composition
+still uses its band. Reference comparisons cover 1,635 pictures across all 75
+supplied stage files; native checks cover scaling, flat changes, visibility,
+independent palettes, black holds, fades and matte retention. Projected actors/props and depth are rendered. BOOT completion now presents the session screen;
+the trace tool captures it to build/boot-<edition>.rgba for visual inspection.
+
+props.cpp now chooses frames by stored degree, variant and group-based play
+order. The 50 ms animation service holds v1's last frame and repeats v4 views
+with multi-step play lists. Runtime handler serials keep a same-handler propdeg
+pick separate from a later propview animation. Screen props draw in stable
+back-to-front propdist order, preserving transparent pixels and signed anchors;
+stage/room palettes color their shared CLUT halves. Each loaded shop owns its
+sprite cache. Native checks cover timing, variants, hidden/visible flags,
+clipping, opaque zero, overlap, replacement owners and physical-screen palettes.
+Reference frame-choice/sequence hashes and 3,132 cropped compositions match all
+61 supplied SHP/PRP files. pointinprop tests the named picture's opaque pixels;
+frontmost visible-prop hit-testing is ready for gameplay routing. World actors/props now use projection/depth composition.
+
+Developer configuration keys:
+  dreamfactory_font=<file>  explicit TrueType font path; otherwise search Arial
+    in game resources, then LiberationSans-Regular.ttf on the search path
+  dreamfactory_cursor_audit=true  compare named executable cursor pixels/hotspots
+  dreamfactory_cursor_fixtures=<file>  compiled cursor visibility/state calls
+  dreamfactory_screen_audit=true  test CLUT, blocking fades, input and quit
+  dreamfactory_screen_fixtures=<directory>  synthetic palette/fade fixture root
+  dreamfactory_verify=true  decode and hash every authored room sequence, then exit
+  dreamfactory_smoke=true   open all rooms and exercise navigation without timing
+  dreamfactory_script_audit=true  compare parsed script corpus and run fixtures
+  dreamfactory_script_fixtures=<directory>  assembled .dfscript test files
+  dreamfactory_room_audit=true    hash room/scene/painting metadata and script refs
+  dreamfactory_room_fixtures=<directory>  compiled navigation/lifecycle/display fixtures
+  dreamfactory_star_audit=true    hash room star/route tables and test reader bounds
+  dreamfactory_stage_audit=true   hash stage metadata and decoded flat images
+  dreamfactory_stage_fixtures=<directory>  compiled stage/flat/button lifecycle fixtures
+  dreamfactory_resource_audit=true  check volume/path-slot resource lookup
+  dreamfactory_resource_fixtures=<file>  generated resource query fixture
+  dreamfactory_audio_audit=true   compare sound-bank metadata and PCM hashes
+  dreamfactory_audio_fixtures=<file>  compiled audio host smoke-test script
+  dreamfactory_cricket_fixtures=<directory>  synthetic ambience API/mixer fixtures
+  dreamfactory_cast_audit=true    hash cast metadata and transparent sprites
+  dreamfactory_puppet_audit=true  hash conversation metadata/sprites/animation/PCM
+  dreamfactory_puppet_fixtures=<directory>  synthetic reader/session/speech fixtures
+  dreamfactory_movie_audit=true   hash movie metadata/images/audio and test actions
+  dreamfactory_movie_fixtures=<directory>  synthetic modal playback/session fixtures
+  dreamfactory_shop_audit=true    hash shop metadata and prop sprites; test reader
+  dreamfactory_prop_fixtures=<directory>  compiled shop/prop lifecycle fixtures
+  dreamfactory_actor_fixtures=<directory>  synthetic cast/session fixture root
+  dreamfactory_boot_trace=true    run BOOTFILE until first unsupported command
+  dreamfactory_boot_capture=<file>  export successful startup screen as 640x480 RGBA
+  dreamfactory_boot_choose_game=true  click the game region in retail PLAYMODE
+Audit modes are intended for dedicated test configurations. Script/room/stage/audio/cast/movie/shop modes
+scan preserved volumes and installed resources when available. Their log records
+PASS/FAIL; they exit without displaying error dialogs for unattended SDL tests.
+
+geometry.h and the world prop compositor follow runtime/geometry.ts and props.ts:
+fixed 2.14 camera projection, frame reference scaling, camera-relative directional
+pictures, stable back-to-front sorting, transparent pixels, room/viewport filters,
+and shared scenery occlusion for drawing and picking. Session stage composition
+renders these before screen props. All 12,528 projected corpus crops match the
+reference, including four camera headings, directional/animated selection and
+synthetic depth masks. All-angle geometry hashes also cover signed extremes.
+Native checks cover visibility, transparent holes, depth
+equality, zclip and ground bias. Bare-room world sprites share the stage compositor; complete gameplay validation remains pending.
+
+Dust movement camera interpolation is verified from the supplied DF.EXE
+(SHA-256 d8a22e266c7307e550bd7284d2743947765303348a6b33cda48534c467aa95fe),
+without executing it. The camera builder at 0x40dd90 starts at the cell centre;
+0x40de12 uses frame*256/4 for walks, and 0x40df6e uses frame*64/4 for turns.
+0x40e0d7 ends after five frames (0..4). This differs from the reference's
+estimated (frame+1)/5. Focal length 310 is installed at 0x40d255/0x40d488.
+Compiled native fixtures check motion endpoints, stored signed v4 camera poses,
+standpoint selection, focal length, setback and camerahi.
+
+Actor rendering follows runtime/actors.ts: play lists index time steps, and
+camera-relative angles select the closest record within a step (first wins ties).
+The scale reference is the pose's first record, with a 96 fallback. Loaded casts
+own sprite caches. Every coarse 50 ms pass advances visible/hidden actor poses
+after coarse script callbacks, including idle poses; repeated play entries hold
+pictures. These formats do not dispatch endanim. Screen actors use their own
+facing at 1:1, including scale zero. World drawing/picking shares projected masks
+and scenery occlusion. actordist's setter stores screen ordering; the getter
+follows reference drawability/ground-distance semantics, with a 32000 sentinel.
+
+Reference frame-choice hashes cover all 256 angles and every play step; 7,360
+projected/screen crops match all 13 supplied CST files. Native tests cover play
+holds, angular ties, empty/fallback poses, hidden animation, room filtering,
+scenery equality/bias/zclip, transparency, viewport tests and scale-zero actors.
+Physical-screen checks verify Dust's merged actor/prop depth list and the current
+v4 reference's actor-then-prop passes, including equal-depth behavior. Native
+player input is connected in experimental session mode. Bare-room sprite composition uses the shared renderer.
+
+Bare rooms use the full SET palette and copy their frame into the top of the
+512x384 logical screen, leaving unused space black. They share stage composition's
+world actor/prop ordering, depth masks and screen sprite pass. RGB bare-room
+palette commands redraw the scene, preserving black holds. Native display tests
+cover absent stages and unselected flats, actor/prop layers, full palette colors,
+dimming, reveal and view visibility; room tests check every physical pixel,
+real-clock movement pacing, settled views and quit abandonment.
+
+Normal gameplay runs BOOTFILE and Session::step; dreamfactory_viewer=true
+selects the separate developer room viewer. Each pass dispatches a queued key/click through
+the boot router, or invokes boot idle (authored forceupdate, cursor and calctime).
+Pointer polling yields without recursively dispatching gestures. Overlay keys
+prefer the flat's keydown, then the stage main. Movie/conversation waits own their
+modal events. Input uses a 32-slot queue, repeat coalescing/overflow eviction, and
+filters display notifications. Native fixtures verify routers, pointer state,
+press/release, overlays, queue policies, scene/painting/button picking and quit.
+
+calcdeg matches the original v1/v4 integer ratio lookup (TI.EXE 0x444b40,
+DF.EXE 0x411d20), separately from the renderer's nearest-angle bearing. Fixtures
+read the original table from each supplied executable and compare 4,107 cases.
+dreamfactory_boot_steps, dreamfactory_boot_keys (comma separated), and
+dreamfactory_boot_click_x/y add unattended post-startup input diagnostics.
+dreamfactory_boot_click_movies explicitly lists title movies whose first authored
+click region the diagnostic event source should press (for example, date.mov).
+Full story, puzzle, inventory and save/load validation remains incomplete.
+
+The supplied demo's native menu click, porthole loop, date-card continuation and
+flyby now enter C71 / Scene51 / View63 with main.stg / main 1. Forty session passes
+complete without an unsupported command. Message writes diagnostic script text
+to ScummVM's log. Movie cleanup detaches the borrowed movie pointer before event
+sources are polled; a native fixture checks detached segment observation.
+
+
+Opening interaction checks: tools/verify-gameplay.ps1 verifies demo bag/key
+pickup, inventory selection/examination, return and drag-to-trunk; retail
+bedsit turning; and Dust map/inventory round trips, cash-loop text and resumed
+room input. The diagnostic actions use normal events and test resulting state.
+Named movie skips inject Escape only where allowed by the movie segment.
+
+Visual transitions implement barndooropen/close and wipeleft/right with held
+source/destination pictures, modal 60Hz waits, retained input and quit handling.
+The arriving picture is composed offscreen before the first strip. Native
+physical-pixel and timing checks cover all three editions. Other effects remain
+unsupported; plain redraws without lifting a pending black hold.
+
+Script drawstring/stringwidth share Windows-1252 native font rendering. Text
+persists over recomposition, replaces an existing same-position/size entry,
+clears before a new flat's openflat callback, and is erased where a newly shown
+prop covers a field. Native stage checks cover these behaviors. Full story,
+puzzle, save/load and original-text-layout validation remains incomplete.
+
+
+The demo opening trace now covers gramophone horn/drawer controls, watch/map
+pickup, walking to the door, and (tools/verify-demo-story.ps1) Smethells's three
+opening dialogue branches, the note movie, the door gate and entry into HALLA /
+Scene52 / View63. Explicit diagnostic choices use ordinary native press/release
+events and require every requested choice to be consumed.
+The story helper continues along the port corridor, through its door gate and
+into GSTAIR2 / Scene11 / View23. Optional ExtraActions/Choices continue the
+verified route without changing game state directly.
+tools/verify-demo-mission.ps1 continues upstairs to GSTAIR1 / Scene18 / View38,
+speaks with Penny and checks the authored phase=1 assignment state. Its native
+trace passes 110 actions and five dialogue choices, returning to the room.
+tools/verify-demo-photographer.ps1 verifies returning downstairs, entering the
+starboard corridor and Burns's first conversation at B59: 155 actions and eight
+choices pass with burnsphase=tryagain and burnslike=1. Diagnostic waitpropview
+advances ordinary session passes with a bounded deadline for authored timers.
+tools/verify-demo-darkroom.ps1 finds Burns's wife and enters B59 with the white
+light off. tools/verify-demo-photograph.ps1 develops the Conkling negative under
+the red lamp, through the 15-second and 10-second bath windows, then bags the
+good print. Its native trace passes 248 actions and ten dialogue choices with
+photo1 owned by Frank and quality value 1. Puzzle state comes from the shipped
+scripts, scheduler and normal drag/click input.
+tools/verify-demo-completion.ps1 passes the supplied September 1996 demo's
+winning story path from startup through delivering the print, Penny's final
+dialogue, postdemo.mov (including its authored continuation click), and return
+to demo.stg / demo 1 with phase=2 and no room loaded. The native trace passes
+306 actions and twelve dialogue choices. Alternate outcomes, save/load and the
+retail Titanic/Dust playthroughs remain incomplete.
+
+tools/verify-dust-opening.ps1 verifies Leroy's first conversation and departure
+flag: 21 actions and one dialogue choice pass with leroyphase=1, mainpanel
+visible and Scene G15 / north restored.
+tools/verify-dust-bone.ps1 verifies the dog gate at Scene G12 and the help
+character's three-question bone branch from the east-facing viewpoint. Its
+native trace passes 31 actions and four dialogue choices with bone/small set
+by the original script.
+
+tools/verify-dust-ring.ps1 offers the bone to the dog and receives the ring:
+52 actions and five choices pass with phase=2, helpphase=3 and ring ownership.
+tools/verify-dust-cards.ps1 picks up the jug, waits for Jones and receives his
+cards: 73 actions and six choices pass. Diagnostic waitactorstar observes
+normal movement with a bounded deadline; it never relocates actors.
+countbevels returns the active puppet's choice count, including hidden choices,
+or zero without a puppet. Jones's inventory-offer dialogue needs it. Native
+puppet fixtures verify empty/hidden/full/cleared counts in all three editions.
+The remaining Dust story and puzzles are still unverified.
+
+tools/verify-dust-saloon.ps1 follows Leroy to the shooting range, checks
+leroyphase=88, then opens the Hard Drive door and enters SALLOWER: 107 actions
+and six choices pass, including saloonphase=1 and the stored town standpoint.
+
+tools/verify-full-bedsit.ps1 scores all seven London-flat objects through their
+close-up movies and triggers the raid. tools/verify-full-boarding.ps1 waits
+through the scripted raid and crossing to C73 / Scene51 / View63, mission=1,
+phase=0, at 9:30. All 35 actions pass. Diagnostic waitset/waitglobal observe
+state with bounded deadlines while advancing normal session passes.
+Retail missions beyond this opening remain unverified.
+
+tools/verify-full-steward.ps1 collects the bag/watch, completes Smethells's
+conversation and note, receives the map and exits into HALLC / Scene27 /
+View35: 61 actions and three choices pass. Absent movie event clips leave
+existing audio alone; retail PENOTE names voice cues whose recordings are
+already in its bed. Native movie fixtures cover missing cues without stopping
+or waiting for an earlier film's audio, in all three editions.
+
+tools/verify-dust-blackjack.ps1 enters the table, declines Jan's invitation and
+restores the saloon with unchanged cash: 119 actions and seven choices pass.
+PlayHand passes one ordinary $1 hand, Stand, Jan's timed next-bet prompt and
+Quit back to the saloon: 125 actions and ten choices. This does not establish
+winning enough money for later story progression. Pressing Stand after an already-settled
+natural blackjack exposed a nested-reset/sound-bank-lifetime failure; that
+rapid-input case remains unresolved. The diagnostic clickifempty guard can
+skip a gesture when an observed string global is already nonempty; it never
+writes game state. The hand route uses it to wait for Jan after a natural.
+
+Stage containment binds me to the handler's button, flat or stage script,
+while target retains the addressed button/flat. Unqualified calls into a
+parent flat therefore arm flat timers with the flat's name. This corrects
+Dust's Stand -> dealerdraw -> resetgame timer, which previously targeted the
+button "stay". Native fixtures cover parent calls, me/target and timer delivery
+in all three editions. tools/inspect-stage-context.py reproduces read-only
+disassembly, guarded by the supplied originals' SHA-256 hashes: retail TI.EXE
+4464a0 constructs the chain, 447710 advances its contexts by 4e, and 40647b /
+4064b2 read me/target at context+1e/+3e. Dust DF.EXE 416a80 constructs the same
+button/flat/stage context layout. Other object families retain their existing
+context behavior pending equivalent original-code evidence.
+
+calcvectx/calcvecty implement the reference's 14-bit fixed-point components:
+8-bit heading, signed 16-bit magnitude/result, division toward zero. Native
+script fixtures compare all 256 headings, wrapped angles and signed magnitude
+boundaries against the primary reference in all editions. Like that reference,
+entries are computed from rounded sine/cosine; the original TRIG resources can
+differ by one least-significant table unit. tools/inspect-trig.py reads and
+hash-checks the supplied originals without executing them: retail/demo RAW
+TRIG1 (sine) and TRIG2 (cosine) match each other, with respectively eight and
+ten headings differing from the rounded approximation. Loading those exact
+resources remains pending. These commands unblock retail
+GANG.CST's walktopuppet placement. Diagnostic waitactorwalk observes a named
+actor's motion record (0 absent, 1 present) with a bounded normal-session wait;
+Penny's mousedown deliberately ignores clicks while her idle turn is active.
+
+tools/verify-full-gym.ps1 passes cold boot through the boat-deck map jump,
+GSTAIR1 -> VESTSTBD -> GYM, Penny's approach, the Zeitel movie and four explicit
+briefing choices: 92 actions and seven total choices, mission=1 / phase=1.
+build/full-gym.log and its native RGBA/PNG capture record the result. The demo's
+306-action, twelve-choice winning route also passes with the stage context fix.
+tools/verify-full-max.ps1 continues across DECKBD to Max, through CAFE's
+Max/Will/Zeitel dialogue switches and the sailing movie, then collects the
+pipe from CIGS.STG. The native cold-boot run passes 131 actions and ten total
+choices, metzeitel=1 and pipe owned by Frank. build/full-max-pipe.log and its
+RGBA/PNG capture record the result. tools/verify-full-mirror.ps1 continues via
+the F-deck map to TURKSTRS/TURK, opens the water, examines the mirror and clicks
+TURKMES.MOV's OK region: 167 actions and ten choices pass with mission=1,
+phase=2, zeitclue=mirror and turkwater=0. build/full-mirror.log and its RGBA/PNG
+capture record the result. tools/verify-full-control.ps1 continues through
+STAIR2C/HALLF2C/TURB to CONTROL, accepts CSEA1's help request and enters the
+rendered TURBINE.STG / Turbine 1: 232 actions and twelve choices pass from cold
+boot. build/full-control.log and its RGBA/PNG capture record the result.
+That run also verifies optional diagnostic dreamfactory_boot_skip_speech:
+BootInput sends ordinary Escape events during active speech, throttled to one
+per 100 ms to let the event queue drain. It is disabled by default and only
+exists in the boot tracer. tools/trace-boot.ps1 accepts -SkipSpeech or the
+DREAMFACTORY_BOOT_SKIP_SPEECH=1 environment setting. The earlier mirror run
+used full speech. tools/verify-full-turbine.ps1 regulates the plant through
+ordinary held mouse events: valve3 deg=7/value=36, pump1 deg=15/value=22,
+slider deg=7/coal=68, then hold until electlag>=74. The authored exit gate and
+engineer dialogue advance mission 1 to phase 3. All 252 actions and twelve
+choices pass; build/full-turbine.log and its RGBA/PNG capture record the result.
+Boot tracer gestures dragarc, dragpoint and holduntil emit pointer events only;
+holduntil releases on a read-only global threshold or after 60 seconds.
+expectpropdeg and expectglobalge observe the resulting state. Later retail
+phases, Dust's remaining days, alternate demo outcomes and save/load still
+require implementation or validation.
+
+tools/verify-full-rubaiyat.ps1 passes 329 actions and twelve choices through
+CONTROL -> ENGINE -> BOIL rooms 1/2/3 and recovery from coal4. The stash helper
+passes 351 actions, placing the book in coal5 through INVEN1.STG's dobook loop,
+with handitem empty and coalchute still coal4. clickthen schedules a second
+physical mouse move/press after the first click has opened a modal interaction;
+its delay is bounded to 200..10000 ms. No inventory state is injected.
+build/full-rubaiyat.log and build/full-rubaiyat-stash.log and their captures
+record the results.
+
+tools/verify-full-vlad.ps1 climbs from chute five to Scene40/View45's upper
+landing, waits for Vlad's idle turn and completes four explicit choices in
+VLAD1.PUP: 366 actions and sixteen total choices pass with actorowner(vlad)=help,
+rubaiyat owned by coal5, phase=3 and playerdeath empty. build/full-vlad.log and
+its RGBA/PNG capture record the result. The earlier lower-floor approach at
+Scene13/View20 could not hit Vlad: his star is at height 619 while that camera
+is at -962. Upper-landing interaction exercises the authored camera heights.
+Diagnostic expectactorowner reads the actor's state without changing it.
+
+tools/verify-full-sasha.ps1 continues from Vlad through boiler rooms 2/1 to
+ENGINE before mapping to GSTAIR2 on A deck. MAP.STG's mapdisabled deliberately
+blocks travel from BOIL; build/full-sasha-map-disabled.log preserves that first
+attempt. The corrected route enters HALLA from the port side and knocks on
+Scene51/View57's A-16 door. SASHA1.PUP choices 101,102,101,102,103 enter A14,
+discuss Vlad's family, receive his package and return to HALLA Scene51/View58.
+All 443 actions and 21 total choices pass with vladfood owned by frank,
+rubaiyat owned by coal5, phase 3 and playerdeath empty. build/full-sasha-native.log
+and build/full-sasha.rgba/.png record the native result.
+
+tools/verify-full-package.ps1 returns through STAIR2C/HALLF2C/TURB/CONTROL/ENGINE
+to boiler room 3, delivers the package (VLAD1.PUP 101), and retrieves the book
+from chute five. INVEN.SHP addinven advances to phase 4 once vladfood belongs
+to vlad. tools/verify-full-mission1.ps1 continues out of BOIL, maps to STAIR2C
+on F deck and knocks on HALLF2C Scene59/View76's F-34 door. PENNY1.PUP choices
+101,104,102,105,109 report the book, mirror clue and Vlad/Sasha connection,
+then complete the briefing; the SASHA.MOV region is clicked normally. All
+651 actions and 27 choices pass from cold boot with mission=2, phase=0,
+rubaiyat owned by frank, vladfood owned by vlad and playerdeath empty, without
+mixer exhaustion. build/full-mission1-native.log and its RGBA/PNG capture
+record the result. The wrappers now propagate optional ClickMovies through
+the full route. These runs use diagnostic Escape speech skipping. Later
+missions, alternate branches and save/load remain unfinished.
+
+Retail script SFX now arbitrate two replaceable channels. Hash-guarded static
+evidence in tools/inspect-sound-slots.py establishes descriptor word zero as
+the bank-local record index plus one (44cc96), preserved across lazy loading
+(44ddde..44de0b). 425150 singlesound requires a strictly greater ID than the
+lowest channel and suppresses an ID already in the other channel. 425240
+multiplesound allows equal-ID restart and replaces the matching other channel
+when present. 425330 dualsound replaces each lower-ID channel independently;
+425400 bothsound replaces both unconditionally. Inactive channels have ID zero;
+ties select channel 2. These comparisons deliberately use bank-local IDs, even
+across banks, matching the original. Physical setup 4018c0 frees the old chain.
+Native looping mixer fixtures exercise these branches and 100 repeated calls.
+Audio corpus/mixer checks pass for all three editions without channel exhaustion.
+The retail policy is enabled only for the supplied version-4, 95488-byte BOOTFILE,
+matching the detection table's size. The September demo now has a separate
+verified policy: 426440 aliases 426240, and 426450 replaces the lower channel.
+Its composite bank priorities and range-entry loop arming are described below.
+Dust arbitration is now verified below. Movie cue ownership remains pending.
+The corrected native retail build passes all 366 actions through turbine
+regulation, Rubaiyat retrieval/stash and Vlad's package request with no mixer
+exhaustion. build/full-vlad-sound-slots.log and its RGBA/PNG capture record it.
+tools/verify-full-turbine.ps1 now rejects mixer-slot warnings in this replay.
+
+Loop busy checks resolve the first handler before checking reentrancy: a local
+idle callback must run while an unrelated BOOT idle yields. Deferred
+sendtoboot/sendtobootfx address the first BOOT
+container defining the handler, with caller-evaluated arguments and recipient
+context. starxyz queries named-star coordinates with axes 1..4 and packed signed
+ground halves. Native prop fixtures cover independent/self-rearmed idle, BOOT
+library addressing/context, all star axes and missing names. Full playthroughs
+and save/load remain incomplete.
+Native save/load checkpoints
+---------------------------
+Experimental gameplay now connects savegame/opengame, runtime save/load menus
+and startup slot loading to native ScummVM saves. The original control-panel
+buttons call the ScummVM chooser; the development viewer still has no saves.
+DFSV version 5 is a ScummVM-owned format, not the original TI/DF save format.
+It stores BOOT identity/globals, resource paths/CD/canonical sources, world
+owners and runtime copies, inventory, room/stage/camera, palettes/text,
+clocks/random state, scheduler, actor motion, crickets, Dust projectiles and PCM playback.
+Version-1/2/3/4 checkpoints remain readable.
+Audio offsets use mixer milliseconds rather than sample-accurate positions.
+Conversations, movies and camera transitions are not save checkpoints; VM
+stacks are not persisted. Original save import is not implemented.
+
+Loads validate bounded fields/checksum, edition, assets and visible sprites in
+a detached session before commit, without replaying open callbacks. Successful
+loads abandon the previous script frames. Modal choosers resynchronize the game
+clock, including cancellation. Canonical sources preserve installed/CD variants
+and Dust's distinction between room filename and internal name.
+
+tools/verify-save-state.ps1 passes cold-boot round trips, fresh-process restores,
+ScummVM slots and physical input through all three authored control panels.
+Nine malformed/missing-asset fixtures plus a cross-edition save reject without
+changing live room/stage/time/globals, and navigation remains functional.
+tools/save-fixtures.py reproduces those invalid saves. Optional -Story saves
+after Sasha, completes retail mission one, rolls back to HALLA / View58 with
+mission=1, phase=3, vladfood=frank and rubaiyat=coal5, and completes the remaining
+route in a fresh process. Both native rollback and continuation pass; see
+build/save-full-story-native.log and build/save-full-fresh-story-native.log.
+The fresh route writes build/save-full-mission2.dfsv; independent restoration
+passes with mission=2, phase=0, vladfood=vlad and rubaiyat=frank.
+
+Control-panel diagnostics auto-select actual save slots; interactive chooser
+QA, audible restoration, later story/puzzle checkpoints and original save
+imports remain pending. This is checkpoint support, not full-playability proof.
+
+Audio/stage/room/cast/prop regressions pass in all three editions. The room
+library fixture now expects the stage's own me with the addressed scene as
+target, including self-closure while its script is running. Dust's blackjack
+route passes with normal speech. Escape-based diagnostic speech skipping changes
+its help/jug-pickup route and is not equivalent to that normal-dialogue replay.
+The complete demo route also passes after save/load integration: 306 actions,
+twelve choices, phase=2 and postdemo.mov; build/save-demo-completion-native.log.
+
+Retail mission two: telegram and painting
+---------------------------------------
+
+tools/verify-full-telegram.ps1 starts from build/save-full-mission2.dfsv. It
+collects Thayer's telegram, earns Morrow's wireless permission, physically
+operates the sender/breaker/tuner and sends Morse input. The resulting native
+checkpoint is build/save-full-thayer-sent.dfsv (purs=sentgram).
+
+tools/verify-full-painting.ps1 continues through the Purser report, nested
+manifest book, cufflink pickup/return, nested key pickup, forecastle and crew
+passages, cargo guard, car lights and painting pickup. The resulting native
+checkpoint is build/save-full-painting.dfsv: mission=2, phase=1, painting=frank,
+cufflink=purser, bseaphase=1. Mission-two continuation is described below.
+Independent painting-checkpoint restoration, close-up exit and room turn pass;
+see build/full-painting-restore-native.log.
+
+The trace-only ordered MovieClicks selectors match movie:target, movie:event,
+movie:sound or movie:#N (one-based region ordinal). They generate physical
+press/release events and never edit story state.
+The dragarcuntil trace gesture releases on an authored prop-owner state; the
+tuner route observes its tuned light rather than counting exact mouse samples.
+Movie source identity follows nested returns, allowing reliable exit clicks
+in the parent movie.
+Trace runs disable physical joystick input; ordinary gameplay is unaffected.
+The room-route tool prefers retail CD2 DATA over CD1 convenience aliases.
+
+Retail fencing and ring recovery
+-------------------------------
+
+tools/verify-full-fencing.ps1 continues from the painting checkpoint through
+the authored cargo exit, Smethells's lead, D-deck squash-court entry and a lost
+five-point bout. The opponent scores normally, post-game dialogue returns to
+SQHALL and Smethells supplies the ring through the authored fallback. The final
+build/save-full-ring.dfsv has mission=2, phase=2, ring=frank, painting=frank,
+fencecount=1 and willie=lost. See build/full-fencing-suite.log and stage logs.
+
+Implemented propwarm (12086), encountered when initializing both fighters:
+decode every picture in the prop group into its shop's shared frame cache;
+leave pose, visibility and animation unchanged. Invalid sprite data fails with
+a named runtime error. Missing props follow the other prop commands' no-op
+behavior. Native fencing startup and opponent scoring pass. Player attacks,
+defensive stance and active-bout restoration are checked separately below.
+
+tools/verify-full-fencing-controls.ps1 passes two attacks (positions 8 -> 9 -> 10,
+attacktot 1 -> 2), pointer-selected left defense, and fresh-process restoration
+of the active bout. The trace-only move action emits normal mouse motion.
+See build/full-fencing-controls-suite.log and the native control/restore logs.
+Independent ring-checkpoint restore and room navigation also pass:
+build/full-ring-restore-native.log. Successful parries and winning bouts remain
+unverified, along with the remaining retail story.
+
+Retail mission-two completion
+-----------------------------
+
+tools/verify-full-mission2.ps1 continues from the ring checkpoint through
+Claris's D-deck cabin (four authored choices, retaining the ring), then Penny's
+F34 report, plans.mov, penybook.mov and next-mission briefing. All normal
+dialogue and physical navigation pass. The resulting save-full-mission3.dfsv
+has mission=3, phase=0, gaspen=frank, painting=frank and ring=frank at HALLF2C /
+View76. See build/full-mission2-suite.log, full-claris-native.log and
+full-mission3-native.log. The bath death investigation belongs to mission three.
+
+tools/verify-full-bath-investigation.ps1 passes Smethells/Morrow dialogue,
+Morrow's return walk, Turkish-bath door traversal, Haderlitz's clue close-up and
+inventory pickup. save-full-rubiclue.dfsv has rubiclue=frank, mission=3, phase=0,
+morrowphase=1 and smethphase=1 at EBATH / View19. Fresh-process restoration and
+a right turn to View16 pass. See build/full-bath-investigation-suite.log,
+full-bath-permission-native.log, full-rubiclue-native.log and
+full-rubiclue-restore-native.log. Later mission-three puzzles remain unverified.
+
+tools/verify-full-hacker-clue.ps1 follows the clue to the third-class rope,
+plays scotrope.mov, turns to Hacker and completes four dialogue choices.
+Hacker exchanges rubiclue for hackclue and finishes his departure walk.
+save-full-hacker-clue.dfsv has hackphase=1, hackclue=frank, rubiclue=xxxfrank,
+mission=3 and phase=0 at SCOT3 / View22. Fresh restoration, inventory selection
+and hackclue.mov examination pass. See build/full-hacker-clue-suite.log,
+full-hacker-clue-native.log and full-hacker-clue-restore-native.log.
+Notebook continuation is described below.
+
+tools/verify-full-cigarette-lead.ps1 passes café-table Old Reds pickup and
+Max's smoking-room handoff. save-full-smokestack-lead.dfsv has mission=3,
+phase=1, oldreds=max and hackclue=xxxfrank. See build/full-cigarette-lead-suite.log,
+full-oldreds-native.log and full-smokestack-lead-native.log. At this phase the
+engineer's engine-room door requires a second turbine repair (csea=thanks2).
+
+tools/verify-full-turbine2.ps1 passes the second turbine repair and fresh
+restoration of its scheduled engineer reply. save-full-turbine2.dfsv has
+csea=thanks2, mission=3, phase=1 at CONTROL / View24, with input unlocked.
+See build/full-turbine2-suite.log and native ready/repair/restore logs.
+
+tools/verify-full-vlad-fight.ps1 passes the automatic engine-room ambush,
+jab/jab/cross damage (512 -> 465), active-combat restoration and a normal
+winning bout. save-full-vlad-defeated.dfsv has vlad=lostfight, mission=3,
+phase=2 at ENGINE / View119. See build/full-vlad-fight-suite.log,
+full-vlad-fight-controls-native.log and full-vlad-fight-win-native.log.
+
+tools/verify-full-notebook.ps1 reads the selected maze from its authored entry
+message. tools/smokestack-route.mjs derives navigation from the actual turns,
+roads, barriers and stairs, with native floor/view checks after every gesture.
+All four layouts have planned routes; layouts 1 and 3 pass native traversal
+to floor eleven. Native layouts 2 and 4 remain unverified.
+
+Normal dialogue, berg.mov and nested inventory selection of the gas pen pass.
+save-full-notebook-recovered.dfsv has mission=3, phase=3, notebook=frank and
+gaspen=zeit at SMSTACK3 / View52. Fresh restoration and a turn to View54 pass.
+See build/full-notebook-suite.log, full-smokestack-maze-native.log,
+full-notebook-recovered-native.log and full-notebook-restore-native.log.
+
+Trace-only ModalClicks cues are flat:prop:name or flat:button:name. They deliver
+physical input inside the authored handleselect loop, after item handlers and
+release loops finish. No inventory/story values are injected. The native build,
+demo startup and Dust's normal opening regressions pass after this addition.
+
+tools/verify-full-mission3.ps1 passes the smokestack descent, Vlad's theft and
+the chapter transition, including the CD2-to-CD1 resource switch.
+save-full-mission4.dfsv has mission=4, phase=0, notebook=vlad, painting=frank
+and rubaiyat=frank at C73 / View63. Fresh restoration and a turn to View65 pass.
+See build/full-mission3-suite.log, full-mission4-native.log and
+full-mission4-restore-native.log. The sinking and ending continuation is described below.
+
+
+Sinking: verify-full-sinking-shawl.ps1 passes Penny's briefing, physical
+first-class staircase/lounge-hall navigation and Claris's shawl handoff.
+verify-full-sinking-notebook.ps1 covers boat-deck navigation, full second-class
+staircase descent, engineer warning and Vlad's shawl-for-notebook exchange.
+Its complete corrected four-stage suite passes (full-sinking-notebook-suite.log).
+save-full-sinking-notebook.dfsv has notebook=frank, shawl=vlad, painting=frank
+and rubaiyat=frank. stair2c-route.mjs derives repeated-deck staircase routing
+from actual turn rings, road endpoints and authored deck transitions.
+
+verify-full-sinking-clock.ps1 checks live authored idle clock normalization.
+The script audit verifies calctime second rollover/startdisk2 normalization
+and all six canadvance boundaries; demo/retail/Dust script audits pass.
+verify-full-sinking-return.ps1 passes physical ascent and boat-deck return,
+fresh restoration and normal idle progression through sink1.mov to phase=1.
+See build/full-sinking-return-suite.log and full-sinking-phase1-native.log.
+Later timed phases, best ending and Dust completion remain
+unverified. The demo target is the supplied September 1996 interactive demo.
+
+
+verify-full-ending-return.ps1 passes the Gorse-Jones lifeboat offer, leave.mov,
+debris.mov, branching NAREND narration, rushend.mov, and a physical return-menu
+click. bktoship.mov/datecab.mov and authored reset return to mission=1, phase=0,
+C73 / View63 with CD2 paths. save-full-retail-ending-return.dfsv restores in a
+fresh process and a turn to View65 passes. Evidence: full-retail-ending-return-
+suite.log, full-retail-ending-return-native.log and full-retail-ending-restore-
+native.log in build/. This completes one unsuccessful retail ending route;
+realneck=vlad remains. Best ending, later sinking phases,
+alternate branches and full Dust story still require work.
+
+
+B70 arrival fix: movement turn/arrival callbacks dispatch after the protected
+update pass. Georgia's arrival callback can now start a turn and wait for it
+with forceupdate. The bounded nested-walk regression passes in demo/retail/Dust
+cast audits (build/movement-callback-cast-audit.log); native B70 completes all
+three Georgia/Charles puppet switches and returns to HALLB at neckphase=5.
+
+Necklace checkpoints: Georgia boat deck neckphase=1/fakeneck=frank; A deck
+neckphase=2; B70 neckphase=5; Charles smoking room neckphase=6. Helpers are
+verify-full-necklace.ps1, verify-full-georgia-cabin.ps1 and
+verify-full-charles-necklace.ps1. Corrected Georgia cabin stages pass separately;
+a combined replay subsequently passed. See the best-ending evidence below.
+Read-only trace diagnostics report failed actor clicks and dumpprop NAME state.
+
+
+Necklace quest completed: verify-full-necklace-fuses.ps1 passes the full
+panel/off/on suite, including Alex's hallway greeting and restored switch
+timers. verify-full-necklace-doll.ps1 rotates the randomized dials through
+physical mouse arcs to 6/0/0/0, collects the real necklace and drops the replica
+from inventory. verify-full-necklace-escape.ps1 restores the active puzzle,
+leaves A14, passes Sasha's swap response and freshly restores/navigation-tests
+save-full-necklace-recovered.dfsv: realneck=frank, fakeneck=vlad, neckphase=9,
+no death, mission=2 phase=0. See corresponding full-necklace-*-suite.log files.
+verify-full-necklace-resume.ps1 saves save-full-necklace-mission2.dfsv at
+HALLF2C / View76 with real necklace and Rubaiyat retained, ready for the
+remaining mission-two route. The best-ending replay subsequently passed below.
+Demo startup and Dust normal opening/Leroy regressions pass after the fix.
+
+
+October 13: Retail best ending and Dust saloon progression
+-------------------------------------------------------
+verify-full-best-evidence.ps1 preserves all four evidence items across the
+remaining retail story, performing painting/fencing before necklace recovery
+to meet the authored painting deadline. verify-full-painting-deadline.ps1 also
+verifies the late-arrival theft. verify-full-best-ending.ps1 passes normal
+lifeboat dialogue, successful narration, prozac.mov, all fourteen credit-page
+clicks and scripted quit. See build/full-best-ending-suite.log and
+build/full-best-ending-native.log. These establish one successful retail route;
+other branches and later sinking phases remain unverified.
+
+Opcode 12071 quit now abandons nested VM calls, input and media and stops the
+session. Its transient reason resets on initialization and save restoration;
+At that milestone DFSV remained version 1. All three script audits pass the nested-quit fixture
+(build/scripted-quit-script-audit.log).
+
+Dust now passes Trotter's peaceful drink/departure, active blackjack saves,
+Hit/Stand, zero-cash automatic closure and restoration, and a normal $1 win
+from $5 to $6. Poker passes betting, physical discards, draw and losing-hand
+scoring across save boundaries; a win and complete poker exit remain unverified.
+verify-dust-night-street.ps1 exits the saloon physically at D1 east, advancing
+day 1/night phase 2 to 3 with $6 and the ring. Checkpoint:
+build/save-dust-night-street.dfsv. Later Dust days remain outstanding.
+Read-only dumpactor NAME diagnostics report actor and active-walk state.
+
+Dust street/hotel continuation passes normal Bloodstone patrol/cigar dialogue
+(phase 4), physical inventory ring trade with Fearwitt (phase 5), hotel exit
+and return (phase 6), Jack's note and room-key collection (phase 7). Helpers:
+verify-dust-blood-hotel.ps1, verify-dust-hotel-ring.ps1 and
+verify-dust-hotel-key.ps1; corresponding build/dust-*-suite.log/native.log.
+Checkpoint: build/save-dust-hotel-key.dfsv, cash $6, ring=fear, hrkey=stranger.
+Bloodstone's endpoint callback immediately reverses his patrol; waiting for a
+stationary endpoint was a diagnostic error, requiring no engine movement fix.
+
+
+Dust first night / iris effects
+------------------------------
+Normal first-night replays pass Jones's arrival warning, Bloodstone's parting
+speech, Buick's introduction, the player's room, both sleep-movie clicks and
+the unskipped overnight movie. save-dust-day2-morning.dfsv reaches day 2 /
+clock 1 / phase 0 with $6, hrkey and no death. Fresh restoration and Jones's
+hallway greeting pass at phase 1 (dust-day2-wakeup-native.log).
+
+HOTPLATE.FLT exposed unsupported irisopen. Rectangular iris open/close now
+render with held pictures, scaled logical coordinates and modal timing.
+Titanic uses the requested passes; Dust uses sixteen opening passes and six
+closing passes, dividing the requested delay among them. Read-only original
+binary evidence: tools/inspect-iris-effects.py (both executable hashes checked),
+build/iris-original-disasm.log. All three screen audits pass, including pixel
+checks at both logical resolutions and virtual timing
+(build/iris-transition-screen-audit.log). The breakfast replay passes Buick,
+Laurel's Kid information and the meal interface at day 2/clock 1/phase 2.
+Later Dust story and completion remain unfinished.
+
+Final Dust breakfast replay passes with fixed-pass iris timing. Normal meal
+buttons collect sugar and biscuits, then close the interface. Checkpoint:
+build/save-dust-day2-after-breakfast.dfsv. Fresh restoration preserves both
+items, hrkey, ring=fear and day 2/clock 1/phase 2/cash $5 and passes a normal
+turn (build/dust-after-breakfast-restore-native.log). Helpers:
+verify-dust-day2-breakfast.ps1 and verify-dust-breakfast-items.ps1.
+
+
+Dust livery movement fix and equipment
+-------------------------------------
+Ned's livery greeting requires Dust's standalone-turn endturn callback, which
+the shared motion service previously omitted. Dust now removes the completed
+turn before dispatch, queues already-facing turns, and replaces a running walk
+when turntodeg is requested. Titanic retains its existing turn policy. Original
+DF.EXE evidence: tools/inspect-dust-turns.py, hash-checked read-only disassembly
+in build/dust-turn-original-disasm.log. All three movement audits pass, including
+callback state, same-facing turns, replacement without arrival and nested waits
+(build/dust-turn-callback-cast-audit.log).
+Native story replays pass Ned's automatic livery greeting/departure, his street
+meeting with Quist, both well-movie clicks and gun collection, pie pickup and
+the physical pie-for-boots trade with Sidewinder. See tools/verify-dust-day2-livery,
+verify-dust-well-gun, verify-dust-pie and verify-dust-boots.ps1 and corresponding
+build/dust-*-suite.log/native.log files. No story/global/ownership overrides.
+
+verify-dust-day2-afternoon.ps1 passes the authored equipment gate and town
+scenecounter/triggerx chain, playing d2md2a.mov without skipping. Save/restore
+at each physical movement boundary preserves the pending story progression.
+Final save-dust-day2-afternoon.dfsv reaches day 2 / clock 2 / phase 0 with gun,
+boots and sugar. Evidence: dust-day2-afternoon-native.log and
+ dust-afternoon-walk-19-native.log. Fresh restoration/navigation also passes
+(dust-afternoon-restore-native.log). Later Dust story remains unfinished.
+
+Dust's full opening/saloon route passes after the turn fix
+(build/dust-turn-callback-opening-regression.log and native log).
+
+Omitted room arguments / afternoon handkerchief
+----------------------------------------------
+opensetfile with no scene argument previously passed numeric-default text
+"0", selecting the first standpoint. The host now passes an empty name and
+honors the room's authored entrance. A non-first default-room fixture fails
+on the old binary at result 17 and passes across all three room audits after
+the fix (room-default-before-fix-native.log, room-default-after-fix-audit.log).
+The corrected first-night replay verifies HOTUPPER D1/north and HOTROOM
+B1/west before bed entry; demo and retail startup regressions pass too.
+Earlier traces using fallback entrances are historical evidence only.
+
+verify-dust-handkerchief.ps1 enters the pharmacy at C2/west and picks up the
+counter handkerchief (resource name hankerchief, degree 0).
+verify-dust-handkerchief-chit.ps1 physically returns to Fearwitt and drags it
+onto him, receiving degree 1. Fresh save-handkerchief-chit restoration retains
+the gun, boots and day 2/clock 2/phase 0 and permits ordinary navigation without
+death (build/dust-handkerchief-chit-restore-native.log). Later story remains
+unfinished.
+
+
+Dust afternoon trading / Cobb
+----------------------------
+Native replays pass the chit-to-wine exchange with Buick, wine-to-skooch exchange
+with Bloodstone, and Laurel's ammunition trade, including normal modal inventory
+selection. A normal $1 bank deposit leaves cash $4 / account $1 and all three
+equipment items. Flippo's warning and Jones's interruption advance to phase 1.
+The Chinese-store confrontation passes inventory gun selection, normal approach,
+Cobb's dialogue, drawing/firing, cobbshot.mov and Dell's surrender: phase 3,
+bulletcount 5, no death. Checkpoint: build/save-dust-cobb-defeated.dfsv.
+Helpers: verify-dust-buick-wine, verify-dust-blood-skooch,
+verify-dust-laurel-bullets, verify-dust-bank-deposit, verify-dust-flippo-alarm and
+verify-dust-cobb.ps1; corresponding build/dust-*-suite.log/native.log.
+
+Trace-only modal click sequencing now recognizes a prop selection that finishes
+without yielding after its released click, allowing the next OK press. Actual
+Dust trade selectors pass; Titanic's smokestack/notebook/gas-pen sequence and
+fresh restoration also pass (build/modal-selection-retail-regression.log).
+
+verify-dust-sheriff.ps1 passes the Mayor's appointment, badge handoff, Dell's
+jail placement and unskipped d2ad2n.mov. save-dust-day2-night.dfsv reaches day 2 /
+clock 3 / phase 0 in JAIL, badge=stranger, dell=jail, equipment retained and bank
+account $1. Fresh restoration and inventory open/close pass
+(build/dust-day2-night-restore-native.log). Appointment evidence:
+build/dust-sheriff-suite.log and dust-sheriff-native.log. Later night events,
+days 3–5 and endings remain unfinished.
+
+Dust day-three progression and original projectile semantics (2026-10-13)
+------------------------------------------------------------------------
+The second-night Laurel conversation, normal bed selection and unskipped
+D2ND3M.MOV transition, Buick's day-three wakeup and breakfast/hairpin/meal
+sequence pass native input traces. The story reaches day 3, clock 1, phase 2.
+Helpers: verify-dust-night2-laurel.ps1, verify-dust-second-night.ps1,
+verify-dust-day3-wakeup.ps1 and verify-dust-day3-breakfast.ps1.
+
+Dust's opcode 12007 is makeball, not v4 makecricket. balls.cpp implements the
+original 16-slot signed-word projectile table: velocity, optional gravity and
+bounce, nested pause counts, lifetime, cell building tests and swept per-axis
+actor/player hitboxes. Completed records are removed before endball callbacks.
+The service runs after actor movement on 50 ms passes, including busy scripts.
+Original hitbox argument 1 is vertical and argument 2 horizontal. The original
+camera getter also differs from playerxyz: it includes setback and eye height.
+Dust camerahi reads the room eye height. Titanic's existing getters and ambient
+sound behavior are retained. Hash-checked read-only evidence is reproducible
+with tools/inspect-dust-balls.py; no original executable is launched.
+
+All three native audio and room audits pass. The Dust audio audit now tests
+projectiles rather than claiming v1 ambience equivalence; Titanic still runs
+its compiled ambient API and SDL mixer tests. Native range input hits the
+water tower through an actual moving bullet, breaks six bottle/can targets,
+reloads six chambers, exits with a fair score and receives Leroy's matchbox.
+verify-dust-day3-range-entry.ps1 and verify-dust-range.ps1 reproduce that route.
+Good/great range scores and moving-bird hits have not yet been verified.
+
+DFSV version 2 adds the bounded projectile table and retains version-1 loading.
+A real shot saved in flight restores identical position, velocity and remaining
+frames, then completes normally (verify-dust-projectiles.ps1). Version-1 demo
+and late retail checkpoints load, re-save as version 2 and round-trip while
+preserving their story state. Broad save validation remains incomplete.
+
+Dust's stage loader selects its first flat before openstage, then dispatches
+openflat if the callback retained that file and index. Same-flat navigation
+inside openstage can therefore dispatch openflat again. The original loader
+at 0x415850/0x415d30 confirms this; inspect-dust-stages.py reproduces the evidence.
+All three native stage lifecycle audits pass. This fixes SCORP.FLT scheduling
+its drawer-opening timer for "none". The drawer now opens and accepts the earned
+matchbox through a normal inventory drag. The remaining schoolhouse puzzle and
+Dust story still require validation; these checks do not establish completion.
+
+The schoolhouse scorpion puzzle now passes native input. The earned matchbox
+is dragged into the drawer, left there while returning to town, and becomes
+owned by the scorpion through the courtyard scene's normal openscene handler.
+On revisiting, the matchbox and pages have their safe degrees; both are collected
+and the drawer is closed without death. verify-dust-matchbox-in-desk.ps1 and
+verify-dust-pages.ps1 reproduce the puzzle. The next morning gate still requires
+returning the ring to Jones. His four-choice request conversation also passes
+(verify-dust-jones-ring-story.ps1); his patrol must be approached from its visible
+side rather than assuming he remains at the bone star.
+
+The complete ring route now passes: Jones's request, Fearwitt's explanation,
+Marie's return and an ordinary drag giving the ring to Jones. With the pages
+collected, town navigation triggers the unskipped D3MD3A.MOV transition.
+The verified checkpoint is day 3, clock 2, phase 0 (Town Scene G9 north).
+verify-dust-ring-to-marie.ps1, verify-dust-ring-return.ps1,
+verify-dust-ring-jones.ps1 and verify-dust-day3-afternoon.ps1 reproduce this.
+The native opening and complete fair-score range/reload/reward route also pass
+after the lifecycle change. All nine malformed-save fixtures pass rejection
+for DFSV v2, as do checksummed duplicate-ball, invalid-presence-flag and forbidden
+retail-projectile records. Rejections preserve live story state and navigation.
+
+The third-afternoon Yunni book and flute quests pass native input. Oona gives
+the book in the saloon. Doc Rodham supplies RX; showing it to Watson and reporting
+his departure unlocks pharmacy mixing. Five normal ingredient buttons play their
+unskipped movies and produce the exact authored recipe and medicine degree.
+Doc accepts the mixture, and leaving/re-entering his office advances treatment;
+Trotter gives the flute in the inner room (docphase 9). Helpers are
+verify-dust-yunni-book.ps1, verify-dust-prescription.ps1,
+verify-dust-prescription-watson.ps1, verify-dust-medicine.ps1 and
+verify-dust-flute.ps1. The verified state is Doctor2 Scene A1 south, day 3,
+clock 2, with flute and yunnibook owned. Mask collection and later story remain
+unverified at this milestone.
+
+The mansion mask route passes: Mrs. Macintosh's authored dismissal branch
+opens the gate; the table apple is collected from Scene E3 north, fed to the
+caged bird from D3 west, and the mask taken from E3 east. Feeding the bird avoids
+the noisy Mayor interception branch, which remains untested. The entrance view
+occludes the apple; this was a viewpoint issue. Trace clicks additionally refine
+around small world props when the coarse sampling grid misses an opaque pixel.
+This changes only diagnostic input, not the game hit tester. Stage opening also
+propagates abandonment from the initial v1 openflat callback. All three stage
+audits and the retail late-checkpoint regression pass after those changes.
+
+Normal movement with all three afternoon items triggers the unskipped D3AD3N.MOV
+transition. save-dust-day3-night.dfsv reaches day 3, clock 3, phase 0, Town Scene
+G7 west, with mask, yunnibook and flute retained. verify-dust-mansion-entry.ps1,
+verify-dust-mask.ps1 and verify-dust-day3-night.ps1 reproduce these steps.
+The earned hairpin also opens the bank at night, and the safe's actual dial
+accepts physical mouse arcs for 08,23,41. dust-safe-route.mjs plans those arcs
+from the supplied artwork and authored limiter; it never changes VM/save data.
+Safe item collection and the remaining third-night story still need validation.
+
+The bank safe also passes item collection. The three physical dial arcs produce
+08,23,41; opening plays VAULT.MOV and SAFEBOX.MOV without skipping. Two normal
+movie-region clicks open the box and take its stone, preserving actionframe(1).
+The verified state is Bank Scene D1 west, day 3, clock 3, phase 0, with tstone
+owned. verify-dust-safe-entry.ps1 and verify-dust-tstone.ps1 reproduce this.
+The route helper now accepts exact authored scene names as well as grid labels,
+needed for the native "chicken" scene in the third-night Jones quest.
+
+Third-night reconciliation, the bounty encounter and Thunderbird reward pass
+native gameplay. Five hunters die through physical shots and reloads, including
+the rooftop BOUNTDIE.MOV sequence; the player survives, Trotter's dialogue clears
+fighton, and Mezamee gives tbird after declining poker. Actor/cast warming is
+implemented from DF.EXE 0x4259b0/0x425a30/0x428680: all member sprites enter the
+shared cast cache without changing pose, step or placement. All three native
+cast audits pass, including malformed-art rejection and hidden-state checks.
+shopwarm was pending at that milestone; its implementation is recorded below. The consolidated five-hunter regression
+passes. The required third-night Buick conversation and two physical HOTBED.MOV
+clicks play D3ND4M.MOV unskipped and reach day 4, clock 1, phase 0 with both
+artifacts retained. Day-four combat and later story remain unverified.
+
+Fourth-morning Fearwitt/Jones/Trotter conversations and all three Kid attack
+waves now pass native input. Consolidated wave regressions cover 13 attackers,
+HENCH1/HENCH2 death movies, reloads, offscreen transitions and powder kegs.
+The final-wave route survives with 24 hits by firing from the southern street
+before approaching the northern barrel. A close-range route separately reaches
+the authored 31-hit death branch. The Kid duel also passes all five winning
+responses, the scorpion distraction, three KIDDIE.MOV target clicks and the
+unskipped D4AD4N.MOV transition to day 4, clock 3, phase 0. Both artifacts remain
+owned. Temple puzzles, the Bloodstone confrontation and day five remain unverified.
+
+The fourth-night tower box and fountain passage now reach HUB.SET. A missing
+flat lifecycle fallback had hidden YUNNIBOX's avatar/held item: openflat and
+closeflat now follow flat -> stage containment on missing/passed handlers,
+preserving normal-handler precedence and callback navigation guards. Original
+DF.EXE 0x416ed0 builds both contexts. All three native stage audits and the
+retail notebook/gas-pen modal regression pass. The diagnostic selector also
+supports stage handlers without an active puppet. The earned tstone is placed
+through physical inventory selection and dragging; the fountain opens the hub.
+
+The sundial's physical 0,0,8 alignment and east portal lead to the flute puzzle.
+Modal selection, flute placement, five note buttons, unskipped FLUTE.MOV and
+return narration pass; flutepuzzle=done returns to Hub Scene D7 north on the
+fourth night. Snake, mine, Thunderbird and the final confrontation/ending still
+require implementation or validation.
+
+Shop warming now supports the snake chamber's internal "puzzle" name and warms
+all active prop groups/copies without changing state. All three native prop
+audits pass decoded-pixel, internal-name, removed-prop and malformed-art checks.
+Dust's room loader now initializes visibility before callbacks, matching
+DF.EXE 0x421b80; this fixes successful puzzle returns leaving the hub hidden.
+All three room audits pass; flute completion was replayed and post-return
+navigation verified. Snake's seven coupled rotors also pass physical drags from
+the real randomized layout, followed by unskipped SNAKE.MOV and a navigable hub
+return. Thunderbird, mine, final confrontation and ending remain unfinished.
+
+The Thunderbird alignment 8,8,4,20,12 now passes physical tumbler clicks,
+TUMTRAN.MOV and a navigable hub return. The mask-guided repeating mine passes
+normal keys planned from the earned standx/standy globals, then mask placement
+on the skeleton and unskipped SKELETON.MOV. All four puzzle flags are done and
+phase advances to 1. The shaman conversation and sundial 12,4,12 reveal the
+chest. Bloodstone's confrontation transfers to Thunderbird; the alternate
+8,8,0,20,16 combination plays BLOODIES.MOV and D4ND5M.MOV unskipped, reaching
+day 5, clock 1, phase 0 with chest owned by stranger. The corresponding
+verify-dust-tbird-puzzle, verify-dust-mine-puzzle, verify-dust-shaman-chest,
+verify-dust-blood-finale-entry and verify-dust-blood-finale helpers reproduce
+this progression. Endings are the next validation target.
+
+All five day-five endings now pass their distinct unskipped movies, phase 99,
+credits save/restore and authored click-to-quit. Yunni also passes all eight
+scrolling names panels and their wrap to panel 1. The first farewell dialogue
+was unskipped; repeat traces skip speech. verify-dust-ending.ps1 reproduces
+each branch, with -FullCredits selecting a complete scrolling cycle.
+
+Normal launch now runs the authored session without a gameplay flag. Explicit
+dreamfactory_viewer=true retains the developer room viewer and its audits.
+verify-launch.ps1 passes all three ordinary startup paths, including retail's
+waiting game/tour menu. Direction keymaps emit arrow codes with arrow/keypad
+defaults; native mappedkey probes pass in all three editions. Mouse/menu/skip
+bindings are inherited from ScummVM. Physical controllers remain untested.
+
+Font loading additionally reads LiberationSans-Regular.ttf from stock fonts.dat
+when no explicit or loose font is available. Dust inventory rendering passes
+with only that archive and no configured font. The development build packages
+the licensed loose face beside its executable for direct Windows launches.
+
+Retail's first winning fencing bout passes five player points, the authored
+postgame dialogue and fresh restoration of willie=won/fencewins=1/fencecount=1.
+verify-full-fencing-win.ps1 uses only physical attacks, selecting quadrants from
+read-only snapshots. Two wins for the direct ring reward and complete parry
+coverage remain unverified. Other branches and broad save/load validation are
+still required before the full-playability goal can be marked complete.
+
+Ordinary launcher startup also restores real late ScummVM slots: Dust day five,
+retail best-ending preparation with all four evidence items, and the demo's
+developed photograph in B59. The latter was earned again through both baths.
+
+notedialog/questiondialog now show native ScummVM modal overlays, decode
+Windows-1252 script text and freeze the game clock. Real Quit controls pass No
+followed by navigation, affirmative exits, and save-before-quit restoration in
+all three editions. Demo Quit first returns to its own menu; the menu exit
+passes all three CLOSE.MOV click regions before scripted quit. Retail tour
+entry, its save/load restriction notes and canceled Quit also pass. Full tour
+coverage and debug-only textdialog remain unverified/unsupported respectively.
+
+The optional Dust checkmove plug-in now has a portable native implementation
+adapted from the pinned reference's checkers.ts. It supports compulsory jumps,
+chained captures, promotion before a backward king jump, legal player moves
+and alpha-beta search. Handcrafted native rules and 144 independent reference
+positions pass. Bolivar's Easy board is reached through authored dialogue, and
+a physical first drag passes his legal reply and the player turn handoff.
+Complete matches now pass an Easy win in 58 turns and a Hard loss in 20 turns,
+including captures/promotion, the losing voice wait, delayed close, postgame
+dialogue and fresh-process navigation. The postgame script consumes score, so
+the result is asserted before that dialogue and its removal afterward. The
+portrait, real slot-99 board rollback and voluntary exit also pass. Medium
+matches and Hard wins remain outside this coverage. Original DLL AI
+tie-breaking/search equivalence is not claimed.
+
+machinetype returns the Windows asset target; commandkey reads the Meta modifier.
+Retail's bedsit/ship/tour Help movies pass physical topic and close clicks and
+return to gameplay. Dust's normal door-close handler also passes that modifier
+query. All three final native script audits, including the 144-position
+checkers oracle, pass after these additions.
+
+Dust poker passes View Cards' nested button wait, fold, repeat deal, three
+physical discards, a natural winning hand, payout and voluntary exit followed
+by navigation. Each phase survives a fresh-process checkpoint restore. The
+diagnostic modal-click cue can include a handler gate; its event source observes
+button queries to respect the script's release-before-press loop.
+
+The inherited F5 game-menu action emits EVENT_MAINMENU. Real native menu opening,
+Escape cancellation, paused game clocks and mapped keypad navigation pass in
+all three editions. Script and checkers reference audits also pass.
+
+Retail's direct two-win fencing ring reward now passes physical attacks, both
+mandatory second-bout conversation branches, phase advancement and return to
+SqHall. The ring, victories and phase survive a fresh-process checkpoint
+restore followed by navigation. Complete defensive-parry coverage remains open.
+
+Both left and right fencing parries now pass actual mouse defense, including
+fresh-process restoration of the impending attacks and successful parry state.
+Correct defense retreats without scoring; the opposite defense on the same
+saved attack awards the opponent a point and recenters. Diagnostic
+waitpropviewany observes alternative authored views without changing them.
+
+All four retail smokestack layouts now have native traversal evidence. Layouts
+2 and 4 were naturally drawn by normal re-entry, then climbed through their
+authored barriers and stairs; their top-floor checkpoints restore and navigate.
+Layout 1 was replayed separately to retain its evidence; layout 3's earlier
+native trace remains available. Maze globals and random state are never injected.
+
+MetaEngine now advertises kSimpleSavesNames to match Engine's target.### files.
+Without it, direct slot loads worked but the chooser searched target.s## and
+could not discover saved games. No save-format change is needed. Real Save/Load
+choosers pass in all three editions, through authored controls and F5: cancel,
+typed names, listed metadata, load rollback and fresh-process restoration.
+The default thumbnail grid also passes New Save, name-dialog cancellation and
+thumbnail loading. Diagnostic GUI inputs are ordinary events; named-widget
+clicks read theme geometry and never invoke widget commands directly.
+
+Dust's Medium and Hard checkers wins now pass their distinct dialogue, score
+cleanup, store return and fresh post-match restoration. The physical test
+player's tie-break favors promotion and coordinated pursuit among equally
+rated moves; the native rules and opponent AI are unchanged. All three
+difficulty-specific win conversations and a Hard loss have native coverage.
+
+All three tour guide movies present in this retail package pass unskipped:
+Smethells' tour9, Burns' tour2 and Trask's tour8. The initial tour9 photograph
+advances through an authored physical click. Narration, post-guide dialogue,
+map travel, room walks/turns, doors and fresh final navigation pass. Missing
+optional guide movies are still controlled by authored file-existence checks.
+
+Native settings controls now pass persisted volume/subtitle changes in all
+three editions. Dust restores an open score panel, adjusts mute/mid/max volume
+and resumes town navigation. Both Titanic rotary dials restore framerate=3
+after dragging; subtitle toggles and custom turn keys survive saves and control
+restored navigation. Settings observations in boot tracing are read-only.
+
+Dust and retail death screens now pass New Game, cancelled Load, late-game
+recovery and fresh restored navigation. The deaths are earned through gang
+fire and Vlad's automatic carrying-Rubaiyat confrontation. Retail recovery also
+crosses CD resource paths while preserving all four ending evidence items.
+
+All original loaders initialize a new room visible before callbacks, including
+v4 retail TI.EXE 0x4077e5 and demo TI.EXE 0x4083c9. This fixes the demo replay's
+hidden, non-navigable cabin after quitting through its control panel. Regression
+fixtures cover visibility reset and an explicit hide from the opening callback;
+room audits pass all editions. Detached save loading reapplies saved visibility.
+The demo's unskipped replay opening, quest reset, navigation and fresh save
+restore now pass. Its 20-segment tour and 13-segment trailer also complete via
+their final image clicks and return to a restorable menu.
+
+The supplied demo also passes physical darkroom mistake paths: a negative put
+directly in the second bath and one left too long in the first produce spoiled
+inventory photos with value=0/degree=1, retained by fresh loads. Loading an earned
+pre-bath save permits a correct retry. Saving a negative in the first bath and
+loading in a new process resumes its timer and permits both baths to finish;
+the collected good photo retains value=1/degree=0 through another load.
+Reproduce with tools/verify-demo-photo-retry.ps1.
+
+tools/verify-demo-completion.ps1 -Spoiled passes Penny's authored acceptance of
+a spoiled Conkling photo, POSTDEMO, phase 2/menu return and fresh restoration.
+The original ending closes the inventory shop. The default developed-photo
+route is retained. These checks required no additional production engine fix.
+
+Positional ambience now follows the original integer square root, linear
+255-step volume and folded integer bearing pan (retail TI.EXE 0x444430/0x444790,
+demo 0x444cf0/0x444f90). Previously, running loops retained their starting volume
+and pan. The service now updates their existing mixer handles after movement or
+turning and stops a loop on radius exit. Updated play/slot descriptors preserve
+the position in saves and later master-volume changes. Read-only evidence:
+tools/inspect-cricket-spatial.py and build/cricket-spatial-native-evidence.log.
+
+Audio audits pass all editions; both Titanic mixer fixtures verify same-handle
+updates, exact integer volumes, diagonal/turn panning, radius exit and reentry.
+tools/verify-full-ambient-position.ps1 also passes earned turbine-room navigation:
+motor volume 148 with pan -54 then 74, fresh saved-loop restoration, walking to
+volume 187/pan 24 and silence beyond radius. Evidence:
+build/ambient-position-audit-suite.log and build/full-ambient-position-suite.log.
+
+Timed cricket repeats now arm only in audible range, freeze outside their
+room/radius and take a fresh delay on return. Looped PCM starts immediately.
+Timers may expire during a previous sample; all overlapping instances follow
+position changes and stop on room/radius exit. Original 0x425730 reads the loop
+flag, not playback activity. Audio audits pass the new timer/overlap checks.
+
+DFSV v3 stores the armed flag and retains v1/v2 loading (older stored countdowns
+start armed). Invalid armed flags exposed partial-table cleanup through null
+entries; rejection now cleans up safely without altering the live game.
+tools/verify-full-ambient-timing.ps1 verifies exact fresh saved countdown,
+unarmed persistence, range reentry and invalid-flag rejection in the real ship.
+Legacy v1 demo upgrades/fresh loads, v2 retail loading, v3 spatial audio and
+Dust's natural in-flight projectile save/load also pass. Native retail's
+two-loop priority arbitration is implemented in the following milestone.
+The all-edition save suite passes v3 startup/fresh/ScummVM-slot/authored-control
+round trips and invalid/cross-edition rejection (ambient-v3-save-state-suite.log).
+
+Retail now selects the two loudest eligible loops before wave-master scaling
+and plays them through the original shared SFX slots using bank-local sound IDs.
+Running selected loops retain their handles; unselected descriptors stop even
+if script-started. Higher-priority unrelated effects can preempt a loop, which
+resumes when the slot becomes available. Timed retail repeats replace their
+same-sound instance through the multiple-sound arbitration path. DFSV remains v3.
+
+Synthetic ambience audits now explicitly select retail mode, with four generated
+sounds checking three-loop selection, movement, ties, missing resources, shared
+descriptor stopping, effect preemption/resumption and pre-master ranking. Audio
+audits pass all editions. The earned sinking-deck crowd also passes selection
+among three/four audible loops, movement promotion, fresh restores and navigation:
+tools/verify-full-crowd-priority.ps1, build/full-crowd-priority-suite.log.
+Turbine spatial and timer/save/rejection regressions pass under the new channels.
+The proposed boiler fire-loop probe was discarded because its initialization
+is unreachable after BOOTFILE setupsound's unconditional exitcode.
+
+Cricket allocation now reuses the first inactive slot, as in both supplied v4
+executables, rather than appending replacements. Interior gaps remain stable;
+count/index queries and service skip them. This preserves enumeration and
+equal-volume priority. Existing DFSV v3 records encode empty slots without a
+format change. Native API/mixer/save checks pass replacement order, gap
+enumeration, gap restoration and first-free equal-volume promotion
+(CRICKET SLOT PASS; ambient-slot-audit-suite.log). All three audio audits and
+the real crowd/timer/fresh-load/rejection regressions pass with this change.
+
+Dust's alternate third-night Thunderbird route passes a natural first-hand
+poker win. Legal blackjack funding preserves day=3/clock=3/phase=1. Physical
+betting/discard inputs produce the winning hand, Mezamee awards the previously
+unowned Thunderbird, phase/mezphase advance to 2 and the saloon remains navigable.
+The unused cheating-card item and Thunderbird ownership persist across a fresh
+load. Two natural hand scores passed (313 and 402). No production fix was needed.
+Reproduce with tools/verify-dust-night3-poker-win.ps1 -PrepareStake; combined
+evidence: build/dust-night3-poker-complete-route-suite.log. The read-only hand
+oracle and ordinary-wait search adapt to timing without altering cards/globals.
+Earlier $8/$15 diagnostic failures were unused-choice queues, not cash limits;
+the corrected one-choice betting trace passes. The $4 exit was authored lack of
+funds. Full playability/fidelity work remains active.
+
+September demo sound arbitration and DFSV v4
+-------------------------------------------
+Original 426440 aliases single (426240); both (426450) unconditionally replaces
+the lower-priority of two physical slots, choosing slot 2 on ties. Multiple
+(426340) and single compare composite descriptor IDs: bank ordinal << 16 OR
+one-based record ordinal (415c1d, 44e670). Open (44cfde) renumbers descriptors;
+close (44d3d0) compacts banks without renumbering. Physical slots retain copied
+IDs. tools/inspect-sound-slots.py reproduces the hash-guarded original evidence.
+
+Demo looping crickets start once on range entry and arm 0x7fffffff (444f22).
+Preempted/stopped loops wait for range reentry; timed effects share the two
+physical slots. Retail's separate loudest-two pass is unchanged.
+
+DFSV v4 preserves bank priority gaps and accepts versions 1-3; legacy demo
+priorities reconstruct compact bank order because old formats lack the gaps.
+Native all-edition audio and save/control-panel/invalid-save suites pass, along
+with retail timer preservation and malformed armed-flag rejection. Evidence:
+build/demo-sound-audit-suite.log, build/demo-sound-save-state-suite.log,
+build/demo-sound-retail-timer-suite.log. Full playability remains an active goal.
+The developed-photo demo completion, POSTDEMO and fresh ending restore also
+pass (build/demo-sound-completion-suite.log). A preserved v1 demo save upgrades
+to v4 and fresh-load physical navigation passes (demo-sound-legacy-v*-native.log).
+
+Dust original two-channel effect arbitration
+-------------------------------------------
+Dust single/multiple (402b90/402c80) compare composite descriptor priorities.
+Dual (402d70) aliases single; both (402d80) replaces only the lower-priority
+slot, choosing slot 2 on a tie. Open (403185) calls 404290 to renumber bank
+descriptors; close (4033a0) preserves gaps. Active slots retain copied IDs.
+tools/inspect-sound-slots.py reproduces the hash-checked original evidence.
+
+The earlier unbounded overlapping-effect approximation is removed. DFSV stays
+v4: old Dust all-zero bank bases reconstruct stored order; their recorded two
+slots/speech remain, and extra bank effects are discarded. Copied IDs protect
+legitimate lone zero-base bank saves from this migration. Missing banks now
+return before migration accesses an incomplete bank table.
+
+Native synthetic v1 sound banks verify arbitration, gaps, save restoration,
+renumbering, copied IDs, lone zero-base banks and 100 successive replacements.
+All-edition audio/save suites pass, plus old-v4 Dust migration/fresh navigation,
+four malformed sound-bank rejections with live navigation, the final gang wave,
+and the Yunni ending/movie/fresh credits/authored quit. Evidence is in build:
+dust-sound-audit-suite.log, dust-sound-save-state-suite.log,
+dust-sound-rejection-suite.log, dust-sound-legacy-*-native.log,
+dust-sound-wave3-native.log and dust-sound-ending-suite.log.
+Reproduce negative bank checks with tools/verify-dust-sound-save.ps1.
+Movie cue ownership and bank control lifetime still need fidelity review.
+Full playability remains an active goal.
+
+Live loop changes, bank voice controls and Dust pan
+-------------------------------------------------
+Native loop setters (retail 425740, demo 426860, Dust 403030) propagate to
+channels 0-2, including the bank voice. The underlying repeat-link update
+(Dust 41d8c0) preserves the current PCM buffer when disabling repetition.
+Mutable PCM streams now enable looping mid-playback and drain the current
+iteration on disable, with mixer-thread access protected by a mutex. Bank
+voices inherit descriptor loop/volume/pan; independent puppet clips remain
+separate.
+
+Titanic pan setters propagate live. Dust 403010 only records the pan field;
+41ce90 copies 0x27 PCM descriptor bytes, excluding pan at +31, while 402ee0
+computes equal channel gains. Dust's recorded pan is therefore inaudible even
+on later playback. The preliminary next-play interpretation was rejected.
+tools/inspect-live-sound-controls.py reproduces the hash-checked evidence.
+
+DFSV remains v5. Draining samples that previously looped save their modulo
+position and restore the nonlooping tail. Exact synthetic PCM output and native
+mid-sample loop enable, active SFX/bank voice controls, disable/drain/save/load
+and eventual completion pass all three editions. Audio/movie integration,
+save-panel/fresh-process/rejection and real retail motor ambience also pass.
+Dust's actual range/reload/matchbox reward and death-screen restart, cancelled
+Load, late recovery and fresh saves pass. Evidence: build/live-controls-*-suite.log,
+live-controls-{demo,full,dust}-native.log and live-controls-dust-range-native.log.
+Repeated opens of the same bank and movie cue ownership remain under review.
+Full playability remains an active goal.
+
+Bank-local sound controls and DFSV v5
+-----------------------------------
+Loop/volume/pan settings now live in each bank's descriptors, so closing and
+reopening restores native defaults and different banks' duplicate names remain
+independent. Constructors initialize loop off, volume 255 and pan 128 at retail
+424b3f/46/4c, demo 425cbd/425cdc/425ce2 and Dust 402617/402639/40263f.
+tools/inspect-sound-slots.py reproduces the hash-checked evidence.
+
+DFSV v5 stores per-bank controls and active effect volume/pan snapshots. Versions
+1-4 migrate name-global controls to the first matching bank; hidden banks use
+defaults because legacy saves have no independent controls for them. Legacy
+nonpositional playback levels reconstruct their former controls. Inline clips
+retain their copied levels independently of subsequent bank/name resolution.
+
+Native all-edition audio, movie/audio integration, save-panel/fresh-process and
+invalid/cross-edition save tests pass. Synthetic native checks include hidden
+duplicate names, reopen defaults, active volume/pan restoration and copied
+playback levels. Preserved demo v1 and Dust v4 saves upgrade to v5/fresh navigate.
+Six malformed-bank/control cases preserve live navigation; retail timer/range
+and invalid armed-flag checks also pass. Real turbine movement, turning, saved
+live position and radius exit pass (bank-controls-retail-position-suite.log).
+Evidence: build/bank-controls-*-suite.log
+and bank-controls-legacy-*-native.log. Live control propagation is verified in
+the section above. Repeated opens and movie bed/theme sharing remain under
+review; movie cue ownership is corrected below.
+Full playability remains an active goal.
+
+Movie cue shared-voice ownership and cleanup
+-------------------------------------------
+Original cues select physical voice channel 0 (retail 44ad62, demo 44b40b,
+Dust 419551/4195d8). Cleanup stops it at segment/movie exits (449323, 449b41,
+419362), even on natural completion. The retained-tail/effect-channel policy
+was incorrect. Movie cues now replace prior voice and preserve both effects;
+voice-wait frames observe the shared voice. Missing cues preserve voice/follow
+state and never fall back to a sound bank. Retail implements cue loop flags
+in preload/lazy paths; the September demo does not. Evidence is reproduced by
+tools/inspect-movie-audio.py, guarded by original executable hashes.
+
+Native all-edition movie/audio tests pass, including effect preservation, prior
+voice replacement, missing cue/follow behavior, global voice waits, edition loop
+flags and segment/natural cleanup. Fixtures explicitly assert the retail policy.
+DFSV stays v5; loading keeps the current engine's edition rules rather than an
+old saved policy flag. Synthetic compatibility and all-edition save-panel,
+fresh-process, invalid/cross-edition and six malformed bank/control cases pass.
+
+Actual retail best ending (four evidence items, LEAVE/DEBRIS/PROZAC, 14 credits
+clicks, script quit), Dust Yunni ending/fresh credits/quit, and demo developed
+photo completion/POSTDEMO/fresh restore pass. Demo tour/trailer final clicks,
+menu returns and fresh restores pass; their supplied cue records lack loop flags.
+Evidence: build/movie-voice-*-suite.log and movie-voice-*-native.log. Discarded
+shared-loop assumptions are labelled movie-voice-unverified-loopflag-*-native.log.
+Movie bed/theme sharing and repeated opens of the same bank remain under review.
+Full playability remains an active goal.
+
+PCM main-thread ownership and theme queue findings
+------------------------------------------------
+PCM streams borrow immutable clips and loop controls; plays, bank themes, movie
+beds and restored states retain them on the main thread until mixer stop.
+Mixer-thread stream destruction no longer changes non-atomic Common::SharedPtr
+reference counts. The raw-pointer API states this contract; loop flags still
+use their mutex. Native 256-short-clip caller-release/completion/replacement
+stress checks pass per edition, along with all-edition audio/movie/save-panel,
+fresh-process and invalid/cross-edition suites. Evidence:
+build/pcm-ownership-{audit,movie,save}-suite.log.
+
+Original movie beds share theme channel 3. Dust 41d040 appends submitted buffers
+to an active theme chain. The initial previous-bed count is minus one (retail
+448b65, Dust 418c73), so first-bed submission does not clear existing game music.
+Later empty-bed segments inherit; later new-bed segments clear previous movie
+music. Final cleanup stops theme only when a bed exists. Reproduce this evidence
+with tools/inspect-movie-theme.py (build/movie-theme-original-evidence.log).
+
+The separate movie mixer/immediate bank-theme replacement still needs a shared
+queued theme stream and pending-buffer save restoration. A simple music stop
+at movie entry would be incorrect. Queue integration and repeated bank opens
+remain unfinished; full playability remains an active goal.
+
+Authored movie soundtrack order
+------------------------------
+Dust beds use their explicit header directory: records after preloaded
+one-shots, followed in the order at 2110 (original 418e0c..418f21). Reordered
+and repeated chunks survive; unrelated unused audio is excluded. Interactive
+v4 playback also preserves repeats instead of deduplicating them.
+
+All-edition native movie suites pass (22 demo, 278 retail, 235 Dust movies),
+including authored-repeat/unrelated-audio/malformed-directory fixtures and
+interactive v4 playback. Evidence: build/movie-order-audit-suite.log and
+build/movie-order-*-native.log. Every supplied authored bed remains within PCM
+join bounds (build/movie-order-bounds.log).
+
+Repeat boundaries (Dust header 2238; v4 table 0) are still pending together
+with the shared theme queue. Original Dust 4207d0..420841 ingests pending
+nodes in order and uses the last marked node as the repeat root; reproduce
+with tools/inspect-movie-theme.py. The full-playability goal remains active.
+
+Actual-data Dust Yunni ending/fresh credits/quit and demo complete tour/trailer/
+final clicks/menu returns/fresh restores also pass:
+build/movie-order-dust-ending-suite.log, build/movie-order-demo-media-suite.log.
+Repeat-boundary and shared-channel behavior remain unfinished.
+
+Shared queued theme channel and DFSV v6
+--------------------------------------
+Bank themes and movie beds share one Music mixer handle. Submissions append
+their ordered chunks and select the repeat root. Dust movie header 2238 and
+v4 table 0 supply it; v4 retains the original record-count clamp. Dust banks
+use header+30 order and repeat from its first entry (403308..40335f). Mixed-rate
+PCM keeps a fractional source cursor; repeated chunks share immutable owners.
+Only the main thread prunes consumed owners, and closing a consumed old bank
+preserves newer music. The mixer borrows the mutex-protected queue state.
+
+First movie beds queue behind game music. Later empty segments inherit, new
+beds replace, and final cleanup clears theme only when the film supplied a bed.
+Silent movies preserve music. DFSV v6 saves pending chunks, repeat root, cursor
+and a deduplicated PCM pool with bounded validation; v1-v5 themes upgrade.
+tools/inspect-movie-theme.py reproduces hash-checked order/queue evidence.
+
+The original wavevolume() sets Windows device volume, including mixed music.
+Music now combines that master with relative theme gain inside ScummVM, without
+changing device settings. tools/inspect-wave-volume.py resolves the actual
+waveOutSetVolume imports and hash-checked callers in all editions; evidence:
+build/wave-volume-original-evidence.log. This corrects the reference's separate
+sound/voice-only master approximation.
+
+Final all-edition audio/movie/native save-panel/fresh-process/invalid-save
+suites pass: build/theme-master-gain-{audio,movie,save}-suite.log. Shared-queue
+story replays pass retail best ending/all credits/script quit, Dust Yunni/
+fresh credits/quit, demo developed-photo ending and complete tour/trailer/menu
+restores: build/theme-queue-{retail-ending,dust-ending,demo-completion,demo-media}-suite.log.
+These story replays precede the final volume-only correction, covered by the
+final native fixtures and saves. Repeated bank opens and per-bank theme controls
+still need review; the full-playability goal remains active.
+
+Fresh opening checkpoints are v6 in all editions. Six v6 Dust sound-bank/control
+rejections preserve navigation: build/theme-master-gain-dust-rejection-suite.log.
+
+Independent bank ownership and DFSV v7
+------------------------------------
+Repeated opens allocate separate banks; lookup/close selects the first match.
+Active effects/voices and queued themes retain owner IDs rather than filenames.
+Theme gain belongs to each bank (initial 255; zero getter for banks without
+music), and inactive-bank changes preserve the physical theme gain. Playback
+uses bank gain rather than an unsolicited global themevolume fallback.
+Track enumeration includes effects-only banks and repeats and returns internal
+names, as retail CTL.STG's closetracks requires. Hash-checked original evidence:
+tools/inspect-bank-controls.py, build/bank-controls-original-evidence.log.
+
+DFSV v7 stores bank IDs/gains and play/theme/queue owner references. Validation
+rejects duplicate IDs, missing owners and out-of-range gains before commit.
+v1-v6 owner names and theme maps migrate. Checkpoint tools accept v7.
+
+All-edition audio suites pass compiled script getter/enumeration checks,
+independent bank defaults, inactive gains, first close, hidden instances,
+nonordinal owners across saves, five malformed owner and eight malformed queue
+saves: build/bank-enumeration-audio-suite.log. Movie and native/authored save
+panel/fresh-process/rejection suites pass: build/bank-owners-{movie,save}-suite.log.
+Six v7 Dust bank/control rejections preserve live navigation:
+build/bank-owners-dust-rejection-suite.log.
+
+Current-build retail best ending/credits/quit, Dust Yunni/fresh credits/quit,
+demo developed-photo ending and complete tour/trailer/menu restores pass:
+build/bank-owners-{retail-ending,dust-ending,demo-completion,demo-media}-suite.log.
+Physical controls and fresh v7 settings also pass all editions:
+build/bank-owners-settings-suite.log. Goal completion remains unproven; next
+review includes Dust's one-shot directory, which still exposes music records.
+
+Dust one-shot directory and DFSV v8
+---------------------------------
+Only header+24 one-shot records enter named sound lookup. Music remains in the
+theme directory. Enumeration retains duplicate records, while named lookup
+selects the first (original 404070), correcting UNILIB's duplicate pageturn.
+tools/inspect-bank-controls.py reproduces original separate arrays/count/index/
+first-match evidence. Corpus: 46 preserved SND variants, 17 with music,
+145 music entries, duplicate pageturn in installed/CD UNILIB copies; no supplied
+Titanic duplicate one-shots. Counts include preserved copies.
+
+DFSV v8 has v7's payload layout but strict current-directory validation. Older
+saves drop retired music effect controls/plays while preserving world state,
+legitimate voice and queued theme. This also releases obsolete high-priority
+looping effects. New retired/unknown controls reject transactionally. Native
+synthetic compiled count/index/first-match, v7 cleanup, preserved state and v8
+resave checks pass, together with all-edition audio/save-panel/fresh-process/
+invalid/cross-edition suites: build/dust-directory-final-{audio,save}-suite.log.
+
+Actual final gang wave, Yunni ending/fresh v8 credits/script quit also pass:
+build/dust-directory-gang-suite.log, build/dust-directory-ending-suite.log.
+The broader completion audit and full-playability goal remain active.
+
+Fresh opening checkpoints are v8 in all editions; six v8 bank/control rejections
+preserve navigation: build/dust-directory-rejection-suite.log.
+
+Completion validation, 14 October 2026
+------------------------------------
+Fresh-start checkpoint ancestry now passes for all three supplied editions on
+executable 0AB6CD9A8B06D8B6D8E8EBFCCCFA796773504D1FE2A11E4F85BDE43AB7D62027:
+retail's best ending/credits/quit (57 traces), the September 1996 demo's
+developed-photo completion/fresh restore (2), and Dust's five-day Yunni route
+through both fights, duel, four temples, Bloodstone and credits quit (330).
+The final Dust manifest is build/dust-walkthrough/20261014-121819-988/manifest.json.
+Native traces use player inputs and earned saves, without injecting story,
+inventory, actor damage or RNG state. Bounty and first-wave Kid spawns are
+random: distant walkers legitimately clear damage in authored makemove(), so
+combat verification approaches them before shooting. Temporary diagnostics
+were removed before completion; production code matches the retail-run source.
+All four smokestack layouts have traversal coverage; final-build 1/3/4 fresh
+restores close the variant audit. Component, controls, alternate-ending and
+historical optional-game evidence supplement these completion chains.
+See build/completion-requirements.json for the ten verified requirements and
+their scope. This supersedes earlier incomplete milestone notes above; the
+engine remains experimental, with the edition/save boundaries stated at top.
+
+Platform preparation and shared subtitle preferences
+--------------------------------------------------
+The subsequent Windows build integrates explicitly configured ScummVM subtitle
+preferences and captions-only speech mute; without a shared override, the
+authored caption switch still applies. Nine edition/mode cases, original-panel
+settings/persistence and packaged fonts.dat conversation rendering pass.
+The earlier 0ab completion build is preserved in build/releases/validated-0ab;
+its full walkthrough evidence is historical and is not attributed to the new
+settings build. See devtools/dreamfactory/README.md and
+.github/workflows/dreamfactory-builds.yml for unsigned/identity-free platform
+recipes, touchscreen backend controls and remaining upstream review work.
+Only Windows has been built here; macOS/iOS/Android/PSP native jobs and hardware
+playability remain unverified. PSP memory requirements need profiling.

@@ -312,6 +312,7 @@ __pycache__/
 
 #Ignore vcpkg generated files
 /vcpkg_installed/
+/build-dreamfactory/
 
 #Ignore Claude instruction files
 CLAUDE.md

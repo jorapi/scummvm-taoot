@@ -1,0 +1,5 @@
+{
+  "name": "dreamfactory-build",
+  "version-string": "1",
+  "dependencies": ["sdl2", "freetype", "zlib"]
+}
