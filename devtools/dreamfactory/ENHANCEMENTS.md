@@ -369,57 +369,50 @@ journal; earlier dialogue cannot be reconstructed. Saves containing history use
 format v10 (v11 when a route position is recorded) and require a compatible build of this fork. The most recent
 16,384 entries are retained. Disabling recording keeps existing entries.
 
-The Choices view is a record of choices in the loaded save. **Flow** shows
-the connected discovery graph across playthroughs. Its navy, ivory and brass
-cards distinguish scenes, decisions, the current position and unexplored replies.
-Flow opens in an adaptive overview of compact S/D/E/? tiles. Blue scene tiles,
-brass decisions and muted red endings distinguish discovered node types; the
-current playthrough's connecting path is teal and the selected tile has an ivory
-border. Unknown replies remain grey. Switch to Cards for readable node labels
-and a details pane on larger screens. Very large charts remain pannable when
-their minimum readable tiles cannot fit on one screen. Small overlays use
-ScummVM's existing compact font for tile symbols.
-Only encountered dialogue and offered choices are shown; undiscovered outcomes
-remain anonymous. A visited reply with no subsequent discovery is labelled
-"To be continued", rather than being presented as an ending.
+The Choices view is a record of replies in the loaded save. **Flow** is a compact
+story/outcome map for returning to useful parts of the game. It does not draw a
+node or an unexplored stub for every reply. Routine dialogue remains in Log and
+Choices, and repeated discoveries of the same ending share one outcome tile.
 
-In Flow, D-pad/left stick or arrow keys follow the parent/child path with
-Up/Down and move between sibling branches with Left/Right. Drag the map to pan;
-the mouse wheel and Page Up/Down scroll vertically. Home returns to the current
-route position. A or Y opens details, X requests a scene revisit, B/Back closes,
+Return points follow authored story sections: Titanic's apartment, three main
+assignments, the sinking and final evacuation; Dust's five days; and the supplied
+demo's briefing and investigation. Only reached sections appear. The engine
+captures the earliest safe world-input checkpoint available in each section;
+loading an old mid-game save cannot reconstruct earlier return points.
+
+The chart keeps these chapter checkpoints and reached endings, plus safe return
+points shared by paths that actually produced different outcomes. Ordinary
+conversation chains are folded away. A different history cannot be inferred from
+every offered reply, so unseen endings and their number are not advertised.
+Copies of a chapter with materially different recorded ancestry retain their own
+checkpoint; revisiting never fabricates inventory or combines story states.
+
+In Flow, Up/Down follows the parent/child path and Left/Right moves between sibling
+branches. A or Y opens details, X requests a checkpoint revisit, B/Back closes,
 and LB/RB switches views. Keyboard Enter opens details, Space replays an available
-voice line and R requests a revisit. The footer buttons provide the same actions
-for mouse and touch. R3 or Z switches Overview/Cards; L3 or the Current button
-returns to the active route position. In Flow the footer's second button
-switches Overview/Cards; voice replay remains available in Read or with Space.
+voice line and R requests a revisit. R3/Z switches Overview/Cards; L3/Home or the
+Current button returns to the active position. The on-screen Cards/Overview and
+Current controls keep stick-click inputs optional on PSP-style controllers.
+
 At 480x272, all views use one tab row without a redundant title or permanent
-search row. Log and Choices have three footer actions: Read, Replay and Back.
-Flow retains on-screen Cards/Overview and Current buttons, so stick-click inputs
-are optional on PSP-style controllers. Details open on a separate scrolling page.
-Pointer selection, mouse wheel, touch dragging and scrollbar routing are tested
-on both desktop and handheld layouts. Hidden alternate views are moved out of
-the hit-test area so they cannot intercept transcript input.
+search row. Log and Choices have Read, Replay and Back actions. Long details open
+on a separate scrolling page. Pointer selection, wheel scrolling, touch dragging
+and scrollbar routing are tested on desktop and handheld layouts. Hidden alternate
+views are kept outside the hit-test area.
 
-**Revisit** restores the checkpoint before the selected conversation began,
-after a confirmation. Start that conversation again to choose a different reply.
-It replaces unsaved progress, while preserving manual saves and discoveries.
-Unknown nodes and scenes without a safe checkpoint cannot be revisited. Missing
-or damaged checkpoints leave the game intact and show a controller-dismissable
-notice. Restoration happens after the journal and its voice player have closed;
-it does not jump into a suspended conversation script.
+**Revisit** restores the complete recorded checkpoint after confirmation. It
+replaces unsaved progress while preserving manual saves and cumulative discovery.
+A section without a safe snapshot cannot be revisited. Missing/damaged snapshots
+leave the live game intact and show a controller-dismissable notice. Restoration
+happens after the journal and its replay player close; it never resumes a
+fabricated suspended conversation stack.
 
-Automatic follow-up conversations can inherit an earlier checkpoint in the same
-route. Their details identify the earlier speaker where replay begins. Replaying
-an encounter reuses its existing scenes and decisions, while a new reply extends
-the discovery graph. Ordinary new encounters still receive their own identities
-and checkpoints.
-
-Completed finale movies now add ending nodes. Titanic's authored narration flags
-distinguish its eight history combinations, even when they share a final movie.
-Dust's five day-five finales and the supplied demo's post-demo conclusion are
-recognized in their story contexts. Credits, ordinary quitting and unrelated
-movies do not unlock outcomes. Outcomes appear only after being reached; the map
-does not display a prepopulated catalogue of unseen endings.
+Completed finale movies add ending tiles. Titanic's authored narration flags
+distinguish eight history combinations, including combinations sharing a movie.
+Dust's five day-five finales and the supplied demo's conclusion are recognized in
+their story contexts. Credits, ordinary quitting and unrelated movies do not add
+outcomes. Duplicate reached outcomes are merged in Flow without deleting their
+recorded history or checkpoints.
 
 Journal presentation references: [Ace Attorney: Dual Destinies' conversation
 backlog](https://news.capcomusa.com/lets/browse/phoenix-wright-ace-attorney-dual-destinies-localization-the-trials-and-tribulations-of-the-gameplay-mechanics-team)
@@ -432,13 +425,17 @@ Route discovery is now recorded during gameplay, independently of the loaded
 save's dialogue history. The shared game options include **Record branching
 routes**; disabling it preserves existing discoveries. Profiles are isolated by
 ScummVM game target and BOOTFILE identity, and use ScummVM's save-file manager.
-Alternating checksummed metadata files retain the previous committed generation
+Route metadata v2 adds section tags and reads existing v1 profiles. Alternating
+checksummed metadata files retain the previous committed generation
 if the newest write is damaged. If neither generation is intact, recording is
 disabled for that session rather than overwriting the damaged profile.
 
 Before an input gesture is dispatched at an idle script boundary, the engine
-prepares a native checkpoint. If it starts a recorded conversation, that snapshot
-is stored separately from manual/autosave slots. Conversations with no safe
+prepares a native checkpoint. At a newly reached story section, a safe world
+checkpoint is stored immediately, independently of dialogue. Normal conversations
+inside an already captured section do not each store another snapshot. Legacy
+encounters without section metadata retain their existing safe snapshots. These
+files stay separate from manual/autosave slots. Conversations with no safe
 pre-interaction snapshot remain discoverable without a revisit checkpoint.
 Each snapshot is immutable, bounded to the native save limit, and counted against
 a default 1024 MiB uncompressed storage budget. The optional configuration key
@@ -455,10 +452,10 @@ transactionally, then reuses the discovered scene when its conversation starts
 again. Tests cover input-triggered capture, authored state restoration, replay
 without duplicate scenes, cumulative discoveries, failed writes, recovery,
 storage limits, and missing/corrupt checkpoints for all three supported games.
-The Routes view exposes these checkpoints with a confirmation before restoring
+The Flow view exposes these checkpoints with a confirmation before restoring
 the complete scene, including story variables, inventory, RNG and game clock.
-Native UI fixtures cover controller traversal, locked-node details, desktop and
-handheld layouts, drag panning, confirmation cancellation, successful restoration,
+Native UI fixtures cover controller traversal, return-point details, desktop and
+handheld layouts, confirmation cancellation, successful restoration,
 and a damaged checkpoint dismissed with the controller.
 
 Current native saves intentionally exclude active conversations and running
@@ -470,8 +467,8 @@ slots, bound checkpoint storage, and validate a checkpoint before replacing the
 live session. Tests must cover alternate paths, corrupt/missing checkpoints,
 loading old saves, controller input, and all three supported games. The branch
 map has native real-data verification from earned checkpoints: Dust's Yunni
-ending, encounter rewind and Marie ending share the same decision node while
-retaining both outcomes; Titanic's best outcome survives through credits and
+ending, chapter rewind and Marie ending retain both outcomes while displaying
+only three tiles (one day-five return point and two endings); Titanic's best outcome survives through credits and
 scripted quit; the supplied demo's developed-photograph route records its
 conclusion. These checks use normal player input and checkpoint restoration,
 with dialogue/movie skips where stated, without injecting story variables.
@@ -483,9 +480,9 @@ the engine's current walking behavior.
 The overview was compared visually against the original flowchart screenshot in
 [Kotaro Uchikoshi's GDC presentation](https://media.gdcvault.com/gdc2013/slides/824343Uchikoshi_Kotaro_VisualNovelsNarrative.pdf),
 page 25. The shared patterns are compact state tiles, orthogonal branch lines,
-muted unknown nodes, selected-node inspection and returning to a discovered
-scene. The original's fixed story graph is adapted to discoveries made in these
-open-world games; scene jumps restore complete encounter checkpoints. The
+selected-node inspection and returning to meaningful story sections. The
+original's fixed story graph is adapted to reached chapters and actual outcomes
+in these open-world games; return points restore complete native checkpoints. The
 period palette and text controls are drawn by the engine with ScummVM fonts,
 without using VLR artwork.
 
@@ -494,17 +491,19 @@ and [the conversation-log screenshot page](https://www.mobygames.com/game/59163/
 The latter page was located through its indexed caption; its image download is
 not available in this environment, so no pixel-level log comparison is claimed.
 
-The native UI audit renders a 30-node chart with explored and unknown branches
-and endings at desktop and handheld sizes. Pixel comparisons verify that Current
+The native UI audit reduces a 30-record dialogue trace to 13 story return points
+and reached outcomes at desktop and handheld sizes. A separate stress fixture
+reduces 2,000 routine conversation/decision records to a return point and an
+ending. Pixel comparisons verify that Current
 returns to the active position and switching Overview/Cards preserves selection.
-The log audit covers wrapped text, scrolling, bookmarks, search, voice replay and
+The log audit covers wrapped text, pointer selection, scrolling, voice replay and
 controller navigation. Device runtime validation remains separate from these
 native GUI and Android package checks.
 
 The VLR interaction model is adapted to these games: browse a connected overview,
 inspect a discovered scene, then confirm a return to its beginning. Controller
 branch traversal, current-position focus and hidden outcomes work in both map
-layouts. Unlike VLR's authored fixed chart, this map grows from actual encounters;
+layouts. Unlike VLR's authored fixed chart, this map grows from reached story sections;
 it cannot reveal the location or number of story branches not yet encountered.
 The conversation log remains a continuous speaker-labelled transcript with
 individual voice replay, rather than requiring a scene jump to hear a line.

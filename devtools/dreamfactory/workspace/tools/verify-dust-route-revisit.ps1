@@ -12,8 +12,9 @@ try {
     $route = @($route[0..($route.Count - 3)])
     $actions = @('expectglobal day 5','expectglobal phase 0','expectowner chest stranger') + $route + @(
         'expectglobal phase 99', 'dumproutes', 'revisitscene latest',
-        'expectglobal day 5', 'expectglobal phase 0', 'expectscene Scene G13', 'expectview south', 'expectowner chest stranger',
-        'key uparrow', 'expectglobal phase 99', 'dumproutes', 'savecheckpoint'
+        'expectglobal day 5', 'expectglobal phase 0', 'expectscene Scene G4', 'expectview south', 'expectowner chest stranger'
+    ) + $route + @(
+        'expectglobal phase 99', 'dumproutes', 'savecheckpoint'
     )
     & tools/trace-boot.ps1 -Editions dust -RestoreCheckpoint $RestoreCheckpoint -Checkpoint "$run/final.dfsv" -SavePath "$run/saves" -Steps 1 -TimeoutSeconds 300 -SkipSpeech -SkipMovies @('yunniend.mov','marieend.mov') -Choices @(
         'oona.pup:101','jones.pup:222','oona.pup:666',
@@ -36,6 +37,8 @@ try {
     if ($endings.Count -ne 2 -or !@($endings | Where-Object file -Match 'yunniend.mov$').Count -or !@($endings | Where-Object file -Match 'marieend.mov$').Count) { throw 'Both authored ending nodes were not retained' }
     $expanded = @($first.Keys | Where-Object { $first[$_].kind -eq 1 -and $second.ContainsKey($_) -and $second[$_].seen -ne $first[$_].seen -and ($second[$_].seen -band $first[$_].seen) -eq $first[$_].seen })
     if (!$expanded.Count -or $second.Count -lt $first.Count + 1 -or $second.Count -gt $first.Count + 2) { throw 'Replay duplicated its shared encounter or failed to discover the alternate reply' }
-    @{ scope='Earned Dust day-five state; player navigation, Yunni ending, route checkpoint revisit and Marie ending; speech and ending movies skipped with normal input'; beforeNodes=$first.Count; afterNodes=$second.Count; expandedDecisions=$expanded; passed=$true; binarySha256=(Get-FileHash build/scummvm/Release/scummvm.exe -Algorithm SHA256).Hash } | ConvertTo-Json -Depth 4 | Set-Content "$run/proof.json"
+    $visible = @([regex]::Matches($log, 'BOOT FLOW visible=(\d+)') | ForEach-Object { [int]$_.Groups[1].Value })
+    if ($visible.Count -lt 2 -or $visible[0] -ne 2 -or $visible[-1] -ne 3) { throw 'Flow should contain one chapter return point and two reached endings' }
+    @{ visibleFlowNodes=$visible; scope='Earned Dust day-five state; player navigation, Yunni ending, route checkpoint revisit and Marie ending; speech and ending movies skipped with normal input'; beforeNodes=$first.Count; afterNodes=$second.Count; expandedDecisions=$expanded; passed=$true; binarySha256=(Get-FileHash build/scummvm/Release/scummvm.exe -Algorithm SHA256).Hash } | ConvertTo-Json -Depth 4 | Set-Content "$run/proof.json"
     Write-Output "Dust route checkpoint, shared encounter replay and alternate ending PASS: $run"
 } finally { Pop-Location }

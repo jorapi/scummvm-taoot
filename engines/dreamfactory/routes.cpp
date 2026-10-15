@@ -97,11 +97,37 @@ bool RouteGraph::attachCheckpoint(uint32 scene, uint32 bytes) {
 void RouteGraph::detachCheckpoint(uint32 scene) {
 	if (node(scene)) { _nodes[scene - 1].checkpoint = 0; _nodes[scene - 1].checkpointBytes = 0; }
 }
+void RouteGraph::setChapter(uint32 scene, uint32 chapter) {
+	if (node(scene) && node(scene)->kind == RouteNode::kScene && chapter <= 22) _nodes[scene - 1].chapter = chapter;
+}
+bool RouteGraph::chapterCheckpoint(uint32 parent, uint32 chapter) const {
+	for (const RouteNode *current = node(parent); current; current = node(current->parent)) {
+		if (current->chapter && current->chapter != chapter) return false;
+		if (current->chapter == chapter && current->checkpoint) return true;
+	}
+	return false;
+}
+bool RouteGraph::chapterPoint(uint32 parent, uint32 chapter) const {
+	for (const RouteNode *current = node(parent); current; current = node(current->parent)) {
+		if (current->chapter && current->chapter != chapter) return false;
+		if (current->chapter == chapter && (current->checkpoint || current->entry.file.empty())) return true;
+	}
+	return false;
+}
+uint32 identifyRouteChapter(uint32 version, bool retail, bool tour, int32 mission, int32 phase, int32 day) {
+	if (tour) return 0;
+	if (version == 1) return day >= 1 && day <= 5 ? 10 + day : 0;
+	if (version != 4) return 0;
+	if (!retail) return phase == 0 ? 21 : phase == 1 ? 22 : 0;
+	if (mission >= 0 && mission <= 3) return mission + 1;
+	return mission == 4 ? phase < 3 ? 5 : 6 : 0;
+}
 bool RouteGraph::valid() const {
 	if (_nodes.size() > kMaxNodes) return false;
 	for (uint32 i = 0; i < _nodes.size(); ++i) {
 		const RouteNode &current = _nodes[i];
 		if (current.kind < RouteNode::kScene || current.kind > RouteNode::kEnding || current.parent > i) return false;
+		if (current.chapter > 22 || (current.chapter && current.kind != RouteNode::kScene)) return false;
 		const RouteNode *parent = node(current.parent);
 		if (current.parentChoice < -1 || (!parent && current.parentChoice != -1) ||
 			(parent && parent->kind != RouteNode::kDecision && current.parentChoice != -1) ||
@@ -127,6 +153,7 @@ class RouteIO {
 	Common::SeekableReadStream *_input;
 public:
 	bool good = true;
+	uint32 version = 2;
 	RouteIO(Common::SeekableReadStream *input, Common::WriteStream *output) : _sync(input, output), _input(input) {}
 	bool loading() const { return _input != nullptr; }
 	void u32(uint32 &value) { _sync.syncAsUint32LE(value); good = good && !_sync.err() && (!_input || !_input->eos()); }
@@ -153,6 +180,7 @@ public:
 		uint32 kind = node.kind; u32(kind); if (kind > RouteNode::kEnding) good = false;
 		if (loading()) node.kind = RouteNode::Kind(kind);
 		u32(node.parent); i32(node.parentChoice); u32(node.seenChoices); u32(node.checkpoint); u32(node.checkpointBytes); entry(node.entry);
+		if (version >= 2) u32(node.chapter);
 	}
 };
 }
@@ -167,7 +195,7 @@ bool RouteCodec::encode(const RouteGraph &graph, const Common::String &signature
 	if (!io.good || payload.size() > kMaxProfileBytes) { error = "Route profile exceeds its limits"; return false; }
 	Common::MemoryReadStream content(payload.getData(), uint32(payload.size())); byte digest[16]; Common::computeStreamMD5(content, digest);
 	Common::MemoryWriteStreamDynamic output(DisposeAfterUse::YES);
-	output.writeUint32BE(MKTAG('D','F','R','G')); output.writeUint32LE(1); output.writeUint32LE(uint32(payload.size())); output.write(digest, 16); output.write(payload.getData(), uint32(payload.size()));
+	output.writeUint32BE(MKTAG('D','F','R','G')); output.writeUint32LE(2); output.writeUint32LE(uint32(payload.size())); output.write(digest, 16); output.write(payload.getData(), uint32(payload.size()));
 	bytes.resize(uint32(output.size())); memcpy(bytes.data(), output.getData(), bytes.size()); return true;
 }
 bool RouteCodec::decode(const Bytes &bytes, const Common::String &signature, RouteGraph &graph, Common::String &error) {
@@ -176,10 +204,10 @@ bool RouteCodec::decode(const Bytes &bytes, const Common::String &signature, Rou
 	Common::MemoryReadStream input(bytes.data(), bytes.size());
 	const uint32 magic = input.readUint32BE(), version = input.readUint32LE(), size = input.readUint32LE();
 	byte expected[16], digest[16]; input.read(expected, 16);
-	if (magic != MKTAG('D','F','R','G') || version != 1 || size != bytes.size() - 28) { error = "Unsupported route profile"; return false; }
+	if (magic != MKTAG('D','F','R','G') || (version != 1 && version != 2) || size != bytes.size() - 28) { error = "Unsupported route profile"; return false; }
 	Common::computeStreamMD5(input, digest); input.seek(28);
 	if (memcmp(expected, digest, 16)) { error = "Route profile checksum mismatch"; return false; }
-	RouteGraph prepared; RouteIO io(&input, nullptr); Common::String identity; io.text(identity);
+	RouteGraph prepared; RouteIO io(&input, nullptr); io.version = version; Common::String identity; io.text(identity);
 	io.u32(prepared._cursor); io.i32(prepared._choice); uint32 count = 0; io.u32(count);
 	if (count > RouteGraph::kMaxNodes || identity != signature || !io.good) { error = "Route profile belongs to different game data or exceeds its limits"; return false; }
 	prepared._nodes.resize(count);
@@ -188,22 +216,60 @@ bool RouteCodec::decode(const Bytes &bytes, const Common::String &signature, Rou
 	graph = prepared; return true;
 }
 void RouteMap::build(const RouteGraph &graph) {
-	_items.clear();
+	_items.clear(); _nodeItems.clear();
 	if (!graph.valid()) return;
-	Common::Array<uint32> branches; branches.resize(graph.nodes().size());
-	for (uint32 i = 0; i < graph.nodes().size(); ++i) {
-		const RouteNode &node = graph.nodes()[i]; RouteMapItem item;
-		item.node = i + 1; item.parent = int32(node.parent) - 1; item.choice = node.parentChoice;
-		_items.push_back(item);
-		if (node.parent && node.parentChoice >= 0) branches[node.parent - 1] |= 1u << node.parentChoice;
+	const uint32 count = graph.nodes().size();
+	Common::Array<bool> keep; keep.resize(count + 1);
+	Common::Array<uint32> endings, paths, descendants, aliases, branchChildren;
+	descendants.resize(count + 1); aliases.resize(count + 1); branchChildren.resize(count + 1);
+	Common::HashMap<Common::String, uint32> outcomes;
+	uint32 firstChapter[23] = {};
+	for (uint32 id = 1; id <= count; ++id) {
+		const RouteNode &node = *graph.node(id);
+		if (node.chapter && node.checkpoint && !firstChapter[node.chapter]) { firstChapter[node.chapter] = id; keep[id] = true; }
+		if (node.kind != RouteNode::kEnding) continue;
+		Common::String key = node.entry.file; key.toLowercase(); key += '\n'; key += node.entry.speaker; key += '\n'; key += node.entry.text;
+		if (outcomes.contains(key)) { aliases[id] = outcomes[key]; continue; }
+		outcomes[key] = id; endings.push_back(id); paths.push_back(id); keep[id] = true;
+		for (uint32 ancestor = id; ancestor; ancestor = graph.node(ancestor)->parent) ++descendants[ancestor];
 	}
-	for (uint32 i = 0; i < graph.nodes().size(); ++i) {
-		const RouteNode &node = graph.nodes()[i];
-		if (node.kind != RouteNode::kDecision) continue;
-		for (uint32 choice = 0; choice < node.entry.choices.size(); ++choice) if (!(branches[i] & (1u << choice))) {
-			RouteMapItem item; item.parent = i; item.choice = choice; item.locked = !(node.seenChoices & (1u << choice));
-			_items.push_back(item);
+	// Only forks leading to different reached outcomes need their own return point.
+	for (uint32 id = 1; id <= count; ++id) if (descendants[id] && graph.node(id)->parent) ++branchChildren[graph.node(id)->parent];
+	for (uint32 id = 1; id <= count; ++id) if (branchChildren[id] > 1) {
+		const uint32 checkpoint = graph.checkpointFor(id);
+		if (checkpoint) keep[checkpoint] = true;
+	}
+	if (graph.cursor()) paths.push_back(graph.cursor());
+	else if (endings.empty() && count) paths.push_back(count);
+	for (uint32 path : paths) {
+		Common::Array<uint32> chain;
+		for (uint32 id = path; id; id = graph.node(id)->parent) chain.push_back(id);
+		bool seenChapter[23] = {}; uint32 firstScene = 0, firstCheckpoint = 0;
+		for (int32 i = int32(chain.size()) - 1; i >= 0; --i) {
+			const uint32 id = chain[i]; const RouteNode &node = *graph.node(id);
+			if (node.kind != RouteNode::kScene) continue;
+			if (!firstScene) firstScene = id;
+			if (!firstCheckpoint && node.checkpoint) firstCheckpoint = id;
+			if (node.chapter && node.checkpoint && !seenChapter[node.chapter]) { keep[id] = true; seenChapter[node.chapter] = true; }
 		}
+		if (firstCheckpoint) keep[firstCheckpoint] = true;
+		else if (firstScene) keep[firstScene] = true;
+	}
+	if (graph.cursor()) {
+		const uint32 current = graph.checkpointFor(graph.cursor());
+		if (current) keep[current] = true;
+	}
+	_nodeItems.resize(count + 1); for (auto &index : _nodeItems) index = -1;
+	for (uint32 id = 1; id <= count; ++id) if (keep[id]) {
+		RouteMapItem item; item.node = id;
+		uint32 parent = graph.node(id)->parent; item.choice = graph.node(id)->parentChoice;
+		while (parent && !keep[parent]) { if (graph.node(parent)->parentChoice >= 0) item.choice = graph.node(parent)->parentChoice; parent = graph.node(parent)->parent; }
+		item.parent = parent ? _nodeItems[parent] : -1;
+		_nodeItems[id] = _items.size(); _items.push_back(item);
+	}
+	for (uint32 id = 1; id <= count; ++id) {
+		if (aliases[id]) _nodeItems[id] = _nodeItems[aliases[id]];
+		else if (_nodeItems[id] < 0 && graph.node(id)->parent) _nodeItems[id] = _nodeItems[graph.node(id)->parent];
 	}
 	Common::Array<int32> spans, starts;
 	Common::Array<Common::Array<uint32>> children; children.resize(_items.size() + 1);
@@ -227,9 +293,7 @@ void RouteMap::build(const RouteGraph &graph) {
 	}
 }
 int32 RouteMap::itemFor(uint32 node) const {
-	if (!node) return -1;
-	for (uint32 i = 0; i < _items.size(); ++i) if (_items[i].node == node) return i;
-	return -1;
+	return node < _nodeItems.size() ? _nodeItems[node] : -1;
 }
 int32 RouteMap::navigate(int32 selected, int32 dx, int32 dy) const {
 	if (_items.empty()) return -1;

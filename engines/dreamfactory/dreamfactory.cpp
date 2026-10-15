@@ -547,6 +547,9 @@ Common::Error DreamFactoryEngine::run() {
 					const int32 slot = atoi(words.nextToken().c_str()); ok = slot >= 0 && slot <= 99;
 					if (ok) ok = (command == "saveslot" ? saveGameState(slot, "DreamFactory checkpoint test") : loadGameState(slot)).getCode() == Common::kNoError;
 				} else if (command == "dumproutes") {
+					RouteMap flow; flow.build(session.routes.graph);
+					warning("BOOT FLOW visible=%u", uint32(flow.items().size()));
+					for (const auto &item : flow.items()) warning("BOOT FLOW node=%u parent=%d chapter=%u", item.node, item.parent, session.routes.graph.node(item.node)->chapter);
 					for (uint32 n = 0; n < session.routes.graph.nodes().size(); ++n) {
 						const RouteNode &node = session.routes.graph.nodes()[n];
 						warning("BOOT ROUTE node=%u kind=%u parent=%u choice=%d seen=%u checkpoint=%u file=%s speaker=%s", n + 1, uint32(node.kind), node.parent, node.parentChoice, node.seenChoices, node.checkpoint, node.entry.file.c_str(), node.entry.speaker.c_str());

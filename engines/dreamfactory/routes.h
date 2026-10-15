@@ -11,6 +11,7 @@ struct RouteNode {
 	JournalEntry entry;
 	uint32 seenChoices = 0;
 	uint32 checkpoint = 0, checkpointBytes = 0;
+	uint32 chapter = 0;
 };
 // Discovery belongs to the profile; the current cursor belongs to a playthrough.
 class RouteGraph {
@@ -35,6 +36,9 @@ public:
 	bool restoreCursor(uint32 id, int32 choice);
 	bool attachCheckpoint(uint32 scene, uint32 bytes);
 	void detachCheckpoint(uint32 scene);
+	void setChapter(uint32 scene, uint32 chapter);
+	bool chapterCheckpoint(uint32 parent, uint32 chapter) const;
+	bool chapterPoint(uint32 parent, uint32 chapter) const;
 	bool valid() const;
 };
 struct RouteEndingContext {
@@ -45,6 +49,7 @@ struct RouteEndingContext {
 	bool firstWar = false, secondWar = false, revolution = false;
 };
 bool identifyRouteEnding(const RouteEndingContext &context, JournalEntry &entry);
+uint32 identifyRouteChapter(uint32 version, bool retail, bool tour, int32 mission, int32 phase, int32 day);
 class RouteCodec {
 public:
 	// Metadata only. Scene snapshots stay in separate, bounded native save files.
@@ -59,6 +64,7 @@ struct RouteMapItem {
 };
 class RouteMap {
 	Common::Array<RouteMapItem> _items;
+	Common::Array<int32> _nodeItems;
 public:
 	void build(const RouteGraph &graph);
 	const Common::Array<RouteMapItem> &items() const { return _items; }

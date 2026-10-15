@@ -95,16 +95,44 @@ bool Session::init(const Common::FSNode &root) {
 	}
 	return true;
 }
+uint32 Session::routeChapter() const {
+	if ((version == 1 && !runtime.globals.contains("day")) || (version == 4 && !runtime.globals.contains(sound.isTitanicRetail() ? "mission" : "phase"))) return 0;
+	const auto value = [&](const char *name) { const auto found = runtime.globals.find(name); return found == runtime.globals.end() ? Value() : found->_value; };
+	if (version == 4 && sound.isTitanicRetail()) {
+		const Common::String mission = value("mission").text();
+		if (mission != "0" && mission != "1" && mission != "2" && mission != "3" && mission != "4") return 0;
+	}
+	return identifyRouteChapter(version, sound.isTitanicRetail(), value("tour").truth(), value("mission").number(), value("phase").number(), value("day").number());
+}
 void Session::prepareRouteCheckpoint() {
 	_routePending.clear(); _routeOwner.reset();
+	_routePendingChapter = routeChapter();
 	if (!_routeResumeScene) _routeRevisiting = false;
 	if (!routes.active() || (ConfMan.hasKey("dreamfactory_routes") && !ConfMan.getBool("dreamfactory_routes"))) return;
 	// This runs before dispatch, with no authored script stack to reconstruct.
 	// pointerDown already reflects the queued press, so omit that one guard.
 	if (_dialogActive || runtime.busy() || _paletteBlack || screenBlack || puppetSystem.current || movies.active() || roomSystem.moving || roomSystem.turning || !stageSystem.current) return;
+	if (_routePendingChapter && roomSystem.current && roomSystem.visible && !_routeResumeScene) {
+		for (const RouteNode *previous = routes.graph.node(routes.graph.cursor()); previous; previous = routes.graph.node(previous->parent)) {
+			if (!previous->chapter || !previous->checkpoint) continue;
+			// A new game starts a new story spine while keeping discovered outcomes.
+			if (_routePendingChapter < previous->chapter) routes.graph.restoreCursor(0, -1);
+			break;
+		}
+	}
 	const uint32 started = _system ? _system->getMillis() : 0;
 	Common::String error;
 	if (!saveState(_routePending, error)) warning("Route checkpoint: %s", error.c_str());
+	if (_routePendingChapter && roomSystem.current && roomSystem.visible && !_routePending.empty() && !routes.graph.chapterPoint(routes.graph.cursor(), _routePendingChapter)) {
+		JournalEntry entry; entry.speaker = "Story return point"; entry.room = roomSystem.current->data.name; entry.time = elapsedMillis();
+		entry.text = "Return to this part of the story to explore different outcomes.";
+		const uint32 id = routes.graph.recordScene(entry);
+		if (id) {
+			routes.graph.setChapter(id, _routePendingChapter);
+			if (!routes.writeCheckpoint(id, _routePending, error)) { warning("Chapter checkpoint: %s", error.c_str()); routes.save(error); }
+		}
+		_routePending.clear();
+	}
 	excludeWallTime(started);
 }
 void Session::recordRoute(const JournalEntry &entry, bool decision) {
@@ -121,7 +149,10 @@ void Session::recordRoute(const JournalEntry &entry, bool decision) {
 		_routeResumeScene = 0;
 		if (!id) { _routePending.clear(); _routeOwner.reset(); routes.graph.restoreCursor(0, -1); excludeWallTime(started); return; }
 		_routeOwner = puppetSystem.current;
-		if (id && !sameScene && !routes.graph.node(id)->checkpoint && !_routePending.empty() && !routes.writeCheckpoint(id, _routePending, error)) warning("Route checkpoint: %s", error.c_str());
+		const uint32 chapter = _routePending.empty() ? routeChapter() : _routePendingChapter;
+		routes.graph.setChapter(id, chapter);
+		const bool needsCheckpoint = !chapter || !routes.graph.chapterCheckpoint(routes.graph.node(id)->parent, chapter);
+		if (id && !sameScene && needsCheckpoint && !routes.graph.node(id)->checkpoint && !_routePending.empty() && !routes.writeCheckpoint(id, _routePending, error)) warning("Route checkpoint: %s", error.c_str());
 		_routePending.clear();
 	}
 	if (decision) routes.graph.recordDecision(entry);

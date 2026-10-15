@@ -738,10 +738,10 @@ bool auditPuppetSession(const Common::FSNode &root, OSystem *backend) {
 				event.mouse = Common::Point((_backend->getOverlayWidth() - w) / 2 + 18, (_backend->getOverlayHeight() - h) / 2 + (_compact ? row + 16 : row * 3 + 24) + (_gesture > 1 ? 30 : 70));
 				++_gesture; return true;
 			}
-			const uint32 commands[] = {kJournalViewPrevious, kJournalDown, kJournalDown, kJournalRight, kJournalReplay, kJournalClose, kJournalStar, kJournalUp, kJournalStar, kJournalClose, kJournalRead, kJournalStar, kJournalClose, kJournalStar, kJournalReplay};
+			const uint32 commands[] = {kJournalViewPrevious, kJournalRead, kJournalClose, kJournalStar, kJournalClose, kJournalRead, kJournalStar, kJournalClose, kJournalStar, kJournalReplay};
 			if (phase >= ARRAYSIZE(commands) + (_failure ? 1 : 0) || elapsed < (phase + 1 + (phase ? 4 : 0)) * 150) return false;
 			if (phase == 1 || phase == 2 || phase == 4 || phase == 5 || phase == 9 || phase == 11) {
-				const char *names[] = {"", "routes-map", "routes-decision", "", "routes-locked", "routes-locked-detail", "", "", "", "routes-confirm", "", "routes-detail"};
+				const char *names[] = {"", "routes-map", "routes-detail", "", "routes-confirm", "", "", "routes-confirm", "", "routes-confirm", "", "routes-detail"};
 				Graphics::Surface overlay; overlay.create(_backend->getOverlayWidth(), _backend->getOverlayHeight(), _backend->getOverlayFormat()); _backend->grabOverlay(overlay);
 				if (phase == 1) { Common::MemoryReadStream pixels(static_cast<const byte *>(overlay.getPixels()), overlay.pitch * overlay.h); dragChanged = _beforeDrag != Common::computeStreamMD5AsString(pixels); }
 				Common::DumpFile image;
@@ -756,7 +756,7 @@ bool auditPuppetSession(const Common::FSNode &root, OSystem *backend) {
 		if (backend->endGFXTransaction() != OSystem::kTransactionSuccess || !routeSession.routes.graph.restoreCursor(1, -1)) return false;
 		ControllerInputs controller(backend); RouteUISource source(backend, root, compact);
 		Common::Event journalEvent; journalEvent.type = Common::EVENT_CUSTOM_ENGINE_ACTION_START; journalEvent.customType = kOpenJournal; routeSession.postEvent(journalEvent);
-		if (!routeSession.step() || source.phase != 15 || !source.zoomMapped || !source.currentMapped || (compact && !source.dragChanged) || routeSession.runtime.globals["routecounter"].number() || routeSession.routes.graph.cursor() != 1 || routeSession.routes.graph.nodes().size() != 3) {
+		if (!routeSession.step() || source.phase != 10 || !source.zoomMapped || !source.currentMapped || routeSession.runtime.globals["routecounter"].number() || routeSession.routes.graph.cursor() != 1 || routeSession.routes.graph.nodes().size() != 3) {
 			warning("ROUTE UI FAIL compact=%u phase=%u counter=%d cursor=%u nodes=%u error=%s", compact, source.phase, routeSession.runtime.globals["routecounter"].number(), routeSession.routes.graph.cursor(), routeSession.routes.graph.nodes().size(), routeSession.runtime.error.c_str()); return false;
 		}
 	}
@@ -767,7 +767,7 @@ bool auditPuppetSession(const Common::FSNode &root, OSystem *backend) {
 		ControllerInputs controller(backend); RouteUISource source(backend, root, false);
 		Common::Event journalEvent; journalEvent.type = Common::EVENT_CUSTOM_ENGINE_ACTION_START; journalEvent.customType = kOpenJournal; routeSession.postEvent(journalEvent);
 		const ScriptResult restored = routeSession.runtime.run(test, "speak");
-		if (restored.signal != ScriptResult::kAbandoned || source.phase != 15 || routeSession.puppetSystem.current || routeSession.puppetSpeech.active() || !routeSession.runtime.error.empty() || routeSession.routes.graph.nodes().size() != 3 || routeSession.routes.graph.cursor() != 1) {
+		if (restored.signal != ScriptResult::kAbandoned || source.phase != 10 || routeSession.puppetSystem.current || routeSession.puppetSpeech.active() || !routeSession.runtime.error.empty() || routeSession.routes.graph.nodes().size() != 3 || routeSession.routes.graph.cursor() != 1) {
 			warning("ROUTE UI FAIL restore during speech phase=%u signal=%d error=%s", source.phase, restored.signal, routeSession.runtime.error.c_str()); return false;
 		}
 	}
@@ -776,9 +776,9 @@ bool auditPuppetSession(const Common::FSNode &root, OSystem *backend) {
 		routeSession.runtime.globals["routecounter"] = Value(99);
 		ControllerInputs controller(backend); RouteUISource source(backend, root, false, true);
 		Common::Event journalEvent; journalEvent.type = Common::EVENT_CUSTOM_ENGINE_ACTION_START; journalEvent.customType = kOpenJournal; routeSession.postEvent(journalEvent);
-		if (!routeSession.step() || source.phase != 16 || routeSession.runtime.globals["routecounter"].number() != 99 || routeSession.routes.graph.cursor() != 1) { warning("ROUTE UI FAIL corrupt restore phase=%u", source.phase); return false; }
+		if (!routeSession.step() || source.phase != 11 || routeSession.runtime.globals["routecounter"].number() != 99 || routeSession.routes.graph.cursor() != 1) { warning("ROUTE UI FAIL corrupt restore phase=%u", source.phase); return false; }
 	}
-	warning("ROUTE UI PASS connected map desktop handheld drag pan controller branches locked outcome details unavailable revisit ignored confirmation cancel confirm safe post-dialog restore active speech script abandoned cumulative discoveries retained corrupt checkpoint notice dismissed with controller running state intact");
+	warning("ROUTE UI PASS compact return map desktop handheld controller details confirmation cancel confirm safe post-dialog restore active speech script abandoned cumulative discoveries retained corrupt checkpoint notice dismissed with controller running state intact");
 	Session missingVoice(backend);
 	JournalEntry unavailable; unavailable.speaker = "Fixture"; unavailable.text = "Unavailable voice"; unavailable.file = "missing.pup"; unavailable.ident = "line";
 	missingVoice.journal.add(unavailable);
@@ -805,12 +805,15 @@ bool auditPuppetSession(const Common::FSNode &root, OSystem *backend) {
 		static void branch(RouteGraph &graph, uint32 depth) {
 			JournalEntry entry; entry.speaker = depth & 1 ? "Passenger" : "Officer"; entry.room = "Layout fixture"; entry.text = "Recorded conversation for the flowchart layout fixture.";
 			const uint32 scene = graph.recordScene(entry);
-			if (depth == 3) { entry.text = "Discovered ending."; graph.recordEnding(entry); return; }
+			if (depth == 0 || depth == 2) { graph.setChapter(scene, depth == 0 ? 2 : 3); graph.attachCheckpoint(scene, 28); }
+			if (depth == 3) { entry.text = Common::String::format("Discovered ending %u.", scene); graph.recordEnding(entry); return; }
 			entry.choices.push_back("Ask about the passenger"); entry.choices.push_back("Ask about the ship"); entry.choices.push_back("An unexplored reply");
 			for (uint32 choice = 0; choice < 2; ++choice) { graph.restoreCursor(scene, -1); entry.selected = choice; graph.recordDecision(entry); branch(graph, depth + 1); }
 		}
 	};
 	ChartFixture::branch(chartPreview.routes.graph, 0);
+	RouteMap compactFlow; compactFlow.build(chartPreview.routes.graph);
+	if (compactFlow.items().size() != 13) return false;
 	const uint32 chartCursor = chartPreview.routes.graph.cursor();
 	class ChartSource : public Common::EventSource {
 		OSystem *_backend; Common::FSNode _root; uint32 _start; bool _compact, _timedOut = false;
@@ -849,7 +852,7 @@ bool auditPuppetSession(const Common::FSNode &root, OSystem *backend) {
 	}
 	backend->beginGFXTransaction(); backend->initSize(oldWidth, oldHeight, &oldFormat);
 	if (backend->endGFXTransaction() != OSystem::kTransactionSuccess) return false;
-	warning("VLR CHART PASS thirty discovered nodes hidden replies current path overview desktop handheld current focus zoom selection persistence details read-only discovery");
+	warning("VLR CHART PASS thirty dialogue records reduced to thirteen chapter return points and outcomes ordinary reply nodes omitted desktop handheld current focus zoom selection persistence details read-only discovery");
 	const auto *journalMap = backend->getEventManager()->getKeymapper()->getKeymap("dreamfactory-journal-ui");
 	const auto *standardMap = backend->getEventManager()->getKeymapper()->getKeymap(Common::kGuiKeymapName);
 	if (!journalMap || journalMap->isEnabled() || !standardMap || !standardMap->isEnabled()) return false;
@@ -2926,20 +2929,35 @@ static bool auditRouteGraph() {
 	RouteGraph bounded;
 	for (uint32 i = 0; i < RouteGraph::kMaxNodes; ++i) if (!bounded.recordScene(scene)) return false;
 	if (bounded.recordScene(scene) || bounded.nodes().size() != RouteGraph::kMaxNodes || !bounded.valid()) return false;
-	RouteGraph layoutGraph; RouteMap map;
-	const uint32 layoutScene = layoutGraph.recordScene(scene);
-	decision.selected = 1;
-	const uint32 layoutDecision = layoutGraph.recordDecision(decision), layoutNext = layoutGraph.recordScene(scene);
-	map.build(layoutGraph);
-	if (map.items().size() != 4 || map.itemFor(layoutScene) != 0 || map.itemFor(layoutDecision) != 1 || map.itemFor(layoutNext) != 2 || !map.items()[3].locked || map.items()[3].choice != 0) return false;
-	if (map.items()[3].column >= map.items()[2].column || map.navigate(1, 0, 1) != 3 || map.navigate(2, -1, 0) != 3 || map.navigate(3, 1, 0) != 2 || map.navigate(3, 0, -1) != 1 || map.navigate(0, 0, -1) != 0) return false;
-	map.build(bounded);
-	if (map.items().size() != RouteGraph::kMaxNodes || map.items().back().row != int32(RouteGraph::kMaxNodes) - 1 || map.items().back().column) return false;
-	RouteGraph wide;
-	for (uint32 i = 0; i < RouteGraph::kMaxNodes; ++i) { wide.restoreCursor(0, -1); wide.recordScene(scene); }
-	map.build(wide);
-	if (map.items().back().column != int32(RouteGraph::kMaxNodes - 1) * 2 || map.navigate(RouteGraph::kMaxNodes - 2, 1, 0) != int32(RouteGraph::kMaxNodes) - 1) return false;
-	warning("ROUTE MAP PASS authored reply ordering undiscovered placeholders parent child sibling navigation long route coordinates bounded layout");
+	{
+		RouteGraph layoutGraph; RouteMap map;
+		const uint32 layoutScene = layoutGraph.recordScene(scene);
+		layoutGraph.setChapter(layoutScene, 2); layoutGraph.attachCheckpoint(layoutScene, 28);
+		Bytes legacy; if (!RouteCodec::encode(layoutGraph, "legacy", legacy, error)) return false;
+		legacy.resize(legacy.size() - 4); WRITE_LE_UINT32(legacy.data() + 4, 1); WRITE_LE_UINT32(legacy.data() + 8, legacy.size() - 28);
+		Common::MemoryReadStream oldPayload(legacy.data() + 28, legacy.size() - 28); byte oldDigest[16]; Common::computeStreamMD5(oldPayload, oldDigest); memcpy(legacy.data() + 12, oldDigest, 16);
+		RouteGraph oldGraph; if (!RouteCodec::decode(legacy, "legacy", oldGraph, error) || oldGraph.nodes().size() != 1 || oldGraph.node(1)->chapter) return false;
+		decision.selected = 1;
+		const uint32 layoutDecision = layoutGraph.recordDecision(decision), layoutNext = layoutGraph.recordScene(scene);
+		JournalEntry mappedOutcome; mappedOutcome.speaker = "Outcome A"; mappedOutcome.text = "First reached outcome";
+		const uint32 outcomeA = layoutGraph.recordEnding(mappedOutcome);
+		layoutGraph.restoreCursor(layoutScene, -1); decision.selected = 0; layoutGraph.recordDecision(decision);
+		mappedOutcome.speaker = "Outcome B"; mappedOutcome.text = "Second reached outcome"; const uint32 outcomeB = layoutGraph.recordEnding(mappedOutcome);
+		map.build(layoutGraph);
+		if (map.items().size() != 3 || map.itemFor(layoutScene) != 0 || map.itemFor(layoutDecision) != 0 || map.itemFor(layoutNext) != 0) return false;
+		const int32 a = map.itemFor(outcomeA), b = map.itemFor(outcomeB);
+		if (a < 0 || b < 0 || map.navigate(0, 0, 1) != b || map.navigate(a, -1, 0) != b || map.navigate(b, 1, 0) != a || map.navigate(b, 0, -1) != 0) return false;
+		map.build(bounded);
+		if (map.items().size() != 1 || map.itemFor(bounded.cursor()) != 0 || map.items()[0].row) return false;
+		RouteGraph routine; const uint32 routineStart = routine.recordScene(scene); routine.setChapter(routineStart, 2); routine.attachCheckpoint(routineStart, 28);
+		for (uint32 i = 0; i < 1000; ++i) { routine.recordDecision(decision); routine.recordScene(scene); }
+		mappedOutcome.speaker = "Outcome"; mappedOutcome.text = "Reached ending"; routine.recordEnding(mappedOutcome); map.build(routine);
+		if (map.items().size() != 2) return false;
+		routine.restoreCursor(routineStart, -1); routine.recordScene(scene); const uint32 repeatEnding = routine.recordEnding(mappedOutcome); map.build(routine);
+		if (map.items().size() != 2 || map.itemFor(repeatEnding) != 1) return false;
+		if (identifyRouteChapter(4, true, false, 1, 0, 0) != 2 || identifyRouteChapter(4, true, false, 4, 2, 0) != 5 || identifyRouteChapter(4, true, false, 4, 3, 0) != 6 || identifyRouteChapter(1, false, false, 0, 0, 5) != 15 || identifyRouteChapter(4, false, false, 0, 1, 0) != 22 || identifyRouteChapter(4, true, true, 1, 0, 0)) return false;
+		warning("ROUTE MAP PASS story chapter projection two thousand routine dialogue records become two visible nodes distinct outcomes sibling navigation duplicate endings merged suppressed cursor mapping legacy v1 metadata compatible");
+	}
 	RouteEndingContext outcome; outcome.version = 4; outcome.retail = true; outcome.stage = "disc1/narend/NAREND.STG"; outcome.clock = "endgame";
 	const char *movies[] = {"prozac.mov", "rushend.mov", "germend.mov", "germend.mov", "rushend.mov", "rushend.mov", "nuke.mov", "boom.mov"};
 	JournalEntry identified; identified.text = "Retained";

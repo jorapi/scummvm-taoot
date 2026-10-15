@@ -349,23 +349,36 @@ public:
 		}
 	}
 };
+Common::U32String chapterTitle(uint32 chapter) {
+	switch (chapter) {
+	case 1: return _("The apartment");
+	case 2: return _("First assignment");
+	case 3: return _("Second assignment");
+	case 4: return _("Third assignment");
+	case 5: return _("The sinking");
+	case 6: return _("Final evacuation");
+	case 11: case 12: case 13: case 14: case 15: return Common::U32String::format(_("Day %u"), chapter - 10);
+	case 21: return _("The briefing");
+	case 22: return _("The investigation");
+	default: return _("Return point");
+	}
+}
 Common::U32String routeTitle(const RouteGraph &graph, const RouteMapItem &item) {
 	if (!item.node) return item.locked ? _("Undiscovered") : _("To be continued");
 	const RouteNode &node = *graph.node(item.node);
-	Common::U32String text = node.kind == RouteNode::kScene ? _("Scene") : node.kind == RouteNode::kDecision ? _("Decision") : _("Ending");
+	if (node.kind == RouteNode::kScene && node.chapter) return chapterTitle(node.chapter);
+	Common::U32String text = node.kind == RouteNode::kScene ? _("Return point") : _("Ending");
 	text += U" - "; text += speakerText(node.entry);
 	return text;
 }
 Common::U32String routeBody(const RouteGraph &graph, const RouteMapItem &item) {
 	if (!item.node) {
-		Common::U32String text;
-		const RouteNode *parent = graph.node(item.parent + 1);
-		if (parent && item.choice >= 0 && uint32(item.choice) < parent->entry.choices.size()) { text = literal(parent->entry.choices[item.choice]); text += U"\n\n"; }
-		text += item.locked ? _("You have encountered this reply, but have not chosen it. Its outcome is hidden until you explore it.") : _("You chose this reply. Continue playing to discover what follows.");
-		return text;
+		return _("No story return point is available.");
 	}
 	const RouteNode &node = *graph.node(item.node);
-	Common::U32String text = entryContext(node.entry); text += U"\n\n";
+	Common::U32String text;
+	if (node.chapter) { text = U"**"; text += chapterTitle(node.chapter); text += U"**\n\n"; }
+	text += entryContext(node.entry); text += U"\n\n";
 	if (node.kind == RouteNode::kDecision) {
 		for (uint32 i = 0; i < node.entry.choices.size(); ++i) {
 			text += node.seenChoices & (1u << i) ? _("**Explored reply**") : _("**Unexplored reply**");
@@ -373,7 +386,10 @@ Common::U32String routeBody(const RouteGraph &graph, const RouteMapItem &item) {
 		}
 	} else { text += literal(node.entry.text); text += U"\n\n"; }
 	const RouteNode *scene = graph.node(graph.checkpointFor(item.node));
-	if (scene && graph.checkpointFor(item.node) != graph.sceneFor(item.node)) {
+	if (scene && scene->chapter && scene->entry.file.empty()) {
+		text += _("Revisit returns to the earliest recorded checkpoint in "); text += chapterTitle(scene->chapter);
+		text += _(". Your inventory, story state and clock are restored together. Play from there to explore another outcome.");
+	} else if (scene && graph.checkpointFor(item.node) != graph.sceneFor(item.node)) {
 		text += _("This part of the route uses an earlier encounter checkpoint. Revisit begins with "); text += literal(speakerText(scene->entry)); text += _(". Replay the encounter to explore another branch.");
 	} else text += scene && scene->checkpoint ? _("Revisit restores the state before this conversation began. Start the conversation again to explore a different reply.") : _("No safe checkpoint was captured for this scene. You can still read its discovered dialogue and choices.");
 	return text;
@@ -432,7 +448,7 @@ protected:
 			const auto &item = _map.items()[i]; const int x = left(item), y = top(item), w = cardWidth(), h = cardHeight();
 			if (x + w <= 0 || y + h <= 0 || x >= _w || y >= _h) continue;
 			const RouteNode *node = _graph.node(item.node);
-			const bool selected = int32(i) == _selected, current = item.node && item.node == _graph.cursor();
+			const bool selected = int32(i) == _selected, current = int32(i) == _map.itemFor(_graph.cursor());
 			const uint32 category = !node ? color(110, 123, 135) : node->kind == RouteNode::kScene ? color(143, 167, 190) : node->kind == RouteNode::kDecision ? brass : color(198, 132, 112);
 			const uint32 border = selected ? ivory : current ? color(109, 193, 184) : _overview ? category : item.locked ? color(72, 84, 95) : brass;
 			rect(x, y, x + w, y + h, selected ? color(49, 62, 74) : color(29, 41, 52));
@@ -440,15 +456,15 @@ protected:
 			rect(x, y, x + w, y + thickness, border); rect(x, y + h - thickness, x + w, y + h, border);
 			rect(x, y, x + thickness, y + h, border); rect(x + w - thickness, y, x + w, y + h, border);
 			if (_overview) {
-				const Common::U32String symbol = !node ? item.locked ? _("?") : _(".") : node->kind == RouteNode::kScene ? _("S") : node->kind == RouteNode::kDecision ? _("D") : _("E");
+				const Common::U32String symbol = node && node->kind == RouteNode::kEnding ? _("E") : _("C");
 				const Graphics::Font &tileFont = h >= font.getFontHeight() + 4 ? font : *FontMan.getFontByUsage(Graphics::FontManager::kConsoleFont);
 				tileFont.drawString(&surface, symbol, x + 2, y + (h - tileFont.getFontHeight()) / 2, w - 4, border, Graphics::kTextAlignCenter);
 				continue;
 			}
-			Common::U32String kind = !node ? item.locked ? _("?") : _("...") : node->kind == RouteNode::kScene ? _("SCENE") : node->kind == RouteNode::kDecision ? _("DECISION") : _("ENDING");
+			Common::U32String kind = node && node->kind == RouteNode::kEnding ? _("ENDING") : _("RETURN POINT");
 			if (current) kind += _("  |  Current");
 			font.drawString(&surface, kind, x + 9, y + (_h < 180 ? 4 : 7), w - 18, border, Graphics::kTextAlignLeft, 0, true);
-			font.drawString(&surface, node ? speakerText(node->entry) : routeTitle(_graph, item), x + 9, y + font.getFontHeight() + (_h < 180 ? 7 : 11), w - 18, item.locked ? muted : ivory, Graphics::kTextAlignLeft, 0, true);
+			font.drawString(&surface, routeTitle(_graph, item), x + 9, y + font.getFontHeight() + (_h < 180 ? 7 : 11), w - 18, item.locked ? muted : ivory, Graphics::kTextAlignLeft, 0, true);
 			Common::U32String context = node ? gameText(node->entry.room) : _("Outcome hidden");
 			if (node && node->kind == RouteNode::kScene && node->checkpoint) context = _("Checkpoint available");
 			if (!node && !item.locked) context = _("Continue this route");
@@ -462,12 +478,13 @@ public:
 		_map.build(graph);
 		for (const auto &item : _map.items()) { _maxColumn = MAX<int>(_maxColumn, item.column); _maxRow = MAX<int>(_maxRow, item.row); }
 		_currentPath.resize(graph.nodes().size() + 1);
-		for (uint32 id = graph.cursor(); id; id = graph.node(id)->parent) _currentPath[id] = true;
+		for (uint32 id = graph.cursor(); id; id = graph.node(id)->parent) { const int32 index = _map.itemFor(id); if (index >= 0) _currentPath[_map.items()[index].node] = true; }
 		_selected = _map.itemFor(graph.cursor()); if (_selected < 0 && !_map.items().empty()) _selected = 0;
 	}
 	bool wantsFocus() override { return true; }
 	const RouteMapItem *selected() const { return _selected >= 0 ? &_map.items()[_selected] : nullptr; }
 	int32 selectedIndex() const { return _selected; }
+	uint32 visibleCount() const { return _map.items().size(); }
 	bool overview() const { return _overview; }
 	void toggleOverview() { _overview = !_overview; }
 	void focusCurrent() { const int32 index = _map.itemFor(_graph.cursor()); select(index >= 0 ? index : 0); }
@@ -510,7 +527,7 @@ public:
 };
 class SceneConfirmation : public GUI::MessageDialog {
 public:
-	SceneConfirmation() : MessageDialog(_("Restore the start of this conversation? Unsaved progress will be replaced. Manual saves and route discoveries are kept."), _("Restore scene"), _("Cancel")) { setResult(GUI::kMessageAlt); }
+	SceneConfirmation() : MessageDialog(_("Restore this story return point? Unsaved progress will be replaced. Manual saves and route discoveries are kept."), _("Restore checkpoint"), _("Cancel")) { setResult(GUI::kMessageAlt); }
 	void handleOtherEvent(const Common::Event &event) override {
 		if (event.type == Common::EVENT_CUSTOM_ENGINE_ACTION_START && (event.customType == kJournalReplay || event.customType == kJournalClose)) {
 			setResult(event.customType == kJournalReplay ? GUI::kMessageOK : GUI::kMessageAlt); close();
@@ -609,7 +626,7 @@ class JournalDialog : public GUI::Dialog {
 		if (index >= 0) status = Common::U32String::format(_("%u / %u  |  Up/Down: Select"), uint32(_list->getSelected() + 1), uint32(_indices.size()));
 		if (routes) {
 			status = item ? routeTitle(_session.routes.graph, *item) : _("No route discoveries yet");
-			status += Common::U32String::format(_("  |  %u known nodes"), uint32(_session.routes.graph.nodes().size()));
+			status += Common::U32String::format(_("  |  %u return points / outcomes"), _mapWidget->visibleCount());
 		}
 		_status->setLabel(status);
 		_buttons[0]->setEnabled(index >= 0);
@@ -654,7 +671,7 @@ public:
 		_tabs[0] = new GUI::ButtonWidget(this, 8, 32, 95, 20, _("Log"), Common::U32String(), kLines);
 		_tabs[1] = new GUI::ButtonWidget(this, 108, 32, 95, 20, _("Choices"), Common::U32String(), kPaths);
 		_tabs[2] = new GUI::ButtonWidget(this, 208, 32, 95, 20, _("Flow"), Common::U32String(), kRoutes);
-		_routeLegend = new GUI::StaticTextWidget(this, 12, 56, 300, 20, _("S: Scene  D: Decision  E: Ending  ?: Unexplored  |  R3/Z: Zoom"), Graphics::kTextAlignLeft, Common::U32String(), GUI::ThemeEngine::kFontStyleNormal);
+		_routeLegend = new GUI::StaticTextWidget(this, 12, 56, 300, 20, _("C: Return point  E: Reached ending  |  Ordinary replies are in Choices"), Graphics::kTextAlignLeft, Common::U32String(), GUI::ThemeEngine::kFontStyleNormal);
 		_search = new GUI::EditTextWidget(this, 8, 56, 300, 20, Common::U32String(), _("Search recorded dialogue"), kSearch);
 		_list = new TranscriptWidget(this, session, _replay);
 		_mapWidget = new RouteMapWidget(this, session.routes.graph); showPanel(_mapWidget, false); showPanel(_routeLegend, false);

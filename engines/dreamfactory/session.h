@@ -51,6 +51,7 @@ public:
 	struct Hit { Common::String name, type = "none"; };
 	Hit hitTest(int32 x, int32 y);
 	void updateHoverCursor();
+	uint32 routeChapter() const;
 	Common::Point pointer;
 	bool pointerDown = false;
 	bool invoke(Runtime &runtime, const Expression &call, ScriptFrame &frame, Value &result) override;
@@ -110,6 +111,7 @@ private:
 	bool _dialogActive = false;
 	bool _journalRequested = false;
 	Bytes _routePending;
+	uint32 _routePendingChapter = 0;
 	Common::SharedPtr<LoadedPuppet> _routeOwner;
 	uint32 _savedRouteCursor = 0;
 	int32 _savedRouteChoice = -1;
