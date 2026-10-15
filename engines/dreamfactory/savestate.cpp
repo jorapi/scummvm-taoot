@@ -414,7 +414,7 @@ void SaveState::commit(Session &g, Session &p, const StateIO &state) {
 	g._time = p._time; g._lastMillis = g._system ? g._system->getMillis() : 0; g._random.setSeed(p._random.getSeed());
 	g.frameRate = p.frameRate; g.cameraHi = p.cameraHi; g.menuVisible = p.menuVisible; g.keyAborts = p.keyAborts; g.puppetGrab = p.puppetGrab;
 	g.journal = p.journal;
-	g._routePending.clear(); g._routeOwner.reset(); g._routeResumeScene = 0;
+	g._routePending.clear(); g._routeOwner.reset(); g._routeResumeScene = 0; g._routeRevisiting = false;
 	if (p._savedRouteToken != g.routes.graph.cursorToken(p._savedRouteCursor) || !g.routes.graph.restoreCursor(p._savedRouteCursor, p._savedRouteChoice))
 		g.routes.graph.restoreCursor(0, -1);
 	g.lastResult = p.lastResult; g.playerHitbox = p.playerHitbox; g.puppetParams = p.puppetParams;

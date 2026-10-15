@@ -53,6 +53,7 @@ bool Session::init(const Common::FSNode &root) {
 	puppetParams.clear(); playerHitbox = Common::Point(); cameraHi = 0; memset(displayPalette, 0, sizeof(displayPalette)); lastResult = Value();
 	journal.entries.clear(); _journalRequested = false;
 	routes = RouteStore(); _routePending.clear(); _routeOwner.reset(); _savedRouteCursor = 0; _savedRouteChoice = -1; _savedRouteToken.clear(); _routeResumeScene = 0;
+	_routeRevisiting = false;
 	pointer = Common::Point(); _pointerButtons = 0; pointerDown = _stopped = _scriptQuit = _dialogActive = false;
 	frameRate = 3; menuVisible = keyAborts = puppetGrab = screenBlack = false;
 	Bytes data; Archive boot;
@@ -95,6 +96,7 @@ bool Session::init(const Common::FSNode &root) {
 }
 void Session::prepareRouteCheckpoint() {
 	_routePending.clear(); _routeOwner.reset();
+	if (!_routeResumeScene) _routeRevisiting = false;
 	if (!routes.active() || (ConfMan.hasKey("dreamfactory_routes") && !ConfMan.getBool("dreamfactory_routes"))) return;
 	// This runs before dispatch, with no authored script stack to reconstruct.
 	// pointerDown already reflects the queued press, so omit that one guard.
@@ -114,11 +116,11 @@ void Session::recordRoute(const JournalEntry &entry, bool decision) {
 		JournalEntry scene = entry; scene.choices.clear(); scene.selected = -1;
 		const RouteNode *resume = routes.graph.node(_routeResumeScene);
 		const bool sameScene = resume && resume->kind == RouteNode::kScene && resume->entry.file.equalsIgnoreCase(entry.file) && resume->entry.room == entry.room && resume->entry.speaker == entry.speaker;
-		const uint32 id = sameScene ? _routeResumeScene : routes.graph.recordScene(scene);
+		const uint32 id = sameScene ? _routeResumeScene : routes.graph.recordScene(scene, _routeRevisiting);
 		_routeResumeScene = 0;
 		if (!id) { _routePending.clear(); _routeOwner.reset(); routes.graph.restoreCursor(0, -1); excludeWallTime(started); return; }
 		_routeOwner = puppetSystem.current;
-		if (id && !sameScene && !_routePending.empty() && !routes.writeCheckpoint(id, _routePending, error)) warning("Route checkpoint: %s", error.c_str());
+		if (id && !sameScene && !routes.graph.node(id)->checkpoint && !_routePending.empty() && !routes.writeCheckpoint(id, _routePending, error)) warning("Route checkpoint: %s", error.c_str());
 		_routePending.clear();
 	}
 	if (decision) routes.graph.recordDecision(entry);
@@ -127,11 +129,11 @@ void Session::recordRoute(const JournalEntry &entry, bool decision) {
 }
 bool Session::restoreRouteScene(uint32 id, Common::String &error) {
 	if (_dialogActive) { error = "Close the journal before restoring a scene"; return false; }
-	const uint32 scene = routes.graph.sceneFor(id);
+	const uint32 scene = routes.graph.checkpointFor(id);
 	Bytes bytes;
 	const uint32 started = _system ? _system->getMillis() : 0;
 	const bool restored = routes.readCheckpoint(id, bytes, error) && loadState(bytes, error);
-	if (restored) { routes.graph.restoreCursor(scene, -1); _routeResumeScene = scene; }
+	if (restored) { routes.graph.restoreCursor(scene, -1); _routeResumeScene = scene; _routeRevisiting = true; }
 	excludeWallTime(started); return restored;
 }
 bool Session::boot() {
@@ -206,7 +208,32 @@ bool Session::invoke(Runtime &vm, const Expression &call, ScriptFrame &frame, Va
 	if (call.opcode == 12017 || call.opcode == 20083) {
 		const Values args = vm.arguments(call, frame); if (!vm.current(frame)) return true;
 		const Value a = args.size() ? args[0] : Value(); result = Value();
-		if (call.opcode == 12017) { _paletteBlack = false; movies.play(a.text(), vm, frame); if (_controlHeld) { _controlHeld = false; _pointerButtons &= ~1; pointerDown = _pointerButtons != 0; } memcpy(displayPalette, display.palette(), 768); _paletteKind = "movie"; sampleTime(); }
+		if (call.opcode == 12017) {
+			RouteEndingContext context; context.version = version; context.retail = sound.isTitanicRetail(); context.movie = a.text();
+			context.stage = stageSystem.current ? stageSystem.current->name : Common::String();
+			const auto global = [&](const char *name) { return runtime.globals.contains(name) ? runtime.globals[name] : Value(); };
+			context.clock = global("clock").text(); context.day = global("day").number(); context.phase = global("phase").number();
+			context.firstWar = global("onehappens").number(); context.secondWar = global("twohappens").number(); context.revolution = global("revhappens").number();
+			_paletteBlack = false;
+			const bool completed = movies.play(a.text(), vm, frame);
+			JournalEntry ending;
+			if (completed && vm.current(frame) && routes.active() && (!ConfMan.hasKey("dreamfactory_routes") || ConfMan.getBool("dreamfactory_routes")) && identifyRouteEnding(context, ending)) {
+				const uint32 started = _system ? _system->getMillis() : 0;
+				ending.file = resources.sourceName(a.text()); ending.room = roomSystem.current ? roomSystem.current->data.name : Common::String(); ending.time = _time;
+				Common::String error;
+				if (!routes.graph.cursor() && !_routePending.empty()) {
+					const uint32 scene = routes.graph.recordScene(ending);
+					if (scene && !routes.writeCheckpoint(scene, _routePending, error)) warning("Route checkpoint: %s", error.c_str());
+					_routePending.clear();
+				}
+				const uint32 id = routes.graph.recordEnding(ending);
+				if (!routes.save(error)) warning("Route profile: %s", error.c_str());
+				debug(1, "ROUTE ENDING node=%u movie=%s outcome=%s", id, a.text().c_str(), ending.speaker.c_str());
+				excludeWallTime(started);
+			}
+			if (_controlHeld) { _controlHeld = false; _pointerButtons &= ~1; pointerDown = _pointerButtons != 0; }
+			memcpy(displayPalette, display.palette(), 768); _paletteKind = "movie"; sampleTime();
+		}
 		else result = Value(a.number() >= 1 && a.number() <= 2 && (movies.actions() & (1 << (a.number() - 1))) ? 1 : 0);
 		return true;
 	}

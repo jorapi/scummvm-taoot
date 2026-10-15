@@ -114,6 +114,7 @@ private:
 	int32 _savedRouteChoice = -1;
 	Common::String _savedRouteToken;
 	uint32 _routeResumeScene = 0;
+	bool _routeRevisiting = false;
 	void prepareRouteCheckpoint();
 	void recordRoute(const JournalEntry &entry, bool decision);
 	uint64 _dialogGeneration = 0;

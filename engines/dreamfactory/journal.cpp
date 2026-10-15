@@ -338,8 +338,10 @@ Common::U32String routeBody(const RouteGraph &graph, const RouteMapItem &item) {
 			text += U"\n\n"; text += literal(node.entry.choices[i]); text += U"\n\n";
 		}
 	} else { text += literal(node.entry.text); text += U"\n\n"; }
-	const RouteNode *scene = graph.node(graph.sceneFor(item.node));
-	text += scene && scene->checkpoint ? _("Revisit restores the state before this conversation began. Start the conversation again to explore a different reply.") : _("No safe checkpoint was captured for this scene. You can still read its discovered dialogue and choices.");
+	const RouteNode *scene = graph.node(graph.checkpointFor(item.node));
+	if (scene && graph.checkpointFor(item.node) != graph.sceneFor(item.node)) {
+		text += _("This part of the route uses an earlier encounter checkpoint. Revisit begins with "); text += literal(scene->entry.speaker); text += _(". Replay the encounter to explore another branch.");
+	} else text += scene && scene->checkpoint ? _("Revisit restores the state before this conversation began. Start the conversation again to explore a different reply.") : _("No safe checkpoint was captured for this scene. You can still read its discovered dialogue and choices.");
 	return text;
 }
 class RouteMapWidget : public GUI::Widget, public GUI::CommandSender {
@@ -484,7 +486,7 @@ class JournalDialog : public GUI::Dialog {
 	}
 	bool canRevisit() const {
 		const RouteMapItem *item = _mapWidget->selected();
-		const RouteNode *scene = item && item->node ? _session.routes.graph.node(_session.routes.graph.sceneFor(item->node)) : nullptr;
+		const RouteNode *scene = item && item->node ? _session.routes.graph.node(_session.routes.graph.checkpointFor(item->node)) : nullptr;
 		return scene && scene->checkpoint && _session.routes.active();
 	}
 	void requestRevisit() {

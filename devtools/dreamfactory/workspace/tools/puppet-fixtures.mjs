@@ -83,11 +83,16 @@ endcode`);
  const boot=new Uint8Array(6);u32(boot,2,version);fs.writeFileSync(`${dir}/BOOTFILE`,envelope([boot,compileScript(`code boot()
 endcode
 code mousedown(point)
-global routecounter
+global routecounter, multiroute
 routecounter = routecounter + 1
 openpuppetfile("speech")
 puppetspeak("line.0")
 closepuppetfile()
+if multiroute
+openpuppetfile("alternate.pup")
+puppetspeak("line.0")
+closepuppetfile()
+endif
 endcode`)]));
  const v1=version===1,flatAt=v1?2100:2120,stride=v1?28:46;
  const routeStage=new Uint8Array(flatAt+4+stride);

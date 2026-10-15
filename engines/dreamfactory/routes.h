@@ -27,8 +27,9 @@ public:
 	uint32 cursor() const { return _cursor; }
 	int32 choice() const { return _choice; }
 	uint32 sceneFor(uint32 id) const;
+	uint32 checkpointFor(uint32 id) const;
 	Common::String cursorToken(uint32 id) const;
-	uint32 recordScene(const JournalEntry &entry);
+	uint32 recordScene(const JournalEntry &entry, bool revisit = false);
 	uint32 recordDecision(const JournalEntry &entry);
 	uint32 recordEnding(const JournalEntry &entry);
 	bool restoreCursor(uint32 id, int32 choice);
@@ -36,6 +37,14 @@ public:
 	void detachCheckpoint(uint32 scene);
 	bool valid() const;
 };
+struct RouteEndingContext {
+	uint32 version = 0;
+	bool retail = false;
+	Common::String movie, stage, clock;
+	int32 day = 0, phase = 0;
+	bool firstWar = false, secondWar = false, revolution = false;
+};
+bool identifyRouteEnding(const RouteEndingContext &context, JournalEntry &entry);
 class RouteCodec {
 public:
 	// Metadata only. Scene snapshots stay in separate, bounded native save files.

@@ -377,6 +377,19 @@ or damaged checkpoints leave the game intact and show a controller-dismissable
 notice. Restoration happens after the journal and its voice player have closed;
 it does not jump into a suspended conversation script.
 
+Automatic follow-up conversations can inherit an earlier checkpoint in the same
+route. Their details identify the earlier speaker where replay begins. Replaying
+an encounter reuses its existing scenes and decisions, while a new reply extends
+the discovery graph. Ordinary new encounters still receive their own identities
+and checkpoints.
+
+Completed finale movies now add ending nodes. Titanic's authored narration flags
+distinguish its eight history combinations, even when they share a final movie.
+Dust's five day-five finales and the supplied demo's post-demo conclusion are
+recognized in their story contexts. Credits, ordinary quitting and unrelated
+movies do not unlock outcomes. Outcomes appear only after being reached; the map
+does not display a prepopulated catalogue of unseen endings.
+
 Journal presentation references: [Ace Attorney: Dual Destinies' conversation
 backlog](https://news.capcomusa.com/lets/browse/phoenix-wright-ace-attorney-dual-destinies-localization-the-trials-and-tribulations-of-the-gameplay-mechanics-team)
 and [Ren'Py's speaker/text/voice history model](https://www.renpy.org/doc/html/history.html).
@@ -425,8 +438,19 @@ Keep route discovery separate from the loaded playthrough, preserve manual save
 slots, bound checkpoint storage, and validate a checkpoint before replacing the
 live session. Tests must cover alternate paths, corrupt/missing checkpoints,
 loading old saves, controller input, and all three supported games. The branch
-map still needs authored ending identification, real-play branch coverage and
-the final comparison against VLR's presentation.
+map has native real-data verification from earned checkpoints: Dust's Yunni
+ending, encounter rewind and Marie ending share the same decision node while
+retaining both outcomes; Titanic's best outcome survives through credits and
+scripted quit; the supplied demo's developed-photograph route records its
+conclusion. These checks use normal player input and checkpoint restoration,
+with dialogue/movie skips where stated, without injecting story variables.
+Run `tools/verify-dust-route-revisit.ps1`, `tools/verify-taoot-route-ending.ps1`
+and `tools/verify-demo-route-ending.ps1` in the prepared workspace to repeat them.
+The route-planning helper uses the final motion-frame facing on arrival, matching
+the engine's current walking behavior.
+
+The final comparison against VLR's presentation remains in progress. An original
+flowchart screenshot appears in [Kotaro Uchikoshi's GDC presentation](https://media.gdcvault.com/gdc2013/slides/824343Uchikoshi_Kotaro_VisualNovelsNarrative.pdf).
 
 After route functionality is complete, compare the interface against actual
 Virtue's Last Reward screenshots and match its log/flowchart interaction as

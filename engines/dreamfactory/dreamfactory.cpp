@@ -546,6 +546,16 @@ Common::Error DreamFactoryEngine::run() {
 				} else if (command == "saveslot" || command == "loadslot") {
 					const int32 slot = atoi(words.nextToken().c_str()); ok = slot >= 0 && slot <= 99;
 					if (ok) ok = (command == "saveslot" ? saveGameState(slot, "DreamFactory checkpoint test") : loadGameState(slot)).getCode() == Common::kNoError;
+				} else if (command == "dumproutes") {
+					for (uint32 n = 0; n < session.routes.graph.nodes().size(); ++n) {
+						const RouteNode &node = session.routes.graph.nodes()[n];
+						warning("BOOT ROUTE node=%u kind=%u parent=%u choice=%d seen=%u checkpoint=%u file=%s speaker=%s", n + 1, uint32(node.kind), node.parent, node.parentChoice, node.seenChoices, node.checkpoint, node.entry.file.c_str(), node.entry.speaker.c_str());
+					}
+				} else if (command == "revisitscene") {
+					const Common::String target = words.nextToken();
+					const uint32 id = target == "latest" ? session.routes.graph.cursor() : atoi(target.c_str()); Common::String error;
+					ok = session.restoreRouteScene(id, error);
+					warning("BOOT ROUTE RESTORE %s node=%u cursor=%u error=%s", ok ? "PASS" : "FAIL", id, session.routes.graph.cursor(), error.c_str());
 				} else if (command == "savecheckpoint" || command == "loadcheckpoint" || command == "rejectcheckpoint") {
 					ok = ConfMan.hasKey("dreamfactory_boot_checkpoint");
 					if (ok && command == "savecheckpoint") {

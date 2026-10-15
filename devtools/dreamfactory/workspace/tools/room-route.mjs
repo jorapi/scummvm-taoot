@@ -31,11 +31,24 @@ for (const scene of set.scenes) {
     }));
   }
 }
+function arrival(road,direction) {
+  const register=road.frameRegisters[direction], endpoint=direction?road.viewIDstart:road.viewIDend;
+  const destination=set.scenes.find(s=>s.locationViews===register.destination) ?? set.scenes.find(s=>s.views.some(v=>v.viewID===endpoint));
+  if(!destination || !register.frames.length)throw new Error('Invalid road destination');
+  const facing=register.frames.at(-1).axisX8&255;
+  let best=null,distance=257;
+  for(const view of destination.views) {
+    const delta=(view.rotation8-facing)&255, gap=Math.min(delta,256-delta);
+    if(gap<distance){best=view;distance=gap;}
+  }
+  if(!best)throw new Error('Road destination has no views');
+  return best.viewID;
+}
 for (const road of set.transitions) {
   if (road.frameRegisters[0]?.frames.length)
-    edges.get(road.viewIDstart).push({ id: road.viewIDend, action: 'key uparrow' });
+    edges.get(road.viewIDstart).push({ id: arrival(road,0), action: 'key uparrow' });
   if (road.frameRegisters[1]?.frames.length)
-    edges.get(road.viewIDend).push({ id: road.viewIDstart, action: 'key uparrow' });
+    edges.get(road.viewIDend).push({ id: arrival(road,1), action: 'key uparrow' });
 }
 function find(name) {
   const matches = [...views].filter(([, v]) => v.name.toLowerCase() === name.toLowerCase());

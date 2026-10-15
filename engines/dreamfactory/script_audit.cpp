@@ -597,6 +597,14 @@ bool auditPuppetSession(const Common::FSNode &root, OSystem *backend) {
 	routeSession.postEvent(routeClick);
 	if (!routeSession.step() || routeSession.runtime.globals["routecounter"].number() != 1 || routeSession.routes.graph.nodes().size() != 1) { warning("ROUTE CHECKPOINT FAIL revisit nodes=%u error=%s", routeSession.routes.graph.nodes().size(), routeSession.runtime.error.c_str()); return false; }
 	warning("ROUTE CHECKPOINT PASS pre-gesture native snapshot restores prior authored state replay reuses discovered scene without duplicating nodes");
+	Session multiSession(backend); RouteTestFiles multiFiles;
+	if (!multiSession.init(root) || !multiSession.stageSystem.open("route", nullptr, false) || !multiSession.routes.open(&multiFiles, "multi-test", "fixture", error)) return false;
+	multiSession.runtime.globals["multiroute"] = Value(1); multiSession.postEvent(routeClick);
+	if (!multiSession.step() || multiSession.routes.graph.nodes().size() != 2 || multiSession.routes.graph.node(2)->checkpoint || multiSession.routes.graph.checkpointFor(2) != 1) return false;
+	if (!multiSession.restoreRouteScene(2, error) || multiSession.runtime.globals["routecounter"].number()) return false;
+	multiSession.postEvent(routeClick);
+	if (!multiSession.step() || multiSession.routes.graph.nodes().size() != 2 || multiSession.runtime.globals["routecounter"].number() != 1 || multiSession.routes.graph.cursor() != 2) return false;
+	warning("ROUTE ENCOUNTER PASS later character inherits encounter checkpoint replay restores first speaker and reuses all discovered scene nodes");
 	ConfMan.setBool("dreamfactory_journal", false, Common::ConfigManager::kTransientDomain);
 	if (journalSession.runtime.run(test, "speak").value.number() != 42 || journalSession.journal.entries.size() != 2) return false;
 	if (hadJournal) ConfMan.set("dreamfactory_journal", oldJournal, Common::ConfigManager::kTransientDomain);
@@ -1300,6 +1308,25 @@ bool auditMoviePlayback(const Common::FSNode &fixtures, OSystem *system, bool re
 	}
 	session.sound.setTitanicRetail(retail); session.sound.setTitanicDemo(session.version == 4 && !retail);
 	session.resources.setPath(1, session.resources.path(0));
+	{
+		Session endingSession(system); RouteTestFiles endingFiles; ScriptInstance endingScript;
+		if (!endingSession.init(fixtures) || !endingSession.routes.open(&endingFiles, "ending-test", "fixture", error) || !read(fixtures.getChild("ending.dfscript"), bytes) || !loadScript(bytes, endingScript.script, error)) return false;
+		endingSession.sound.setTitanicRetail(retail);
+		endingSession.stageSystem.current.reset(new LoadedStage());
+		endingSession.stageSystem.current->name = endingSession.version == 1 ? "new.flt" : retail ? "narend.stg" : "demo.stg";
+		endingSession.runtime.globals["clock"] = Value("endgame"); endingSession.runtime.globals["day"] = Value(5); endingSession.runtime.globals["phase"] = Value(endingSession.version == 1 ? 5 : 2);
+		JournalEntry entry; entry.speaker = "Encounter";
+		const uint32 scene = endingSession.routes.graph.recordScene(entry);
+		for (uint32 attempt = 0; attempt < 2; ++attempt) {
+			endingSession.routes.graph.restoreCursor(scene, -1);
+			if (endingSession.runtime.run(endingScript, "ending").value.number() != 12345 || !endingSession.runtime.error.empty() || endingSession.routes.graph.nodes().size() != 2 || endingSession.routes.graph.node(2)->kind != RouteNode::kEnding || !endingSession.routes.graph.node(2)->entry.ident.empty()) return false;
+		}
+		endingSession.runtime.globals["clock"] = Value(0); endingSession.runtime.globals["phase"] = Value(1); endingSession.routes.graph.restoreCursor(scene, -1);
+		if (endingSession.runtime.run(endingScript, "ending").value.number() != 12345 || endingSession.routes.graph.cursor() != scene || endingSession.routes.graph.nodes().size() != 2) return false;
+		RouteStore persisted;
+		if (!persisted.open(&endingFiles, "ending-test", "fixture", error) || persisted.graph.node(2)->kind != RouteNode::kEnding) return false;
+		debug("ROUTE ENDING HOST PASS completed authored-context movie captured persisted stable revisit unrelated context excluded voice replay unavailable");
+	}
 	class Source : public Common::EventSource {
 	public:
 		OSystem *backend; Session &session; uint32 began = 0, stage = 0; int32 mode = 0;
@@ -2828,9 +2855,11 @@ static bool auditRouteGraph() {
 	const uint32 second = graph.recordDecision(decision), ending = graph.recordEnding(scene);
 	if (!start || first != 2 || continuation != 3 || second != 4 || ending != 5 || graph.sceneFor(second) != continuation || !graph.attachCheckpoint(start, 1024)) return false;
 	if (graph.attachCheckpoint(first, 1024) || graph.attachCheckpoint(start, RouteGraph::kMaxCheckpointBytes + 1) || graph.restoreCursor(start, 0) || graph.restoreCursor(first, 1)) return false;
+	if (graph.checkpointFor(second) != start || graph.sceneFor(second) != continuation || graph.checkpointFor(0)) return false;
 	if (!graph.restoreCursor(start, -1) || graph.recordDecision(decision) != first || graph.node(first)->seenChoices != 3) return false;
 	const uint32 alternate = graph.recordScene(scene);
 	if (alternate != 6 || graph.node(alternate)->parent != first || graph.node(alternate)->parentChoice != 1 || !graph.valid()) return false;
+	if (!graph.restoreCursor(first, 0) || graph.recordScene(scene, true) != continuation || !graph.restoreCursor(second, 1) || graph.recordEnding(scene) != ending || !graph.restoreCursor(alternate, -1) || graph.nodes().size() != 6) return false;
 	Bytes encoded, roundtrip; Common::String error;
 	RouteGraph restored;
 	if (!RouteCodec::encode(graph, "fixture-identity", encoded, error) || !RouteCodec::decode(encoded, "fixture-identity", restored, error) ||
@@ -2865,6 +2894,26 @@ static bool auditRouteGraph() {
 	map.build(wide);
 	if (map.items().back().column != int32(RouteGraph::kMaxNodes - 1) * 2 || map.navigate(RouteGraph::kMaxNodes - 2, 1, 0) != int32(RouteGraph::kMaxNodes) - 1) return false;
 	warning("ROUTE MAP PASS authored reply ordering undiscovered placeholders parent child sibling navigation long route coordinates bounded layout");
+	RouteEndingContext outcome; outcome.version = 4; outcome.retail = true; outcome.stage = "disc1/narend/NAREND.STG"; outcome.clock = "endgame";
+	const char *movies[] = {"prozac.mov", "rushend.mov", "germend.mov", "germend.mov", "rushend.mov", "rushend.mov", "nuke.mov", "boom.mov"};
+	JournalEntry identified; identified.text = "Retained";
+	for (uint32 history = 0; history < 8; ++history) {
+		outcome.firstWar = history & 1; outcome.secondWar = history & 2; outcome.revolution = history & 4; outcome.movie = Common::String("disc1/endings/") + movies[history];
+		if (!identifyRouteEnding(outcome, identified) || identified.speaker.empty() || !identified.ident.empty() || identified.text == "Retained") return false;
+		outcome.movie = "credits.mov";
+		if (identifyRouteEnding(outcome, identified)) return false;
+	}
+	outcome.movie = "boom.mov"; outcome.stage = "bedsit.stg";
+	if (identifyRouteEnding(outcome, identified)) return false;
+	outcome = RouteEndingContext(); outcome.version = 1; outcome.day = 5; outcome.stage = "installed:local:NEW.FLT";
+	const char *dustMovies[] = {"trottend.mov", "mayorend.mov", "marieend.mov", "yunniend.mov", "deserend.mov"};
+	for (uint32 i = 0; i < 5; ++i) { outcome.phase = i + 2; outcome.movie = dustMovies[i]; if (!identifyRouteEnding(outcome, identified)) return false; outcome.movie = "intro.mov"; if (identifyRouteEnding(outcome, identified)) return false; }
+	outcome.day = 4; outcome.movie = "deserend.mov"; if (identifyRouteEnding(outcome, identified)) return false;
+	outcome = RouteEndingContext(); outcome.version = 4; outcome.phase = 2; outcome.movie = "postdemo.mov";
+	if (!identifyRouteEnding(outcome, identified)) return false;
+	outcome.movie = "close.mov"; if (identifyRouteEnding(outcome, identified)) return false;
+	outcome.movie = "postdemo.mov"; outcome.phase = 1; if (identifyRouteEnding(outcome, identified)) return false;
+	warning("ROUTE ENDINGS PASS eight authored Titanic histories five Dust finales demo conclusion unrelated movies credits and quit excluded inherited checkpoints stable replay scenes endings");
 	warning("ROUTE GRAPH PASS branch discovery stable revisit ids separate playthrough cursor checkpoints metadata bounds transactional codec different-game corruption rejection");
 	return true;
 }

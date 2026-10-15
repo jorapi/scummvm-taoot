@@ -149,4 +149,10 @@ return 12345
 endcode`;
  fs.writeFileSync(dir+'/test.dfscript',compileScript(script));fs.writeFileSync(dir+'/test.txt',script+'\n');
 }
+for(const edition of ['demo','full','dust']) {
+ const dir=`build/movie-session-${edition}`;
+ const name=edition==='full'?'PROZAC':edition==='dust'?'YUNNIEND':'POSTDEMO';
+ fs.copyFileSync(`${dir}/QUIET.MOV`,`${dir}/${name}.MOV`);
+ fs.writeFileSync(`${dir}/ending.dfscript`,compileScript(`code ending()\nplaymovie("${name.toLowerCase()}.mov")\nreturn 12345\nendcode`));
+}
 console.log('Synthetic movie session fixtures written');

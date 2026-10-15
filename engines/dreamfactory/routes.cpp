@@ -19,8 +19,23 @@ uint32 RouteGraph::sceneFor(uint32 id) const {
 	}
 	return 0;
 }
-uint32 RouteGraph::recordScene(const JournalEntry &entry) {
+uint32 RouteGraph::checkpointFor(uint32 id) const {
+	while (const RouteNode *current = node(id)) {
+		if (current->kind == RouteNode::kScene && current->checkpoint) return id;
+		if (current->parent >= id) return 0;
+		id = current->parent;
+	}
+	return 0;
+}
+uint32 RouteGraph::recordScene(const JournalEntry &entry, bool revisit) {
 	if (!entry.choices.empty()) return 0;
+	if (revisit) for (uint32 i = 0; i < _nodes.size(); ++i) {
+		const RouteNode &node = _nodes[i];
+		if (node.kind == RouteNode::kScene && node.parent == _cursor && node.parentChoice == _choice &&
+			node.entry.file.equalsIgnoreCase(entry.file) && node.entry.ident == entry.ident && node.entry.speaker == entry.speaker && node.entry.room == entry.room && node.entry.text == entry.text) {
+			_cursor = i + 1; _choice = -1; return _cursor;
+		}
+	}
 	RouteNode node; node.entry = entry; node.entry.selected = -1;
 	return append(node);
 }
@@ -59,6 +74,12 @@ uint32 RouteGraph::recordDecision(const JournalEntry &entry) {
 }
 uint32 RouteGraph::recordEnding(const JournalEntry &entry) {
 	if (!entry.choices.empty()) return 0;
+	for (uint32 i = 0; i < _nodes.size(); ++i) {
+		const RouteNode &node = _nodes[i];
+		if (node.kind == RouteNode::kEnding && node.parent == _cursor && node.parentChoice == _choice && node.entry.file.equalsIgnoreCase(entry.file) && node.entry.text == entry.text) {
+			_cursor = i + 1; _choice = -1; return _cursor;
+		}
+	}
 	RouteNode node; node.kind = RouteNode::kEnding; node.entry = entry; node.entry.selected = -1;
 	return append(node);
 }
@@ -311,11 +332,35 @@ bool RouteStore::writeCheckpoint(uint32 scene, const Bytes &bytes, Common::Strin
 }
 bool RouteStore::readCheckpoint(uint32 id, Bytes &bytes, Common::String &error) const {
 	error.clear(); bytes.clear();
-	const uint32 scene = graph.sceneFor(id); const RouteNode *node = graph.node(scene);
+	const uint32 scene = graph.checkpointFor(id); const RouteNode *node = graph.node(scene);
 	if (!active() || !node || !node->checkpoint) { error = "No checkpoint is available for this scene"; return false; }
 	if (!read(checkpointName(scene), RouteGraph::kMaxCheckpointBytes, bytes) || bytes.size() != node->checkpointBytes || !validCheckpoint(bytes)) {
 		bytes.clear(); error = "Scene checkpoint is missing or damaged"; return false;
 	}
 	return true;
+}
+static Common::String endingBaseName(Common::String name) {
+	uint32 start = 0;
+	for (uint32 i = 0; i < name.size(); ++i) if (name[i] == '/' || name[i] == '\\' || name[i] == ':') start = i + 1;
+	name = name.substr(start); name.toLowercase(); return name;
+}
+bool identifyRouteEnding(const RouteEndingContext &context, JournalEntry &entry) {
+	const Common::String movie = endingBaseName(context.movie), stage = endingBaseName(context.stage);
+	JournalEntry prepared; prepared.file = context.movie;
+	if (context.version == 4 && context.retail && stage == "narend.stg" && context.clock == "endgame") {
+		const uint32 history = uint32(context.firstWar) | (uint32(context.secondWar) << 1) | (uint32(context.revolution) << 2);
+		const char *movies[] = {"prozac.mov", "rushend.mov", "germend.mov", "germend.mov", "rushend.mov", "rushend.mov", "nuke.mov", "boom.mov"};
+		if (movie != movies[history]) return false;
+		prepared.speaker = history == 0 ? "A changed future" : history == 7 ? "History unchanged" : "An altered future";
+		prepared.text = Common::String::format("World War I: %s\nWorld War II: %s\nRussian Revolution: %s", context.firstWar ? "occurred" : "averted", context.secondWar ? "occurred" : "averted", context.revolution ? "occurred" : "averted");
+	} else if (context.version == 1 && context.day == 5 && context.phase >= 2 && context.phase <= 6 && stage == "new.flt") {
+		const char *movies[] = {"trottend.mov", "mayorend.mov", "marieend.mov", "yunniend.mov", "deserend.mov"};
+		const char *titles[] = {"Trotter's ranch", "The mayor", "Marie", "The Yunni", "The desert"};
+		if (movie != movies[context.phase - 2]) return false;
+		prepared.speaker = titles[context.phase - 2]; prepared.text = "You reached this ending of Dust.";
+	} else if (context.version == 4 && !context.retail && context.phase == 2 && movie == "postdemo.mov") {
+		prepared.speaker = "Interactive demo conclusion"; prepared.text = "You reached the conclusion of the supplied interactive demo.";
+	} else return false;
+	entry = prepared; return true;
 }
 }
