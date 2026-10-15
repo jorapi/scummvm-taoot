@@ -363,7 +363,15 @@ The interface uses ScummVM theme widgets and fonts, without borrowing game art.
 
 ### VLR-inspired route work (active)
 
-The continuous log is the first milestone. The planned route map will expose
+The continuous log is the first milestone. The route graph/model foundation is
+now implemented and covered by the native stage audit: stable scene/decision
+IDs, independently accumulated choice discovery, restoring a playthrough cursor,
+scene-only checkpoint references, and a bounded, checksummed metadata codec.
+Malformed profiles and profiles for different game data are rejected before
+replacing the current graph. This foundation is not yet wired into gameplay or
+a flowchart screen and does not create checkpoints or enable scene revisiting.
+
+The planned route map will expose
 connected scenes and encountered decisions, conceal undiscovered outcomes, and
 support controller traversal. Its scene-revisit action must restore a validated
 complete checkpoint, including story variables, inventory, RNG and game clock.
@@ -378,3 +386,7 @@ live session. Tests must cover alternate paths, corrupt/missing checkpoints,
 loading old saves, controller input, and all three supported games. The branch
 map, discovery persistence, scene checkpoints and period styling remain work in
 progress; this milestone does not enable rewinding.
+
+After route functionality is complete, compare the interface against actual
+Virtue's Last Reward screenshots and match its log/flowchart interaction as
+closely as practical, including controller navigation and spoiler concealment.

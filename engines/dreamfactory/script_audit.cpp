@@ -5,6 +5,7 @@
 #include "dreamfactory/image.h"
 #include "dreamfactory/resources.h"
 #include "dreamfactory/session.h"
+#include "dreamfactory/routes.h"
 #include "dreamfactory/controls.h"
 #include "dreamfactory/checkers.h"
 #include "dreamfactory/audio.h"
@@ -2649,7 +2650,44 @@ bool auditRooms(const Common::FSNode &root) {
 	}
 	warning("ROOM %s files=%u failures=%u", failures ? "FAIL" : "PASS", count, failures); return !failures;
 }
+static bool auditRouteGraph() {
+	RouteGraph graph;
+	JournalEntry scene; scene.speaker = "Speaker"; scene.room = "Room"; scene.file = "disc1/speech.pup"; scene.text = "A scene";
+	JournalEntry decision = scene; decision.choices.push_back("First reply"); decision.choices.push_back("Second reply"); decision.selected = 0; decision.text = decision.choices[0];
+	if (graph.recordDecision(decision)) return false;
+	const uint32 start = graph.recordScene(scene), first = graph.recordDecision(decision), continuation = graph.recordScene(scene);
+	decision.selected = 1; decision.text = decision.choices[1];
+	const uint32 second = graph.recordDecision(decision), ending = graph.recordEnding(scene);
+	if (!start || first != 2 || continuation != 3 || second != 4 || ending != 5 || graph.sceneFor(second) != continuation || !graph.attachCheckpoint(start, 1024)) return false;
+	if (graph.attachCheckpoint(first, 1024) || graph.attachCheckpoint(start, 33 * 1024 * 1024) || graph.restoreCursor(start, 0) || graph.restoreCursor(first, 1)) return false;
+	if (!graph.restoreCursor(start, -1) || graph.recordDecision(decision) != first || graph.node(first)->seenChoices != 3) return false;
+	const uint32 alternate = graph.recordScene(scene);
+	if (alternate != 6 || graph.node(alternate)->parent != first || graph.node(alternate)->parentChoice != 1 || !graph.valid()) return false;
+	Bytes encoded, roundtrip; Common::String error;
+	RouteGraph restored;
+	if (!RouteCodec::encode(graph, "fixture-identity", encoded, error) || !RouteCodec::decode(encoded, "fixture-identity", restored, error) ||
+		!RouteCodec::encode(restored, "fixture-identity", roundtrip, error) || encoded != roundtrip || restored.cursor() != alternate || restored.node(first)->seenChoices != 3 || restored.node(start)->checkpoint != start) return false;
+	if (RouteCodec::decode(encoded, "another-game", restored, error) || error.empty()) return false;
+	for (uint32 size : {0u, 8u, 27u, uint32(encoded.size() - 1)}) {
+		Bytes truncated = encoded; truncated.resize(size);
+		if (RouteCodec::decode(truncated, "fixture-identity", restored, error) || restored.nodes().size() != graph.nodes().size() || restored.cursor() != alternate) return false;
+	}
+	Bytes corrupt = encoded; corrupt.back() ^= 1;
+	if (RouteCodec::decode(corrupt, "fixture-identity", restored, error) || restored.cursor() != alternate) return false;
+	// Recompute the digest to exercise semantic validation rather than only checksum rejection.
+	corrupt = encoded;
+	const uint32 firstNode = 28 + 4 + uint32(Common::String("fixture-identity").size()) + 12;
+	WRITE_LE_UINT32(corrupt.data() + firstNode + 4, 1); // Root cannot parent itself.
+	Common::MemoryReadStream payload(corrupt.data() + 28, corrupt.size() - 28); byte digest[16]; Common::computeStreamMD5(payload, digest); memcpy(corrupt.data() + 12, digest, 16);
+	if (RouteCodec::decode(corrupt, "fixture-identity", restored, error) || restored.cursor() != alternate) return false;
+	RouteGraph bounded;
+	for (uint32 i = 0; i < RouteGraph::kMaxNodes; ++i) if (!bounded.recordScene(scene)) return false;
+	if (bounded.recordScene(scene) || bounded.nodes().size() != RouteGraph::kMaxNodes || !bounded.valid()) return false;
+	warning("ROUTE GRAPH PASS branch discovery stable revisit ids separate playthrough cursor checkpoints metadata bounds transactional codec different-game corruption rejection");
+	return true;
+}
 bool auditStageSession(const Common::FSNode &root, OSystem *system) {
+	if (!auditRouteGraph()) return false;
 	Session session; Bytes bytes; ScriptInstance test; test.name = "stage-test"; Common::String error;
 	if (!session.init(root) || !read(root.getChild("test.dfscript"), bytes) || !loadScript(bytes, test.script, error)) { warning("STAGE SESSION FAIL fixture init %s", error.c_str()); return false; }
 	const ScriptResult result = session.runtime.run(test, "test");
