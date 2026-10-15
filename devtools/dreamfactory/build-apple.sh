@@ -49,7 +49,8 @@ case "$platform" in
     test -d "$out/frameworks/freetype.xcframework"
     bz2="$out/frameworks/bz2.xcframework/ios-arm64-armv7-armv7s/libbz2.a"
     test -s "$bz2"
-    "$generator" "$src" "${flags[@]}" --ios --use-xcframework
+    # The shared iOS backend references the shader renderer even for 2D games.
+    "$generator" "$src" "${flags[@]}" --ios --use-xcframework --enable-opengl_game_shaders
     xcodebuild -project "$out/scummvm.xcodeproj" -scheme ScummVM-iOS -configuration Release \
       -destination 'generic/platform=iOS' -derivedDataPath "$out/DerivedData" \
       CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
