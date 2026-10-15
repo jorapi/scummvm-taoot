@@ -5,6 +5,9 @@ platform=${1:?Usage: build-apple.sh macos|ios [arm64|x86_64]}
 arch=${2:-arm64}
 src=$(cd "$(dirname "$0")/../.." && pwd)
 out="$src/build-dreamfactory/$platform-$arch"
+# Keep local usernames and source paths out of compiler diagnostics in binaries.
+export CFLAGS="${CFLAGS:-} -ffile-prefix-map=$src=/scummvm -fdebug-prefix-map=$src=/scummvm"
+export CXXFLAGS="${CXXFLAGS:-} -ffile-prefix-map=$src=/scummvm -fdebug-prefix-map=$src=/scummvm"
 mkdir -p "$out" "$src/build-dreamfactory/artifacts"
 cmake -S "$src/devtools/create_project/cmake" -B "$src/build-dreamfactory/generator" -DCMAKE_BUILD_TYPE=Release
 cmake --build "$src/build-dreamfactory/generator" --config Release --parallel 3
@@ -20,7 +23,8 @@ case "$platform" in
     "$generator" "$src" "${flags[@]}"
     xcodebuild -project "$out/scummvm.xcodeproj" -scheme ScummVM-macOS -configuration Release \
       -destination "platform=macOS,arch=$arch" -derivedDataPath "$out/DerivedData" \
-      CODE_SIGNING_ALLOWED=NO CODE_SIGN_IDENTITY="" build
+      CODE_SIGNING_ALLOWED=NO CODE_SIGN_IDENTITY="" \
+      "OTHER_CFLAGS=\$(inherited) $CFLAGS" "OTHER_CPLUSPLUSFLAGS=\$(inherited) $CXXFLAGS" build
     app="$out/DerivedData/Build/Products/Release/scummvm.app"
     test -d "$app"
     # Homebrew paths must not leak into a supposedly portable application.
@@ -47,7 +51,8 @@ case "$platform" in
     xcodebuild -project "$out/scummvm.xcodeproj" -scheme ScummVM-iOS -configuration Release \
       -destination 'generic/platform=iOS' -derivedDataPath "$out/DerivedData" \
       CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
-      "OTHER_LDFLAGS=\$(inherited) \"$bz2\"" build
+      "OTHER_LDFLAGS=\$(inherited) \"$bz2\"" \
+      "OTHER_CFLAGS=\$(inherited) $CFLAGS" "OTHER_CPLUSPLUSFLAGS=\$(inherited) $CXXFLAGS" build
     app="$out/DerivedData/Build/Products/Release-iphoneos/scummvm.app"
     test -d "$app"
     cp "$src/dists/engine-data/fonts.dat" "$app/"

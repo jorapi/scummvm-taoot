@@ -1,20 +1,35 @@
 name: DreamFactory platform builds
 on:
   workflow_dispatch:
+  workflow_call:
   push:
+    branches: [dreamfactory]
     paths:
       - 'engines/dreamfactory/**'
       - 'devtools/dreamfactory/**'
-      - '.github/workflows/dreamfactory-builds.yml'
+      - '.github/workflows/dreamfactory*.yml'
   pull_request:
     paths:
       - 'engines/dreamfactory/**'
       - 'devtools/dreamfactory/**'
-      - '.github/workflows/dreamfactory-builds.yml'
+      - '.github/workflows/dreamfactory*.yml'
 permissions:
   contents: read
+concurrency:
+  group: dreamfactory-build-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
+  validation:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test release privacy checks
+        run: python3 devtools/dreamfactory/test-ci-release.py
+      - name: Check platform shell scripts
+        run: for script in devtools/dreamfactory/build-{android,apple,psp}.sh; do bash -n "$script"; done
   windows:
+    needs: validation
+    timeout-minutes: 90
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
@@ -25,6 +40,7 @@ jobs:
           VCPKG_DEFAULT_TRIPLET: x64-windows
         run: |
           $ErrorActionPreference = 'Stop'
+          $env:CL = "/pathmap:$env:GITHUB_WORKSPACE=/scummvm"
           $env:VCPKG_ROOT = $env:VCPKG_INSTALLATION_ROOT
           & "$env:VCPKG_ROOT/vcpkg.exe" install --triplet x64-windows --x-manifest-root=devtools/dreamfactory/windows-deps --x-install-root=build-dreamfactory/vcpkg_installed
           if ($LASTEXITCODE) { throw 'Dependency installation failed' }
@@ -38,6 +54,18 @@ jobs:
           Push-Location build-dreamfactory/windows
           & $generator ../.. --msvc --vcpkg --disable-all-engines --enable-engine=dreamfactory @disabled --enable-opengl --enable-builtin-resources --enable-freetype2 --enable-zlib --enable-highres --enable-16bit --enable-detection-static
           if ($LASTEXITCODE) { throw 'Project generation failed' }
+          # Embed only a PDB basename rather than the build-machine path.
+          Get-ChildItem -Filter *.vcxproj | ForEach-Object {
+            [xml]$project = Get-Content -LiteralPath $_.FullName
+            $ns = [Xml.XmlNamespaceManager]::new($project.NameTable)
+            $ns.AddNamespace('m', $project.DocumentElement.NamespaceURI)
+            foreach ($link in $project.SelectNodes('//m:ItemDefinitionGroup/m:Link', $ns)) {
+              $options = $project.CreateElement('AdditionalOptions', $project.DocumentElement.NamespaceURI)
+              $options.InnerText = '/PDBALTPATH:scummvm.pdb %(AdditionalOptions)'
+              [void]$link.AppendChild($options)
+            }
+            $project.Save($_.FullName)
+          }
           $installed = [IO.Path]::GetFullPath('../vcpkg_installed') + '/'
           msbuild scummvm.sln /m /p:Configuration=Release /p:Platform=x64 /p:VcpkgEnableManifest=false "/p:VcpkgInstalledDir=$installed" /v:minimal
           if ($LASTEXITCODE) { throw 'Engine build failed' }
@@ -48,7 +76,7 @@ jobs:
           Copy-Item dists/engine-data/fonts.dat,COPYING,COPYRIGHT build-dreamfactory/artifacts/windows/
           Copy-Item gui/themes/scumm*.zip build-dreamfactory/artifacts/windows/
           Copy-Item devtools/dreamfactory/Run-Software-Renderer.cmd build-dreamfactory/artifacts/windows/
-          Copy-Item devtools/dreamfactory/ENHANCEMENTS.md build-dreamfactory/artifacts/windows/
+          Copy-Item devtools/dreamfactory/ENHANCEMENTS.md,devtools/dreamfactory/README.md,README.md build-dreamfactory/artifacts/windows/
           foreach ($package in Get-ChildItem build-dreamfactory/vcpkg_installed/x64-windows/share -Directory) {
             $copyright = Join-Path $package.FullName copyright
             if (Test-Path -LiteralPath $copyright) {
@@ -57,12 +85,19 @@ jobs:
               Copy-Item -LiteralPath $copyright -Destination $licenseDir
             }
           }
+      - name: Package Windows portable build
+        shell: pwsh
+        run: Compress-Archive -Path build-dreamfactory/artifacts/windows/* -DestinationPath build-dreamfactory/artifacts/dreamfactory-windows-x64-unsigned.zip
+      - name: Check package privacy
+        shell: pwsh
+        run: python devtools/dreamfactory/ci-release.py check build-dreamfactory/artifacts/dreamfactory-windows-x64-unsigned.zip
       - uses: actions/upload-artifact@v4
         with:
           name: dreamfactory-windows-x64-unsigned
-          path: build-dreamfactory/artifacts/windows/
+          path: build-dreamfactory/artifacts/dreamfactory-windows-x64-unsigned.zip
           if-no-files-found: error
   apple:
+    needs: validation
     strategy:
       fail-fast: false
       matrix:
@@ -79,6 +114,7 @@ jobs:
             platform: ios
             arch: arm64
             signing: unsigned
+    timeout-minutes: 90
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
@@ -87,12 +123,16 @@ jobs:
         run: brew install sdl2 freetype dylibbundler
       - name: Build without Apple identity certificates
         run: bash devtools/dreamfactory/build-apple.sh '${{ matrix.platform }}' '${{ matrix.arch }}'
+      - name: Check package privacy
+        run: python3 devtools/dreamfactory/ci-release.py check build-dreamfactory/artifacts/*
       - uses: actions/upload-artifact@v4
         with:
           name: dreamfactory-${{ matrix.platform }}-${{ matrix.arch }}-${{ matrix.signing }}
           path: build-dreamfactory/artifacts/*
           if-no-files-found: error
   android:
+    needs: validation
+    timeout-minutes: 90
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
@@ -118,12 +158,16 @@ jobs:
           echo "ANDROID_NDK_ROOT=$ANDROID_SDK_ROOT/ndk/$ndk" >> "$GITHUB_ENV"
       - name: Build unsigned APK
         run: bash devtools/dreamfactory/build-android.sh '${{ matrix.abi }}'
+      - name: Check APK privacy
+        run: python3 devtools/dreamfactory/ci-release.py check build-dreamfactory/artifacts/*.apk
       - uses: actions/upload-artifact@v4
         with:
           name: dreamfactory-android-${{ matrix.abi }}-unsigned
           path: build-dreamfactory/artifacts/*.apk
           if-no-files-found: error
   psp:
+    needs: validation
+    timeout-minutes: 90
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -132,6 +176,8 @@ jobs:
         run: |
           docker run --rm -v "$PWD:/src" -w /src pspdev/pspdev:latest \
             bash -lc 'apk add --no-cache zip python3 && bash devtools/dreamfactory/build-psp.sh'
+      - name: Check package privacy
+        run: python3 devtools/dreamfactory/ci-release.py check build-dreamfactory/artifacts/*.zip
       - uses: actions/upload-artifact@v4
         with:
           name: dreamfactory-psp-experimental

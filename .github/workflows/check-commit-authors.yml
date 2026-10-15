@@ -10,6 +10,8 @@ on:
 
 jobs:
   scan-commits:
+    # The fork uses its DreamFactory workflows and contribution policy.
+    if: github.repository == 'scummvm/scummvm'
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write

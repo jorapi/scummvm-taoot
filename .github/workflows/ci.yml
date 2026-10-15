@@ -6,6 +6,8 @@ permissions:
   contents: read
 jobs:
   emscripten:
+    # The fork uses its DreamFactory workflows and contribution policy.
+    if: github.repository == 'scummvm/scummvm'
     name: Emscripten
     runs-on: ubuntu-latest
     strategy: 
@@ -43,6 +45,8 @@ jobs:
         run: |
           dists/emscripten/build.sh make 
   windows:
+    # The fork uses its DreamFactory workflows and contribution policy.
+    if: github.repository == 'scummvm/scummvm'
     name: Windows
     runs-on: windows-2025-vs2026
     strategy:
@@ -147,6 +151,8 @@ jobs:
           name: lib-symbols-${{ matrix.arch }}
           path: ${{ env.VCPKG_INSTALLED_DIR }}\\${{ matrix.triplet }}\\bin\\*.pdb
   xcode:
+    # The fork uses its DreamFactory workflows and contribution policy.
+    if: github.repository == 'scummvm/scummvm'
     name: Xcode
     runs-on: macos-15-intel
     strategy:
@@ -198,6 +204,8 @@ jobs:
           xcodebuild CC=clang CPLUSPLUS=clang++ LD=clang LDPLUSPLUS=clang++ build -project scummvm.xcodeproj ${{ matrix.buildFlags }} | awk '$1 !~ /^(export|cd|clang++)/'
           ls
   ubuntu:
+    # The fork uses its DreamFactory workflows and contribution policy.
+    if: github.repository == 'scummvm/scummvm'
     name: Ubuntu
     runs-on: ${{ matrix.platform }}
     strategy:

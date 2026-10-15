@@ -6,6 +6,9 @@ src=$(cd "$(dirname "$0")/../.." && pwd)
 export PATH="$PSPDEV/bin:$PSPDEV/psp/bin:$PATH"
 command -v psp-g++ >/dev/null
 out="$src/build-dreamfactory/psp"
+# Keep local usernames and source paths out of compiler diagnostics in binaries.
+export CFLAGS="${CFLAGS:-} -ffile-prefix-map=$src=/scummvm -fdebug-prefix-map=$src=/scummvm"
+export CXXFLAGS="${CXXFLAGS:-} -ffile-prefix-map=$src=/scummvm -fdebug-prefix-map=$src=/scummvm"
 mkdir -p "$out" "$src/build-dreamfactory/artifacts"
 cd "$out"
 "$src/configure" --host=psp --disable-all-engines --enable-engine=dreamfactory \

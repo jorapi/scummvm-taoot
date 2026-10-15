@@ -19,6 +19,9 @@ export PATH="$toolchain/bin:$PATH"
 cc="$triplet$api-clang"
 if test "$abi" = armeabi-v7a; then cc="armv7a-linux-androideabi$api-clang"; fi
 mkdir -p "$out" "$src/build-dreamfactory/artifacts"
+# Keep local usernames and source paths out of compiler diagnostics in binaries.
+export CFLAGS="${CFLAGS:-} -ffile-prefix-map=$src=/scummvm -fdebug-prefix-map=$src=/scummvm"
+export CXXFLAGS="${CXXFLAGS:-} -ffile-prefix-map=$src=/scummvm -fdebug-prefix-map=$src=/scummvm"
 if ! test -f "$out/oboe/lib/$abi/liboboe.a"; then
   curl --fail --location --retry 3 https://github.com/google/oboe/archive/refs/tags/1.10.0.tar.gz -o "$out/oboe.tar.gz"
   tar -xf "$out/oboe.tar.gz" -C "$out"

@@ -1,0 +1,82 @@
+name: DreamFactory release
+on:
+  push:
+    tags: ['dreamfactory-v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'New release tag, e.g. dreamfactory-v0.1.1'
+        required: true
+        type: string
+      publish:
+        description: 'Publish the prerelease after all builds pass (otherwise create a draft)'
+        default: false
+        type: boolean
+permissions:
+  contents: read
+concurrency:
+  group: dreamfactory-release-${{ github.event.inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - id: tag
+        env:
+          RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          python3 - <<'PY'
+          import os, re
+          tag = os.environ['RELEASE_TAG']
+          if not re.fullmatch(r'dreamfactory-v[0-9]+\.[0-9]+\.[0-9]+(?:-[A-Za-z0-9.-]+)?', tag):
+              raise SystemExit('Invalid DreamFactory release tag')
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as handle:
+              handle.write('tag=' + tag + '\n')
+          PY
+  build:
+    needs: validate
+    uses: ./.github/workflows/dreamfactory-builds.yml
+    permissions:
+      contents: read
+  release:
+    needs: [validate, build]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: dreamfactory-*
+          path: release-assets
+          merge-multiple: true
+      - name: Check every package and create provenance/checksums
+        run: python3 devtools/dreamfactory/ci-release.py prepare release-assets
+      - name: Create release after all platforms pass
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.validate.outputs.tag }}
+          PUBLISH: ${{ github.event_name == 'push' || inputs.publish }}
+        run: |
+          cat > release-notes.md <<'EOF'
+          Experimental DreamFactory fork of ScummVM, built entirely on GitHub-hosted runners.
+
+          Supports the supplied English Windows Titanic retail, September 1996 interactive demo and Dust data. Game data and optional soundtrack files are supplied separately.
+
+          Windows ZIP: portable unsigned application. macOS ZIPs: ad-hoc signed applications, not notarized. iOS IPA and Android APKs: unsigned and require your signing setup before installation. PSP ZIP: experimental homebrew.
+
+          All eight platform builds, package privacy checks and checksums must pass before this workflow creates a release. Compilation does not establish device compatibility or a full-game playthrough. See manifest.json for the source commit and CI run; verify downloads with SHA256SUMS.txt.
+          EOF
+          # Preserve existing releases: no asset replacement or --clobber.
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo 'A release already exists for this tag; inspect it rather than overwriting it.' >&2
+            exit 1
+          fi
+          gh release create "$RELEASE_TAG" release-assets/* --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" --title "DreamFactory $RELEASE_TAG — Experimental" \
+            --notes-file release-notes.md --prerelease --draft --latest=false
+          if [ "$PUBLISH" = true ]; then
+            gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false --latest=false
+          fi

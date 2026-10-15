@@ -77,6 +77,7 @@ git clone --branch dreamfactory https://github.com/jorapi/scummvm-taoot.git
 cd scummvm-taoot
 ```
 
+* [CI builds and automated releases](devtools/dreamfactory/CI.md)
 * [Platform builds and controls](devtools/dreamfactory/README.md)
 * [Upstream integration and validation](devtools/dreamfactory/UPSTREAM.md)
 * [Companion development workspace and regression tools](devtools/dreamfactory/WORKSPACE.md)
